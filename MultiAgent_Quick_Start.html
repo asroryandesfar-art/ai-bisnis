@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick Start</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --surface: #12161b;
+      --card: #171c22;
+      --text: #f2f5f7;
+      --muted: #a6b0ba;
+      --border: #28303a;
+      --accent: #58d7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.7 Inter, Segoe UI, Arial, sans-serif;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    h1, h2, h3 {
+      line-height: 1.25;
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+    h1 { font-size: 34px; }
+    h2 { font-size: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 18px; color: var(--accent); }
+    p { color: var(--text); margin: 12px 0; }
+    ul { padding-left: 22px; }
+    li { margin: 8px 0; }
+    pre {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 16px;
+      overflow: auto;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    code {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: .95em;
+    }
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <strong>Quick Start</strong>
+      <div>
+        <a href="/multiagent">Index</a>
+        <a href="/dashboard">Dashboard</a>
+      </div>
+    </div>
+    <h1>🚀 MULAI DARI SINI - Multi-Agent AI Action Plan</h1>
+<p>Dokumen ini adalah quick-start praktis untuk system multi-agent BotNesia yang ada di repo ini.</p>
+<p>---</p>
+<h2>RINGKASAN</h2>
+<p>Kamu ingin sistem yang bisa:</p>
+<ul>
+<li>ngerti query user</li>
+<li>akses berita terbaru</li>
+<li>akses harga kripto / saham</li>
+<li>bikin gambar / video</li>
+<li>personalisasi jawaban sesuai user</li>
+<li>tetap jujur, tidak ngarang</li>
+</ul>
+<p>Di repo ini, fondasinya <strong>sudah ada</strong>.</p>
+<p>Yang aktif sekarang:</p>
+<ul>
+<li>multi-agent supervisor</li>
+<li>CS agent</li>
+<li>news pipeline</li>
+<li>market data pipeline</li>
+<li>Replicate media generation</li>
+<li>dashboard untuk testing</li>
+</ul>
+<p>---</p>
+<h2>FILE PENTING YANG SUDAH ADA</h2>
+<h3>Core runtime</h3>
+<ul>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\main.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\supervisor.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\cs_agent.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\analytics.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\escalation.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\trainer.py</code></li>
+</ul>
+<h3>Real-time data</h3>
+<ul>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\news_fetcher.py</code></li>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\finance_fetcher.py</code></li>
+</ul>
+<h3>Media</h3>
+<ul>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\media_gen.py</code></li>
+</ul>
+<h3>Dashboard / UI</h3>
+<ul>
+<li><code>C:\Users\asror\OneDrive\Dokumen\ai bisnis\dashboard-connected.html</code></li>
+</ul>
+<p>---</p>
+<h2>ARSITEKTUR SIMPEL</h2>
+<pre><code>
+User message
+   ↓
+Supervisor / Router
+   ↓
+CS Agent + optional helpers
+   ├─ News fetcher
+   ├─ Finance fetcher
+   ├─ Escalation
+   ├─ Analytics / training
+   └─ Media generation
+   ↓
+Final response
+</code></pre>
+<p>---</p>
+<h2>YANG SUDAH BERJALAN SEKARANG</h2>
+<h3>1. Berita</h3>
+<ul>
+<li>bisa ambil dari RSS / Atom</li>
+<li>bisa ambil dari Google News RSS</li>
+<li>bisa ambil dari URL artikel langsung</li>
+<li>bisa ekstrak kutipan penting</li>
+</ul>
+<h3>2. Market data</h3>
+<ul>
+<li>kripto → CoinGecko</li>
+<li>saham → Yahoo Finance quote endpoint</li>
+<li>query campuran saham + kripto sudah didukung</li>
+</ul>
+<h3>3. Media</h3>
+<ul>
+<li>gambar → Replicate Flux</li>
+<li>video → Replicate HappyHorse / Seedance</li>
+</ul>
+<h3>4. Tone</h3>
+<ul>
+<li>bisa diarahkan lewat prompt / profile / style agent</li>
+</ul>
+<p>---</p>
+<h2>HAL YANG PERLU KAMU PAHAM</h2>
+<h3>Sumber tidak otomatis ditampilkan</h3>
+<p>Sistem sekarang dioptimalkan untuk:</p>
+<ul>
+<li>jawab isi dulu</li>
+<li>sumber / link hanya keluar jika user minta</li>
+</ul>
+<p>Jadi default UX:</p>
+<ul>
+<li>lebih natural</li>
+<li>tidak berisik</li>
+<li>tidak seperti dump artikel</li>
+</ul>
+<p>Kalau user minta:</p>
+<ul>
+<li>&quot;sumbernya?&quot;</li>
+<li>&quot;kasih link&quot;</li>
+<li>&quot;mana referensinya?&quot;</li>
+</ul>
+<p>baru sumber ditampilkan.</p>
+<p>---</p>
+<h2>SETUP SINGKAT</h2>
+<h3>1. Pastikan <code>.env</code> terisi</h3>
+<p>Minimal:</p>
+<pre><code>
+GROQ_API_KEY=...
+REPLICATE_API_TOKEN=...
+REPLICATE_IMAGE_MODEL=black-forest-labs/flux-2-pro
+REPLICATE_VIDEO_MODEL=alibaba/happyhorse-1.0,bytedance/seedance-2.0
+NEWS_ENABLED=true
+NEWS_RSS_FEEDS=...
+</code></pre>
+<h3>2. Jalankan server</h3>
+<pre><code>
+python run_server.py
+</code></pre>
+<p>atau pakai launcher:</p>
+<pre><code>
+start.cmd
+</code></pre>
+<h3>3. Buka dashboard</h3>
+<pre><code>
+http://127.0.0.1:8000/dashboard
+</code></pre>
+<p>---</p>
+<h2>TES CEPAT</h2>
+<h3>Market</h3>
+<ul>
+<li><code>harga btc sekarang</code></li>
+<li><code>harga saham apple dan btc sekarang</code></li>
+<li><code>berapa harga bbca hari ini</code></li>
+</ul>
+<h3>News</h3>
+<ul>
+<li><code>berita AI terbaru</code></li>
+<li><code>ringkas berita bitcoin hari ini</code></li>
+<li>kirim URL artikel langsung</li>
+</ul>
+<h3>Media</h3>
+<ul>
+<li><code>buat gambar tentang AI agents</code></li>
+<li><code>buat video futuristik tentang bitcoin</code></li>
+</ul>
+<p>---</p>
+<h2>IMPLEMENTATION ORDER</h2>
+<h3>Hari ini</h3>
+<ul>
+<li>cek <code>.env</code></li>
+<li>restart server</li>
+<li>tes chat</li>
+<li>tes berita</li>
+<li>tes market</li>
+<li>tes gambar/video</li>
+</ul>
+<h3>Minggu ini</h3>
+<ul>
+<li>rapikan profile personalization</li>
+<li>tambah user memory</li>
+<li>tambah source-on-demand formatting</li>
+<li>tambah ranking berita khusus niche kamu</li>
+</ul>
+<h3>Setelah itu</h3>
+<ul>
+<li>monetization</li>
+<li>auth yang lebih rapi</li>
+<li>usage analytics</li>
+<li>per-user memory / preference</li>
+</ul>
+<p>---</p>
+<h2>GOAL PRAKTIS</h2>
+<p>Target terbaik untuk sistem ini bukan “semua bisa sempurna sekaligus”.</p>
+<p>Target realistis: 1. current info akurat 2. tone enak 3. media jalan 4. tidak halusinasi 5. gampang dipakai user</p>
+<p>Kalau 5 hal itu stabil, sistem ini sudah kuat banget.</p>
+  </div>
+</body>
+</html>

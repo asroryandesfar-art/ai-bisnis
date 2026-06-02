@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App Integration</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --surface: #12161b;
+      --card: #171c22;
+      --text: #f2f5f7;
+      --muted: #a6b0ba;
+      --border: #28303a;
+      --accent: #58d7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.7 Inter, Segoe UI, Arial, sans-serif;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    h1, h2, h3 {
+      line-height: 1.25;
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+    h1 { font-size: 34px; }
+    h2 { font-size: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 18px; color: var(--accent); }
+    p { color: var(--text); margin: 12px 0; }
+    ul { padding-left: 22px; }
+    li { margin: 8px 0; }
+    pre {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 16px;
+      overflow: auto;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    code {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: .95em;
+    }
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <strong>App Integration</strong>
+      <div>
+        <a href="/multiagent">Index</a>
+        <a href="/dashboard">Dashboard</a>
+      </div>
+    </div>
+    <h1>🔌 Multi-Agent → BotNesia App Integration Map</h1>
+<p>Dokumen ini menjelaskan <strong>langkah berikutnya</strong> untuk menghubungkan framework multi-agent ke aplikasi BotNesia yang sedang aktif.</p>
+<p>---</p>
+<h2>1. Tujuan</h2>
+<p>Ada 2 jalur kerja yang sekarang disatukan:</p>
+<p>1. <strong>Framework / dokumentasi / template</strong> 2. <strong>App production yang benar-benar jalan</strong></p>
+<p>Targetnya bukan membuat sistem baru dari nol, tapi:</p>
+<ul>
+<li>memakai framework sebagai panduan</li>
+<li>menghubungkannya ke runtime BotNesia sekarang</li>
+<li>memastikan semua agent punya titik sambung yang jelas</li>
+</ul>
+<p>---</p>
+<h2>2. Mapping Framework → Runtime Aktif</h2>
+<p>| Framework Concept | BotNesia Runtime | |---|---| | Router Agent | <code>supervisor.py</code> | | Content / CS Agent | <code>cs_agent.py</code> | | News Agent | <code>news_fetcher.py</code> | | Market Data Agent | <code>finance_fetcher.py</code> | | Personality Adapter | <code>cs_agent.py</code> + system prompt strategy | | Visual Agent | <code>media_gen.py</code> + <code>/media/image</code> + <code>/media/video</code> | | Escalation Agent | <code>escalation.py</code> | | Analytics Agent | <code>analytics.py</code> | | Trainer Agent | <code>trainer.py</code> | | App Entry | <code>main.py</code> |</p>
+<p>---</p>
+<h2>3. Langkah Teknis Berikutnya</h2>
+<h3>A. Router / Supervisor</h3>
+<p><strong>Status sekarang</strong></p>
+<ul>
+<li>Sudah ada di <code>supervisor.py</code></li>
+<li>Sudah dipakai dari <code>main.py</code></li>
+</ul>
+<p><strong>Next step</strong></p>
+<ul>
+<li>tambah explicit routing flags untuk:</li>
+<li><code>needs_news</code></li>
+<li><code>needs_market</code></li>
+<li><code>needs_visual</code></li>
+<li><code>needs_source_exposure</code></li>
+</ul>
+<p><strong>Tujuan</strong></p>
+<ul>
+<li>supaya keputusan agent lebih transparan dan gampang di-debug</li>
+</ul>
+<p>---</p>
+<h3>B. News Agent</h3>
+<p><strong>Status sekarang</strong></p>
+<ul>
+<li><code>news_fetcher.py</code> sudah support:</li>
+<li>RSS</li>
+<li>Atom</li>
+<li>URL artikel langsung</li>
+<li>Google News wrapper</li>
+</ul>
+<p><strong>Next step</strong></p>
+<ul>
+<li>tambah ranking berbasis kategori user</li>
+<li>tambah cache query berita populer</li>
+<li>tambah &quot;source-on-demand formatter&quot;</li>
+</ul>
+<p><strong>Tujuan</strong></p>
+<ul>
+<li>berita lebih relevan</li>
+<li>lebih hemat request</li>
+<li>sumber hanya keluar saat user minta</li>
+</ul>
+<p>---</p>
+<h3>C. Market Data Agent</h3>
+<p><strong>Status sekarang</strong></p>
+<ul>
+<li><code>finance_fetcher.py</code> sudah support:</li>
+<li>crypto via CoinGecko</li>
+<li>stock via Yahoo Finance quote</li>
+</ul>
+<p><strong>Next step</strong></p>
+<ul>
+<li>tambah alias saham Indonesia lebih banyak</li>
+<li>tambah formatter untuk multi-asset comparison</li>
+<li>tambah handling query seperti:</li>
+<li>&quot;bandingkan BTC vs NVDA&quot;</li>
+<li>&quot;top movers&quot;</li>
+</ul>
+<p>---</p>
+<h3>D. Personality Layer</h3>
+<p><strong>Status sekarang</strong></p>
+<ul>
+<li>personality mostly ada di prompt engineering</li>
+</ul>
+<p><strong>Next step</strong></p>
+<ul>
+<li>simpan profile user per org/user/session</li>
+<li>buat preset:</li>
+<li>critical</li>
+<li>balanced</li>
+<li>optimistic</li>
+<li>mentor</li>
+<li>friend</li>
+</ul>
+<p><strong>Tujuan</strong></p>
+<ul>
+<li>respons konsisten</li>
+<li>tidak perlu re-prompt manual tiap saat</li>
+</ul>
+<p>---</p>
+<h3>E. Visual / Media</h3>
+<p><strong>Status sekarang</strong></p>
+<ul>
+<li><code>/media/image</code> dan <code>/media/video</code> sudah aktif</li>
+<li>Replicate image/video models sudah terhubung</li>
+</ul>
+<p><strong>Next step</strong></p>
+<ul>
+<li>buat mode:</li>
+<li>prompt-only</li>
+<li>generate-now</li>
+<li>tambah preset:</li>
+<li>thumbnail</li>
+<li>infographic</li>
+<li>cinematic</li>
+<li>product visual</li>
+</ul>
+<p>---</p>
+<h2>4. Perubahan Paling Bernilai Setelah Ini</h2>
+<p>Kalau mau prioritas paling efektif:</p>
+<h3>Prioritas 1</h3>
+<ul>
+<li>simpan <code>user profile</code></li>
+<li>router aware terhadap profile</li>
+</ul>
+<h3>Prioritas 2</h3>
+<ul>
+<li>cache news + market</li>
+<li>kurangi latency</li>
+</ul>
+<h3>Prioritas 3</h3>
+<ul>
+<li>visual preset + reusable content preset</li>
+</ul>
+<h3>Prioritas 4</h3>
+<ul>
+<li>admin page untuk lihat:</li>
+<li>routing decisions</li>
+<li>fetched news context</li>
+<li>market context</li>
+<li>final answer path</li>
+</ul>
+<p>---</p>
+<h2>5. Saran Implementasi Praktis</h2>
+<h3>Week 1</h3>
+<ul>
+<li>finalize routing flags</li>
+<li>finalize source-on-demand</li>
+<li>persist profile minimum</li>
+</ul>
+<h3>Week 2</h3>
+<ul>
+<li>add memory per user/session</li>
+<li>add analytics page for agent traces</li>
+</ul>
+<h3>Week 3</h3>
+<ul>
+<li>add content presets + media presets</li>
+<li>start packaging for team / client use</li>
+</ul>
+<p>---</p>
+<h2>6. Outcome yang Diinginkan</h2>
+<p>Kalau semua next step ini dilakukan, BotNesia akan jadi:</p>
+<ul>
+<li>current-info aware</li>
+<li>personalized</li>
+<li>multi-agent by design</li>
+<li>source-safe</li>
+<li>visual-capable</li>
+<li>production-ready</li>
+</ul>
+<p>Dan yang paling penting: tetap nyambung ke sistem yang sekarang, bukan bikin arsitektur baru yang putus dari runtime aktif.</p>
+  </div>
+</body>
+</html>

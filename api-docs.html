@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BotNesia API Docs</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --surface: #111; --border: #1e1e1e;
+    --text: #e2e2e2; --muted: #666; --accent: #00e5a0;
+    --blue: #4d9eff; --amber: #f5a623; --red: #ff4d4d;
+    --green: #00e5a0;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; font-size: 13px; display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+
+  /* SIDEBAR */
+  aside { background: var(--surface); border-right: 1px solid var(--border); padding: 24px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .logo { font-size: 14px; font-weight: 500; padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .logo span { color: var(--accent); }
+  .nav-group { margin-bottom: 8px; }
+  .nav-group-title { font-size: 10px; letter-spacing: .12em; color: var(--muted); padding: 6px 20px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 7px 20px; color: var(--muted); text-decoration: none; cursor: pointer; transition: color .15s, background .15s; border-left: 2px solid transparent; font-size: 12px; }
+  .nav-item:hover { color: var(--text); background: #181818; }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: #0f1f18; }
+  .method-pill { display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 3px; margin-right: 6px; font-weight: 500; }
+  .GET    { background: #0a2a1a; color: var(--green); }
+  .POST   { background: #1a1a2a; color: var(--blue); }
+  .PATCH  { background: #2a1a0a; color: var(--amber); }
+  .DELETE { background: #2a0a0a; color: var(--red); }
+
+  /* MAIN */
+  main { padding: 40px 48px; max-width: 860px; }
+  .endpoint { margin-bottom: 40px; border-bottom: 1px solid var(--border); padding-bottom: 40px; }
+  .endpoint:last-child { border-bottom: none; }
+  .ep-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .ep-method { font-size: 11px; font-weight: 500; padding: 4px 10px; }
+  .ep-path { font-size: 16px; font-weight: 500; color: var(--text); letter-spacing: -.01em; }
+  .ep-desc { color: var(--muted); margin-bottom: 20px; line-height: 1.6; font-size: 13px; }
+  .auth-badge { font-size: 10px; padding: 2px 8px; border: 1px solid #1e3320; color: var(--accent); border-radius: 3px; }
+  .public-badge { font-size: 10px; padding: 2px 8px; border: 1px solid #1e1e3a; color: var(--blue); border-radius: 3px; }
+
+  h2 { font-size: 22px; font-weight: 400; margin-bottom: 8px; letter-spacing: -.02em; }
+  h3 { font-size: 14px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin: 20px 0 10px; font-size: 10px; }
+
+  pre { background: var(--surface); border: 1px solid var(--border); padding: 16px; overflow-x: auto; line-height: 1.65; border-radius: 2px; }
+  .kw  { color: #c792ea; }
+  .str { color: #c3e88d; }
+  .num { color: #f78c6c; }
+  .key { color: #82aaff; }
+  .cmt { color: #3d5a6b; font-style: italic; }
+
+  .params-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .params-table th { text-align: left; padding: 8px 12px; font-size: 10px; letter-spacing: .1em; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 400; }
+  .params-table td { padding: 9px 12px; border-bottom: 1px solid #161616; font-size: 12px; vertical-align: top; }
+  .params-table td:first-child { color: var(--blue); }
+  .params-table td:nth-child(2) { color: var(--amber); }
+  .params-table td:last-child { color: var(--muted); }
+  .req { color: var(--red) !important; }
+
+  .section-title { font-size: 20px; font-weight: 400; margin: 40px 0 24px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 12px; letter-spacing: -.01em; }
+
+  .base-url { background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; margin-bottom: 32px; display: flex; align-items: center; gap: 10px; }
+  .base-url-label { font-size: 10px; color: var(--muted); letter-spacing: .08em; }
+  .base-url-val { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">Bot<span>Nesia</span> API</div>
+
+  <div class="nav-group">
+    <div class="nav-group-title">Auth</div>
+    <a class="nav-item active" onclick="show('register')"><span class="method-pill POST">POST</span>register</a>
+    <a class="nav-item" onclick="show('login')"><span class="method-pill POST">POST</span>login</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Bots</div>
+    <a class="nav-item" onclick="show('bots-list')"><span class="method-pill GET">GET</span>list bots</a>
+    <a class="nav-item" onclick="show('bots-create')"><span class="method-pill POST">POST</span>create bot</a>
+    <a class="nav-item" onclick="show('bots-config')"><span class="method-pill GET">GET</span>bot config</a>
+    <a class="nav-item" onclick="show('bots-update')"><span class="method-pill PATCH">PATCH</span>update bot</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Documents</div>
+    <a class="nav-item" onclick="show('docs-upload')"><span class="method-pill POST">POST</span>upload doc</a>
+    <a class="nav-item" onclick="show('docs-list')"><span class="method-pill GET">GET</span>list docs</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Chat</div>
+    <a class="nav-item" onclick="show('chat')"><span class="method-pill POST">POST</span>send message</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Analytics</div>
+    <a class="nav-item" onclick="show('analytics')"><span class="method-pill GET">GET</span>analytics</a>
+    <a class="nav-item" onclick="show('convs')"><span class="method-pill GET">GET</span>conversations</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Scale Tier</div>
+    <a class="nav-item" onclick="show('webhooks')"><span class="method-pill POST">POST</span>webhooks</a>
+    <a class="nav-item" onclick="show('apikeys')"><span class="method-pill POST">POST</span>api keys</a>
+  </div>
+</aside>
+
+<main id="main">
+
+  <div class="base-url">
+    <span class="base-url-label">BASE URL</span>
+    <span class="base-url-val">https://api.botnesia.id/v1</span>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="endpoint" id="ep-register">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/auth/register</span>
+      <span class="public-badge">public</span>
+    </div>
+    <p class="ep-desc">Daftar organisasi baru + user owner pertama. Otomatis mulai trial 14 hari gratis.</p>
+
+    <h3>Request body</h3>
+    <table class="params-table">
+      <tr><th>Field</th><th>Type</th><th>Keterangan</th></tr>
+      <tr><td>org_name</td><td class="req">string*</td><td>Nama perusahaan kamu</td></tr>
+      <tr><td>email</td><td class="req">string*</td><td>Email untuk login</td></tr>
+      <tr><td>password</td><td class="req">string*</td><td>Min 8 karakter</td></tr>
+      <tr><td>full_name</td><td>string</td><td>Nama lengkap (opsional)</td></tr>
+    </table>
+
+    <h3>Contoh request</h3>
+    <pre><span class="kw">POST</span> /auth/register
+<span class="kw">Content-Type</span>: application/json
+
+{
+  <span class="key">"org_name"</span>:  <span class="str">"TokoPintar"</span>,
+  <span class="key">"email"</span>:     <span class="str">"rizky@tokopintar.co"</span>,
+  <span class="key">"password"</span>:  <span class="str">"p4ssw0rd!"</span>,
+  <span class="key">"full_name"</span>: <span class="str">"Rizky Setiawan"</span>
+}</pre>
+
+    <h3>Response 201</h3>
+    <pre>{
+  <span class="key">"token"</span>:       <span class="str">"eyJhbGci..."</span>,
+  <span class="key">"org_id"</span>:      <span class="str">"a1b2c3d4-..."</span>,
+  <span class="key">"trial_ends"</span>:  <span class="str">"2025-09-04T10:00:00Z"</span>
+}</pre>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="endpoint" id="ep-login" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/auth/login</span>
+      <span class="public-badge">public</span>
+    </div>
+    <p class="ep-desc">Login dan dapatkan JWT token. Token berlaku 7 hari. Sertakan di header semua request yang memerlukan auth.</p>
+
+    <h3>Contoh request</h3>
+    <pre>POST /auth/login
+
+{ <span class="key">"email"</span>: <span class="str">"rizky@tokopintar.co"</span>, <span class="key">"password"</span>: <span class="str">"p4ssw0rd!"</span> }</pre>
+
+    <h3>Cara pakai token</h3>
+    <pre><span class="kw">Authorization</span>: Bearer eyJhbGci...</pre>
+
+    <h3>Response 200</h3>
+    <pre>{ <span class="key">"token"</span>: <span class="str">"eyJhbGci..."</span> }</pre>
+  </div>
+
+  <!-- LIST BOTS -->
+  <div class="endpoint" id="ep-bots-list" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method GET method-pill" style="font-size:12px;padding:5px 12px">GET</span>
+      <span class="ep-path">/bots</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Ambil semua bot milik organisasi kamu.</p>
+    <h3>Response 200</h3>
+    <pre>[
+  {
+    <span class="key">"id"</span>:           <span class="str">"uuid"</span>,
+    <span class="key">"name"</span>:         <span class="str">"Hana CS"</span>,
+    <span class="key">"status"</span>:       <span class="str">"active"</span>,
+    <span class="key">"primary_color"</span>:<span class="str">"#0066FF"</span>,
+    <span class="key">"total_convs"</span>:  <span class="num">1042</span>,
+    <span class="key">"total_msgs"</span>:   <span class="num">5210</span>
+  }
+]</pre>
+  </div>
+
+  <!-- CREATE BOT -->
+  <div class="endpoint" id="ep-bots-create" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/bots</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Buat bot baru. Gagal jika sudah mencapai batas bot di plan kamu.</p>
+    <h3>Request body</h3>
+    <table class="params-table">
+      <tr><th>Field</th><th>Type</th><th>Keterangan</th></tr>
+      <tr><td>name</td><td class="req">string*</td><td>Nama bot (tampil di header widget)</td></tr>
+      <tr><td>primary_color</td><td>string</td><td>Warna tema hex. Default #0066FF</td></tr>
+      <tr><td>greeting</td><td>string</td><td>Pesan sambutan pertama</td></tr>
+      <tr><td>system_prompt</td><td>string</td><td>Instruksi kepribadian AI (Scale)</td></tr>
+      <tr><td>language</td><td>string</td><td>"id" atau "en". Default "id"</td></tr>
+    </table>
+    <h3>Response 201</h3>
+    <pre>{ <span class="key">"bot_id"</span>: <span class="str">"uuid"</span>, <span class="key">"message"</span>: <span class="str">"Bot berhasil dibuat"</span> }</pre>
+  </div>
+
+  <!-- BOT CONFIG (public) -->
+  <div class="endpoint" id="ep-bots-config" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method GET method-pill" style="font-size:12px;padding:5px 12px">GET</span>
+      <span class="ep-path">/bots/{bot_id}/config</span>
+      <span class="public-badge">public</span>
+    </div>
+    <p class="ep-desc">Dipanggil oleh widget.js dari browser klien untuk load konfigurasi tampilan bot. Tidak perlu auth, tapi hanya return data tampilan — bukan system prompt.</p>
+    <h3>Response 200</h3>
+    <pre>{
+  <span class="key">"id"</span>:            <span class="str">"uuid"</span>,
+  <span class="key">"name"</span>:          <span class="str">"Hana"</span>,
+  <span class="key">"primary_color"</span>: <span class="str">"#0066FF"</span>,
+  <span class="key">"greeting"</span>:      <span class="str">"Halo! Ada yang bisa saya bantu?"</span>,
+  <span class="key">"language"</span>:      <span class="str">"id"</span>,
+  <span class="key">"status"</span>:        <span class="str">"active"</span>
+}</pre>
+  </div>
+
+  <!-- UPDATE BOT -->
+  <div class="endpoint" id="ep-bots-update" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method PATCH method-pill" style="font-size:12px;padding:5px 12px">PATCH</span>
+      <span class="ep-path">/bots/{bot_id}</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Update konfigurasi bot. Kirim hanya field yang ingin diubah. Perubahan warna / greeting langsung live di widget.</p>
+    <h3>Response 200</h3>
+    <pre>{ <span class="key">"message"</span>: <span class="str">"Bot diperbarui"</span> }</pre>
+  </div>
+
+  <!-- UPLOAD DOC -->
+  <div class="endpoint" id="ep-docs-upload" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/bots/{bot_id}/documents</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Upload dokumen untuk knowledge base bot. Format: PDF, DOCX, TXT. Diproses async — status bisa dicek via list documents.</p>
+    <h3>Request (multipart/form-data)</h3>
+    <pre><span class="kw">POST</span> /bots/uuid/documents
+<span class="kw">Content-Type</span>: multipart/form-data
+
+file: [binary — FAQ.pdf]</pre>
+    <h3>Contoh curl</h3>
+    <pre>curl -X POST \
+  https://api.botnesia.id/v1/bots/UUID/documents \
+  -H <span class="str">"Authorization: Bearer TOKEN"</span> \
+  -F <span class="str">"file=@/path/to/FAQ.pdf"</span></pre>
+    <h3>Response 201</h3>
+    <pre>{ <span class="key">"doc_id"</span>: <span class="str">"uuid"</span>, <span class="key">"status"</span>: <span class="str">"processing"</span> }</pre>
+  </div>
+
+  <!-- LIST DOCS -->
+  <div class="endpoint" id="ep-docs-list" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method GET method-pill" style="font-size:12px;padding:5px 12px">GET</span>
+      <span class="ep-path">/bots/{bot_id}/documents</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Daftar dokumen dan status prosesnya.</p>
+    <h3>Response 200</h3>
+    <pre>[{
+  <span class="key">"id"</span>:          <span class="str">"uuid"</span>,
+  <span class="key">"filename"</span>:    <span class="str">"FAQ.pdf"</span>,
+  <span class="key">"status"</span>:      <span class="str">"ready"</span>,   <span class="cmt">// pending | processing | ready | failed</span>
+  <span class="key">"chunk_count"</span>: <span class="num">47</span>,
+  <span class="key">"processed_at"</span>:<span class="str">"2025-08-01T..."</span>
+}]</pre>
+  </div>
+
+  <!-- CHAT -->
+  <div class="endpoint" id="ep-chat" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/chat/{bot_id}</span>
+      <span class="public-badge">public</span>
+    </div>
+    <p class="ep-desc">Core chat endpoint — dipanggil oleh iframe widget. Otomatis RAG dari knowledge base + kirim ke Claude API.</p>
+    <h3>Request body</h3>
+    <table class="params-table">
+      <tr><th>Field</th><th>Type</th><th>Keterangan</th></tr>
+      <tr><td>message</td><td class="req">string*</td><td>Pesan dari end-user. Max 2000 karakter</td></tr>
+      <tr><td>session_id</td><td>string</td><td>UUID conversation yang sedang aktif. Kosong = mulai baru</td></tr>
+      <tr><td>user_meta</td><td>object</td><td>Data user dari ChatbotWidget.identify(). Scale tier.</td></tr>
+    </table>
+    <h3>Contoh request (Scale tier dengan identity)</h3>
+    <pre>{
+  <span class="key">"message"</span>:    <span class="str">"Pesanan saya ke mana?"</span>,
+  <span class="key">"session_id"</span>: <span class="str">"conv-uuid-..."</span>,
+  <span class="key">"user_meta"</span>: {
+    <span class="key">"userId"</span>:     <span class="str">"user_9182"</span>,
+    <span class="key">"name"</span>:       <span class="str">"Budi Santoso"</span>,
+    <span class="key">"plan"</span>:       <span class="str">"premium"</span>,
+    <span class="key">"orderCount"</span>: <span class="num">14</span>
+  }
+}</pre>
+    <h3>Response 200</h3>
+    <pre>{
+  <span class="key">"answer"</span>:     <span class="str">"Halo Budi! Pesanan #TP-88291..."</span>,
+  <span class="key">"session_id"</span>: <span class="str">"conv-uuid-..."</span>,
+  <span class="key">"latency_ms"</span>: <span class="num">842</span>
+}</pre>
+  </div>
+
+  <!-- ANALYTICS -->
+  <div class="endpoint" id="ep-analytics" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method GET method-pill" style="font-size:12px;padding:5px 12px">GET</span>
+      <span class="ep-path">/bots/{bot_id}/analytics?days=30</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">Statistik bot: total percakapan, rata-rata rating, top pertanyaan, dan volume harian.</p>
+    <h3>Response 200</h3>
+    <pre>{
+  <span class="key">"summary"</span>: {
+    <span class="key">"total_convs"</span>:   <span class="num">1042</span>,
+    <span class="key">"avg_rating"</span>:    <span class="num">4.7</span>,
+    <span class="key">"avg_latency_ms"</span>:<span class="num">790</span>,
+    <span class="key">"handoff_count"</span>: <span class="num">23</span>
+  },
+  <span class="key">"daily_volume"</span>: [
+    { <span class="key">"date"</span>: <span class="str">"2025-08-01"</span>, <span class="key">"convs"</span>: <span class="num">42</span> }
+  ],
+  <span class="key">"top_questions"</span>: [
+    { <span class="key">"content"</span>: <span class="str">"Cara refund?"</span>, <span class="key">"freq"</span>: <span class="num">88</span> }
+  ]
+}</pre>
+  </div>
+
+  <!-- CONVS -->
+  <div class="endpoint" id="ep-convs" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method GET method-pill" style="font-size:12px;padding:5px 12px">GET</span>
+      <span class="ep-path">/bots/{bot_id}/conversations</span>
+      <span class="auth-badge">auth required</span>
+    </div>
+    <p class="ep-desc">List percakapan dengan pagination. Bisa dilihat per conversation untuk audit atau handoff ke human agent.</p>
+    <h3>Query params</h3>
+    <table class="params-table">
+      <tr><th>Param</th><th>Default</th><th>Keterangan</th></tr>
+      <tr><td>limit</td><td>20</td><td>Jumlah per halaman</td></tr>
+      <tr><td>offset</td><td>0</td><td>Skip N item pertama</td></tr>
+    </table>
+  </div>
+
+  <!-- WEBHOOKS -->
+  <div class="endpoint" id="ep-webhooks" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/webhooks</span>
+      <span class="auth-badge">auth required · Growth+</span>
+    </div>
+    <p class="ep-desc">Daftarkan URL untuk menerima event real-time. Tiap event dikirim dengan HMAC signature untuk verifikasi.</p>
+    <h3>Request body</h3>
+    <pre>{
+  <span class="key">"url"</span>:    <span class="str">"https://kamu.com/webhook"</span>,
+  <span class="key">"events"</span>: [
+    <span class="str">"conversation.started"</span>,
+    <span class="str">"handoff.needed"</span>,
+    <span class="str">"rating.submitted"</span>
+  ]
+}</pre>
+    <h3>Response 201</h3>
+    <pre>{
+  <span class="key">"webhook_id"</span>: <span class="str">"uuid"</span>,
+  <span class="key">"secret"</span>:     <span class="str">"abc123..."</span>,
+  <span class="key">"note"</span>:       <span class="str">"Simpan secret ini — tidak akan ditampilkan lagi."</span>
+}</pre>
+    <h3>Verifikasi signature di server kamu</h3>
+    <pre><span class="cmt"># Python</span>
+<span class="kw">import</span> hmac, hashlib
+sig = hmac.<span class="kw">new</span>(
+  secret.encode(),
+  request.body,
+  hashlib.sha256
+).hexdigest()
+<span class="kw">assert</span> sig == request.headers[<span class="str">"X-BotNesia-Signature"</span>]</pre>
+  </div>
+
+  <!-- API KEYS -->
+  <div class="endpoint" id="ep-apikeys" style="display:none">
+    <div class="ep-header">
+      <span class="ep-method POST method-pill" style="font-size:12px;padding:5px 12px">POST</span>
+      <span class="ep-path">/api-keys</span>
+      <span class="auth-badge">auth required · Scale only</span>
+    </div>
+    <p class="ep-desc">Buat API key untuk akses programatik. Key hanya ditampilkan sekali saat dibuat.</p>
+    <h3>Response 201</h3>
+    <pre>{
+  <span class="key">"key"</span>:  <span class="str">"bn_live_a3f8c..."</span>,
+  <span class="key">"note"</span>: <span class="str">"Simpan key ini — hanya ditampilkan sekali."</span>
+}</pre>
+  </div>
+
+</main>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.endpoint').forEach(function(el){ el.style.display='none'; });
+  document.querySelectorAll('.nav-item').forEach(function(el){ el.classList.remove('active'); });
+  document.getElementById('ep-'+id).style.display='block';
+  event.currentTarget.classList.add('active');
+  document.getElementById('main').scrollTop = 0;
+}
+</script>
+</body>
+</html>

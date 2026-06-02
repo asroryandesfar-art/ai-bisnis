@@ -1,0 +1,2036 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BotNesia — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg:#0a0a0a;--surface:#111;--card:#161616;--border:#222;--border2:#2a2a2a;
+  --text:#e8e3db;--muted:#555;--muted2:#888;
+  --accent:#00e5a0;--accent2:#00b37d;--blue:#4d9eff;--amber:#f5a623;--red:#ff4d4d;
+  --mono:'DM Mono',monospace;--sans:'Instrument Sans',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px}
+
+/* AUTH */
+#auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column}
+.auth-logo{font-family:var(--mono);font-size:22px;margin-bottom:40px}.auth-logo span{color:var(--accent)}
+.auth-box{background:var(--surface);border:1px solid var(--border2);padding:36px 40px;width:380px}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:28px}
+.auth-tab{flex:1;padding:10px;font-family:var(--mono);font-size:12px;text-align:center;cursor:pointer;color:var(--muted2);border-bottom:2px solid transparent;transition:all .15s;background:none;border-top:none;border-left:none;border-right:none}
+.auth-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.field{margin-bottom:16px}.field label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted2);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 14px;outline:none;transition:border .15s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:70px}.field select option{background:var(--card)}
+.btn-auth{width:100%;padding:12px;background:var(--accent);color:#000;font-family:var(--mono);font-size:13px;font-weight:500;border:none;cursor:pointer;margin-top:8px;transition:opacity .15s;letter-spacing:.04em}
+.btn-auth:hover{opacity:.85}
+.auth-err{font-family:var(--mono);font-size:11px;color:var(--red);text-align:center;margin-top:12px;min-height:16px}
+.auth-hint{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:16px}.auth-hint span{color:var(--accent);cursor:pointer}
+
+/* SERVER STATUS BAR */
+#server-bar{display:none;padding:7px 24px;font-family:var(--mono);font-size:11px;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+#server-bar.offline{background:#1a0808;color:#ff8888;display:flex}
+#server-bar.online{background:#0a1a12;color:var(--accent);display:flex}
+.server-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* LAYOUT */
+#app{display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 0px);display:none}
+
+/* SIDEBAR */
+aside{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sb-head{padding:20px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sb-logo{font-family:var(--mono);font-size:14px}.sb-logo span{color:var(--accent)}
+.sb-plan{font-family:var(--mono);font-size:9px;padding:3px 8px;background:#0a2a1a;color:var(--accent);letter-spacing:.06em}
+.sb-org{padding:12px 20px;border-bottom:1px solid var(--border)}
+.sb-org-name{font-size:13px;font-weight:500}
+.sb-org-sub{font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:2px}
+nav{flex:1;overflow-y:auto;padding:12px 0}
+.nav-label{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--muted);padding:8px 20px 4px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:var(--muted2);font-size:13px;transition:all .12s;border-left:2px solid transparent;user-select:none}
+.nav-item:hover{color:var(--text);background:#181818}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:#0a1a12}
+.nav-item svg{width:14px;height:14px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.5}
+.nav-badge{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--card);padding:2px 6px;color:var(--muted2)}
+.sb-bottom{padding:16px 20px;border-top:1px solid var(--border)}
+.sb-user{display:flex;align-items:center;gap:10px}
+.sb-avatar{width:30px;height:30px;border-radius:50%;background:#0a2a1a;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--accent);flex-shrink:0}
+.sb-user-name{font-size:12px;font-weight:500}.sb-user-email{font-family:var(--mono);font-size:10px;color:var(--muted2)}
+.btn-logout{margin-left:auto;background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;transition:color .15s}.btn-logout:hover{color:var(--red)}
+
+/* MAIN */
+main{overflow-y:auto;display:flex;flex-direction:column}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 32px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:500;letter-spacing:-.01em}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.page{padding:28px 32px;flex:1;display:none}
+.page.active{display:block;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* CARDS */
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.metric-card{background:var(--card);border:1px solid var(--border);padding:20px;position:relative;overflow:hidden}
+.metric-label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted2);margin-bottom:8px;text-transform:uppercase}
+.metric-val{font-size:28px;font-weight:500;line-height:1;letter-spacing:-.02em}
+.metric-delta{font-family:var(--mono);font-size:10px;margin-top:6px}
+.delta-up{color:var(--accent)}.delta-dn{color:var(--red)}
+.metric-accent{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent)}
+.card{background:var(--card);border:1px solid var(--border)}
+.card-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:13px;font-weight:500}
+.card-body{padding:20px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* BUTTONS */
+.btn{font-family:var(--mono);font-size:11px;padding:7px 16px;border:1px solid var(--border2);background:transparent;color:var(--muted2);cursor:pointer;letter-spacing:.04em;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--text);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#000;font-weight:500}
+.btn.primary:hover{opacity:.85}
+.btn.danger{border-color:#3a1010;color:var(--red)}.btn.danger:hover{background:#1a0808}
+.btn.sm{padding:5px 12px;font-size:10px}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+.loading-spin{display:inline-block;width:10px;height:10px;border:1.5px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* BOTS */
+.bot-card{background:var(--card);border:1px solid var(--border);padding:20px;transition:border-color .15s}
+.bot-card:hover{border-color:var(--border2)}
+.bot-card-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.bot-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.bot-dot.active{background:var(--accent)}.bot-dot.inactive{background:var(--muted)}
+.bot-name{font-size:14px;font-weight:500}
+.bot-stat-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.bot-stat{background:var(--surface);padding:10px 12px}
+.bot-stat-v{font-family:var(--mono);font-size:16px;font-weight:500}
+.bot-stat-l{font-family:var(--mono);font-size:9px;color:var(--muted2);margin-top:2px;letter-spacing:.05em}
+.snippet-box{background:var(--surface);border:1px solid var(--border);font-family:var(--mono);font-size:11px;color:#888;padding:8px 12px;line-height:1.7;margin-top:10px;cursor:pointer;transition:border-color .15s}
+.snippet-box:hover{border-color:var(--accent);color:var(--accent)}
+.snippet-hl{color:var(--accent)}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#141414}
+.badge{font-family:var(--mono);font-size:10px;padding:2px 8px;letter-spacing:.04em;display:inline-block}
+.badge.green{background:#0a2a1a;color:var(--accent)}
+.badge.amber{background:#2a1a00;color:var(--amber)}
+.badge.red{background:#2a0808;color:var(--red)}
+.badge.gray{background:var(--card);color:var(--muted2)}
+.badge.blue{background:#081a2a;color:var(--blue)}
+
+/* DOCS */
+.drop-zone{border:1px dashed var(--border2);padding:36px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:20px}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:#0a1a12}
+
+/* CHAT */
+.chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.chat-msg{display:flex;flex-direction:column;max-width:75%}
+.chat-msg.user{align-self:flex-end;align-items:flex-end}.chat-msg.bot{align-self:flex-start}
+.chat-bubble{padding:11px 15px;font-size:13px;line-height:1.55}
+.chat-msg.bot .chat-bubble{background:var(--card);border:1px solid var(--border)}
+.chat-msg.user .chat-bubble{background:var(--accent);color:#000}
+.chat-meta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;padding:0 2px}
+.chat-input-row{display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface)}
+.chat-input{flex:1;background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--sans);font-size:13px;padding:10px 14px;outline:none}
+.chat-input:focus{border-color:var(--accent)}
+.chat-select{background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 12px;outline:none}
+.typing-anim{display:flex;gap:4px;padding:4px 0;align-items:center}
+.typing-anim span{width:5px;height:5px;border-radius:50%;background:var(--muted2);animation:ta .9s infinite}
+.typing-anim span:nth-child(2){animation-delay:.15s}.typing-anim span:nth-child(3){animation-delay:.3s}
+@keyframes ta{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+
+/* SETTINGS */
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.setting-row:last-child{border-bottom:none}
+.setting-info h4{font-size:13px;font-weight:400}.setting-info p{font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:3px}
+.toggle{width:38px;height:20px;border-radius:10px;cursor:pointer;background:var(--border2);position:relative;transition:background .2s;border:none;flex-shrink:0}
+.toggle.on{background:var(--accent)}.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}
+.toggle.on::after{transform:translateX(18px)}
+.fi{display:flex;gap:8px;align-items:center}
+.fi input{background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none}
+.fi input:focus{border-color:var(--accent)}
+
+/* CHART */
+.chart-wrap{position:relative;width:100%}
+
+/* SKELETON */
+.skel{background:linear-gradient(90deg,var(--card) 25%,var(--border) 50%,var(--card) 75%);background-size:200% 100%;animation:skel 1.2s infinite;border-radius:2px;height:20px}
+@keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:8000;display:none;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border2);padding:28px 32px;width:440px;max-width:95vw}
+.modal-card{background:var(--surface);border:1px solid var(--border2);width:min(920px,95vw);max-height:90vh;display:flex;flex-direction:column}
+.modal-head,.modal-foot{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.modal-foot{border-bottom:none;border-top:1px solid var(--border);justify-content:flex-end}
+.modal-body{padding:18px 20px;overflow:auto}
+.modal-x{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+.modal-x:hover{color:var(--text)}
+.modal h3{font-size:16px;font-weight:500;margin-bottom:20px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+
+/* CONVERSATION DETAIL */
+.conv-detail-summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.conv-detail-chip{font-family:var(--mono);font-size:10px;color:var(--muted2);border:1px solid var(--border);padding:6px 8px;background:var(--card)}
+.conv-detail-msgs{display:flex;flex-direction:column;gap:12px;max-height:56vh;overflow:auto}
+.conv-msg{display:flex;flex-direction:column;max-width:78%}
+.conv-msg.user{align-self:flex-end;align-items:flex-end}
+.conv-msg.assistant,.conv-msg.system{align-self:flex-start;align-items:flex-start}
+.conv-msg-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.conv-msg-role{font-family:var(--mono);font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em}
+.conv-msg-time{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.conv-msg-body{padding:12px 14px;border-radius:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.conv-msg.user .conv-msg-body{background:var(--accent);color:#000}
+.conv-msg.assistant .conv-msg-body,.conv-msg.system .conv-msg-body{background:var(--card);border:1px solid var(--border)}
+.conv-msg.system .conv-msg-body{border-style:dashed;color:var(--muted)}
+.conv-msg-actions{margin-top:8px;display:flex;justify-content:flex-end;width:100%}
+.conv-msg.user .conv-msg-actions{justify-content:flex-end}
+.conv-msg.assistant .conv-msg-actions,.conv-msg.system .conv-msg-actions{justify-content:flex-start}
+.conv-msg-sources{display:none;margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.03);border:1px dashed var(--border);width:100%}
+.conv-empty{color:var(--muted);text-align:center;padding:24px}
+
+/* TOAST */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border2);font-family:var(--mono);font-size:12px;padding:12px 20px;color:var(--text);z-index:9000;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none;max-width:320px}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.success{border-color:var(--accent);color:var(--accent)}
+#toast.error{border-color:var(--red);color:var(--red)}
+
+/* EMPTY */
+.empty{text-align:center;padding:60px 20px;color:var(--muted2)}
+.empty-icon{font-size:28px;margin-bottom:12px;opacity:.3}
+.empty h4{font-size:14px;font-weight:400;margin-bottom:6px;color:var(--text)}
+.empty p{font-family:var(--mono);font-size:11px}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2)}
+</style>
+</head>
+<body>
+
+<!-- SERVER STATUS BAR -->
+<div id="server-bar">
+  <div class="server-dot"></div>
+  <span id="server-msg">Memeriksa koneksi server...</span>
+  <button class="btn sm" style="margin-left:auto" onclick="changeApiUrl()">Ubah URL API</button>
+</div>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-logo">Bot<span>Nesia</span></div>
+  <div class="auth-box">
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="authTab('login',this)">Login</button>
+      <button class="auth-tab" onclick="authTab('register',this)">Daftar</button>
+    </div>
+    <div id="auth-login">
+      <div class="field"><label>Email</label><input id="a-email" type="email" placeholder="email@perusahaan.com"></div>
+      <div class="field"><label>Password</label><input id="a-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn-auth" id="login-btn" onclick="doLogin()">Masuk →</button>
+      <p class="auth-err" id="auth-err"></p>
+    </div>
+    <div id="auth-register" style="display:none">
+      <div class="field"><label>Nama Perusahaan</label><input id="r-org" placeholder="PT Maju Bersama"></div>
+      <div class="field"><label>Email</label><input id="r-email" type="email" placeholder="kamu@perusahaan.com"></div>
+      <div class="field"><label>Password</label><input id="r-pass" type="password" placeholder="Min 8 karakter"></div>
+      <button class="btn-auth" id="reg-btn" onclick="doRegister()">Buat akun — gratis 14 hari →</button>
+      <p class="auth-err" id="reg-err"></p>
+    </div>
+    <p class="auth-hint">Server offline? <span onclick="useMockMode()">Lanjut dengan data demo →</span></p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <aside>
+    <div class="sb-head">
+      <span class="sb-logo">Bot<span>Nesia</span></span>
+      <span class="sb-plan" id="plan-badge">GROWTH</span>
+    </div>
+    <div class="sb-org">
+      <div class="sb-org-name" id="sb-org-name">—</div>
+      <div class="sb-org-sub" id="sb-org-sub">memuat...</div>
+    </div>
+    <nav>
+      <div class="nav-label">Overview</div>
+      <div class="nav-item active" onclick="goPage('overview',this)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Dashboard
+      </div>
+      <div class="nav-label">Bots</div>
+      <div class="nav-item" onclick="goPage('bots',this)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>Semua Bot
+        <span class="nav-badge" id="nb-bots">—</span>
+      </div>
+      <div class="nav-item" onclick="goPage('chat-test',this)">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Test Chat
+      </div>
+      <div class="nav-label">Knowledge Base</div>
+      <div class="nav-item" onclick="goPage('docs',this)">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Dokumen
+        <span class="nav-badge" id="nb-docs">—</span>
+      </div>
+      <div class="nav-label">Analytics</div>
+      <div class="nav-item" onclick="goPage('analytics',this)">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Statistik
+      </div>
+      <div class="nav-item" onclick="goPage('conversations',this)">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Percakapan
+      </div>
+      <div class="nav-label">Akun</div>
+      <div class="nav-item" onclick="goPage('settings',this)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Pengaturan
+      </div>
+    </nav>
+    <div class="sb-bottom">
+      <div class="sb-user">
+        <div class="sb-avatar" id="sb-avatar">—</div>
+        <div>
+          <div class="sb-user-name" id="sb-user-name">—</div>
+          <div class="sb-user-email" id="sb-user-email">—</div>
+        </div>
+        <button class="btn-logout" onclick="doLogout()" title="Logout">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <span class="topbar-title" id="topbar-title">Dashboard</span>
+      <div class="topbar-right">
+        <span id="mode-badge" style="font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--border)"></span>
+        <button class="btn primary" onclick="showModal('modal-create-bot')">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Buat Bot
+        </button>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="page active" id="page-overview">
+      <div class="metrics-row">
+        <div class="metric-card"><div class="metric-label">Total percakapan</div><div class="metric-val" id="m-convs">—</div><div class="metric-delta delta-up" id="m-convs-d"></div><div class="metric-accent"></div></div>
+        <div class="metric-card"><div class="metric-label">Resolusi rate</div><div class="metric-val" id="m-res">—</div><div class="metric-delta" id="m-res-d"></div></div>
+        <div class="metric-card"><div class="metric-label">Avg response</div><div class="metric-val" id="m-lat">—</div><div class="metric-delta delta-up">vs 4+ jam manual</div></div>
+        <div class="metric-card"><div class="metric-label">Avg rating</div><div class="metric-val" id="m-rat">—</div><div class="metric-delta" id="m-rat-d"></div></div>
+      </div>
+      <div class="grid-2" style="gap:16px">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Volume 30 hari</span></div>
+          <div class="card-body"><div class="chart-wrap" style="height:180px"><canvas id="chart-volume" role="img" aria-label="Grafik volume percakapan 30 hari terakhir"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Bot aktif</span></div>
+          <div class="card-body" style="padding:12px" id="bot-mini-list"><div class="skel" style="margin-bottom:8px"></div><div class="skel" style="width:70%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTS -->
+    <div class="page" id="page-bots">
+      <div class="grid-3" id="bots-grid"></div>
+    </div>
+
+    <!-- CHAT TEST -->
+    <div class="page" id="page-chat-test" style="padding-bottom:0">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">Bot aktif:</span>
+        <select class="chat-select" id="chat-bot-select" onchange="resetChat()"></select>
+        <span class="badge green" id="chat-mode-badge">● AI Cloud</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto">API: <span id="api-url-label" style="color:var(--accent)">localhost:8000</span></span>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 52px - 32px - 52px - 32px);overflow:hidden">
+        <div class="chat-messages" id="chat-msgs"></div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chat-input" placeholder="Ketik pesan untuk test bot..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}">
+          <button class="btn" id="mic-btn" onclick="toggleVoiceInput()" title="Voice input">Mic</button>
+          <button class="btn" id="tts-btn" onclick="toggleTTS()" title="Voice output">Suara: OFF</button>
+          <button class="btn" id="gen-image-btn" onclick="genImageFromInput()" title="Generate image">Gambar</button>
+          <button class="btn" id="gen-video-btn" onclick="genVideoFromInput()" title="Generate video">Video</button>
+          <button class="btn primary" id="send-btn" onclick="sendChat()">Kirim →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCS -->
+    <div class="page" id="page-docs">
+      <div id="doc-bot-bar" style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">Knowledge base untuk:</span>
+        <select class="chat-select" id="doc-bot-select" onchange="loadDocs()"></select>
+        <button class="btn" style="margin-left:auto" onclick="reindexEmbeddings()">Reindex embeddings</button>
+      </div>
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-inp').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+        <input type="file" id="file-inp" style="display:none" accept=".pdf,.docx,.txt" multiple onchange="handleFiles(this.files)">
+        <div style="font-size:28px;margin-bottom:10px;opacity:.5">⊕</div>
+        <div style="font-size:13px;color:var(--muted2)">Drag file atau <span style="color:var(--accent)">klik untuk pilih</span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px">PDF, DOCX, TXT — max 10MB</div>
+      </div>
+      <div id="upload-progress" style="display:none;margin-bottom:16px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:6px" id="upload-filename">Mengupload...</div>
+        <div style="height:3px;background:var(--border);overflow:hidden"><div id="upload-bar" style="height:100%;background:var(--accent);width:0%;transition:width .2s"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Dokumen</span>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)" id="doc-summary">memuat...</span>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nama file</th><th>Ukuran</th><th>Chunks</th><th>Status</th><th>Tanggal</th><th></th></tr></thead>
+          <tbody id="docs-table"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)"><div class="loading-spin" style="margin:0 auto"></div></td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div class="page" id="page-analytics">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">Analisa bot:</span>
+        <select class="chat-select" id="anal-bot-select" onchange="loadAnalytics()"></select>
+        <select class="chat-select" id="anal-days" onchange="loadAnalytics()">
+          <option value="7">7 hari</option>
+          <option value="30" selected>30 hari</option>
+          <option value="90">90 hari</option>
+        </select>
+      </div>
+      <div class="metrics-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="metric-card"><div class="metric-label">Percakapan</div><div class="metric-val" id="a-convs">—</div></div>
+        <div class="metric-card"><div class="metric-label">Handoff ke manusia</div><div class="metric-val" id="a-handoff">—</div><div class="metric-delta" id="a-handoff-pct"></div></div>
+        <div class="metric-card"><div class="metric-label">Avg latency</div><div class="metric-val" id="a-lat">—</div></div>
+      </div>
+      <div class="grid-2" style="gap:16px">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Volume harian</span></div>
+          <div class="card-body"><div class="chart-wrap" style="height:200px"><canvas id="chart-daily" role="img" aria-label="Grafik volume percakapan harian"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Top pertanyaan</span></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>#</th><th>Pertanyaan</th><th>Frekuensi</th></tr></thead>
+            <tbody id="top-q-table"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONVERSATIONS -->
+    <div class="page" id="page-conversations">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <select class="chat-select" id="conv-bot-select" onchange="loadConvs()"></select>
+        <select class="chat-select" onchange="filterConvs(this.value)">
+          <option value="all">Semua</option><option value="handoff">Butuh handoff</option><option value="resolved">Resolved</option>
+        </select>
+        <button class="btn" onclick="loadConvs()">Refresh</button>
+      </div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Waktu</th><th>User</th><th>Pesan</th><th>Rating</th><th>Status</th><th></th></tr></thead>
+        <tbody id="convs-table"></tbody>
+      </table></div></div>
+    </div>
+
+    <!-- CONV DETAIL MODAL -->
+    <div class="modal-overlay" id="modal-conv-detail" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <div style="font-size:13px;font-weight:600">Detail Percakapan</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted2)" id="conv-detail-id">—</div>
+          </div>
+          <button class="modal-x" onclick="closeModal('modal-conv-detail')">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="conv-detail-summary" id="conv-detail-summary"></div>
+          <div class="conv-detail-msgs" id="conv-detail-msgs"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closeModal('modal-conv-detail')">Tutup</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="page" id="page-settings">
+      <div class="grid-2" style="gap:24px">
+        <div>
+          <div style="margin-bottom:28px">
+            <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">Koneksi API</h3>
+            <div class="setting-row">
+              <div class="setting-info"><h4>Base URL server</h4><p>Alamat FastAPI yang sedang berjalan</p></div>
+              <div class="fi">
+                <input id="s-api-url" style="width:200px" value="" placeholder="http://localhost:8000">
+                <button class="btn primary" onclick="saveApiUrl()">Simpan</button>
+                <button class="btn" onclick="resetApiUrl()">Reset</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><h4>Status koneksi</h4><p id="server-status-text">Memeriksa...</p></div>
+              <button class="btn" onclick="checkHealth()">Cek koneksi</button>
+            </div>
+          </div>
+          <div>
+            <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">Notifikasi</h3>
+            <div class="setting-row">
+              <div class="setting-info"><h4>Alert handoff</h4><p>Saat bot tidak bisa jawab</p></div>
+              <button class="toggle on" onclick="this.classList.toggle('on');toast('Disimpan','success')"></button>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><h4>Laporan mingguan</h4><p>Ringkasan tiap Senin pagi</p></div>
+              <button class="toggle on" onclick="this.classList.toggle('on');toast('Disimpan','success')"></button>
+            </div>
+          </div>
+          <div style="margin-top:28px">
+            <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">Akun</h3>
+            <div class="setting-row">
+              <div class="setting-info"><h4>Keluar</h4><p>Hapus sesi login dari browser ini</p></div>
+              <button class="btn" onclick="doLogout()">Keluar</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="margin-bottom:28px">
+            <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">Berlangganan</h3>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-bottom:10px" id="plan-status">memuat...</div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px" id="plan-cards">
+              <div class="card" style="padding:12px">
+                <div>
+                  <div style="font-size:13px;font-weight:500">Growth</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:4px">AI Cloud · Mahal</div>
+                </div>
+                <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)">Lebih pintar + berita terbaru</div>
+                <div style="margin-top:10px;display:flex;gap:8px">
+                  <button class="btn" style="width:100%" onclick="setPlan('growth')">Upgrade</button>
+                </div>
+              </div>
+              <div class="card" style="padding:12px">
+                <div>
+                  <div style="font-size:13px;font-weight:500">Scale</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:4px">AI Cloud · Mahal+</div>
+                </div>
+                <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)">Termasuk API Key</div>
+                <div style="margin-top:10px;display:flex;gap:8px">
+                  <button class="btn" style="width:100%" onclick="setPlan('scale')">Upgrade</button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)">
+              AI lokal dinonaktifkan. Sistem wajib memakai AI Cloud via <span style="color:var(--text)">GROQ_API_KEY</span>.
+            </div>
+          </div>
+          <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">API Key & Webhook</h3>
+          <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+            <div class="setting-info"><h4>API Key (Scale tier)</h4><p>Untuk akses programatik langsung</p></div>
+            <div class="fi" style="width:100%">
+              <input id="s-apikey" style="flex:1;font-family:var(--mono);font-size:11px" placeholder="bn_live_••••••••••••••••" readonly>
+              <button class="btn" onclick="generateApiKey()">Generate</button>
+            </div>
+          </div>
+          <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:8px;margin-top:12px">
+            <div class="setting-info"><h4>Webhook URL</h4><p>Terima event real-time dari bot</p></div>
+            <div class="fi" style="width:100%">
+              <input id="s-webhook" style="flex:1" placeholder="https://kamu.com/webhook">
+              <button class="btn primary" onclick="saveWebhook()">Simpan</button>
+            </div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Events: conversation.started, handoff.needed, rating.submitted</div>
+          </div>
+
+          <div style="margin-top:28px">
+            <h3 style="font-size:13px;font-weight:500;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)">Integrations</h3>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-bottom:10px" id="int-status">memuat...</div>
+
+            <div class="card" style="padding:12px;margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:500">Gmail</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:4px">Connect untuk baca email masuk (readonly)</div>
+                </div>
+                <button class="btn primary" onclick="connectGmail()">Connect Gmail</button>
+              </div>
+              <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)" id="gmail-conn">status: —</div>
+              <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center">
+                <select class="chat-select" id="gmail-bot-select" style="min-width:180px"></select>
+                <button class="btn" onclick="saveGmailBot()">Map ke bot</button>
+                <button class="btn" onclick="pollGmail()">Poll email</button>
+                <button class="btn" onclick="runGmailPollerOnce()">Run poller sekali</button>
+              </div>
+              <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)" id="gmail-poller">poller: â€”</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:500">Meta (WhatsApp / Facebook / Instagram)</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:4px">Webhook URL: <span id="meta-webhook-url">—</span></div>
+                </div>
+                <button class="btn" onclick="saveMeta()">Simpan</button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+                <div class="field" style="margin:0"><label>WA Phone Number ID</label><input id="m-wa-phone" placeholder="contoh: 1234567890"></div>
+                <div class="field" style="margin:0"><label>WA Token</label><input id="m-wa-token" placeholder="ambil dari Meta Developers (WhatsApp API Setup)" type="password"></div>
+                <div class="field" style="margin:0"><label>FB Page Token (opsional)</label><input id="m-page-token" placeholder="EAAG..." type="password"></div>
+                <div class="field" style="margin:0"><label>IG Token (opsional)</label><input id="m-ig-token" placeholder="IGQ..." type="password"></div>
+                <div class="field" style="margin:0"><label>Nomor tujuan test (WA)</label><input id="m-wa-to" placeholder="62812xxxxxxx"></div>
+                <div class="field" style="margin:0"><label>Template name (WA)</label><input id="m-wa-template" placeholder="hello_world"></div>
+                <div class="field" style="margin:0"><label>Template language</label><input id="m-wa-lang" placeholder="en_US" value="en_US"></div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+                <button class="btn primary" onclick="sendWATest()">Kirim test WA</button>
+                <button class="btn" onclick="sendWATemplate()">Kirim template WA</button>
+                <select class="chat-select" id="wa-bot-select" style="min-width:180px"></select>
+                <button class="btn" onclick="saveWABot()">Map WA->bot</button>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--muted2)">Untuk receive pesan WA, webhook Meta wajib URL publik (HTTPS).</div>
+              </div>
+              <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted2)" id="meta-conn">status: —</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL CREATE BOT -->
+<div class="modal-overlay" id="modal-create-bot">
+  <div class="modal">
+    <h3>Buat bot baru</h3>
+    <div class="field"><label>Nama bot *</label><input id="m-name" placeholder="Contoh: Hana CS"></div>
+    <div class="field"><label>Bahasa</label>
+      <select id="m-lang"><option value="id">Indonesia</option><option value="en">English</option></select>
+    </div>
+    <div class="field"><label>Pesan sambutan</label><textarea id="m-greeting">Halo! Ada yang bisa saya bantu?</textarea></div>
+    <div class="field"><label>System prompt (instruksi AI)</label><textarea id="m-prompt" placeholder="Kamu adalah CS yang ramah dan profesional dari [nama perusahaan]. Jawab berdasarkan FAQ yang tersedia..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-create-bot')">Batal</button>
+      <button class="btn primary" id="create-bot-btn" onclick="createBot()">Buat Bot →</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// API CLIENT (inline version — sama logika dengan api.js external)
+// ═══════════════════════════════════════════════════════════════
+
+var DEFAULT_API_BASE =
+  (location.protocol === 'http:' || location.protocol === 'https:')
+    ? location.origin
+    : 'http://localhost:8000';
+
+var API_BASE   = localStorage.getItem('bn_api_url') || DEFAULT_API_BASE;
+var TOKEN_KEY  = 'bn_token';
+var MOCK_MODE  = false;
+
+function getToken()    { return localStorage.getItem(TOKEN_KEY); }
+function setToken(t)   { localStorage.setItem(TOKEN_KEY, t); }
+function clearToken()  { localStorage.removeItem(TOKEN_KEY); }
+
+function errMsg(e) {
+  if (!e) return 'error';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  if (e.detail) return e.detail;
+  try { return JSON.stringify(e); } catch { return String(e); }
+}
+
+async function apiFetch(method, path, body, isForm) {
+  const headers = {};
+  if (!isForm) headers['Content-Type'] = 'application/json';
+  if (getToken()) headers['Authorization'] = 'Bearer ' + getToken();
+
+  const opts = { method, headers };
+  if (body) opts.body = isForm ? body : JSON.stringify(body);
+
+  const res = await fetch(API_BASE + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    clearToken(); showAuthScreen();
+    const err = new Error('Sesi berakhir.');
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(data.detail || ('Error ' + res.status));
+    err.status = res.status;
+    err.data = data;
+    err.retryAfter = res.headers.get('Retry-After');
+    throw err;
+  }
+  return data;
+}
+
+// ─── MOCK DATA ─────────────────────────────────────────────────
+var MOCK = {
+  org: {
+    id:'org-demo',
+    name:'Organisasi Demo',
+    slug:'demo',
+    plan:'growth',
+    billing_status:'trialing',
+    trial_ends_at: new Date(Date.now()+14*86400000).toISOString(),
+    limits:{ bot_limit:3, conv_limit:2000, doc_limit:50 },
+    ai:{ requested_mode:'cloud', effective_mode:'local', cloud_ready:false, cloud_model:null }
+  },
+  bots: [
+    { id:'bot-1', name:'Hana CS', status:'active', primary_color:'#0066FF', greeting:'Halo! Ada yang bisa dibantu?', system_prompt:'Kamu adalah CS TokoPintar yang ramah dan profesional.', total_convs:842, total_msgs:4210 },
+    { id:'bot-2', name:'Dika Sales', status:'active', primary_color:'#00e5a0', greeting:'Hai! Mau tahu lebih soal produk kami?', system_prompt:'Kamu adalah asisten penjualan yang membantu pelanggan memilih produk.', total_convs:200, total_msgs:1000 }
+  ],
+  docs: {
+    'bot-1': [
+      { id:'d1', filename:'FAQ_Produk.pdf',   file_size:127000,  chunk_count:47, status:'ready', created_at:'2025-07-15' },
+      { id:'d2', filename:'SOP_Refund.docx',  file_size:38912,   chunk_count:12, status:'ready', created_at:'2025-07-20' },
+      { id:'d3', filename:'Katalog_2025.pdf', file_size:2199552, chunk_count:68, status:'ready', created_at:'2025-08-01' }
+    ],
+    'bot-2': [
+      { id:'d4', filename:'PriceList_2025.pdf', file_size:512000, chunk_count:24, status:'ready', created_at:'2025-07-30' }
+    ]
+  },
+  convs: {
+    'bot-1': [
+      { id:'c1', started_at:'2025-08-21T10:42:00Z', end_user_name:'Budi S.',  msg_count:6,  rating:5, handoff_needed:false },
+      { id:'c2', started_at:'2025-08-21T10:38:00Z', end_user_name:'Rina W.',  msg_count:12, rating:4, handoff_needed:false },
+      { id:'c3', started_at:'2025-08-21T10:21:00Z', end_user_name:null,       msg_count:3,  rating:null, handoff_needed:true  },
+    ],
+    'bot-2': [
+      { id:'c4', started_at:'2025-08-21T09:55:00Z', end_user_name:'Ahmad K.', msg_count:8,  rating:5, handoff_needed:false },
+    ]
+  },
+  analytics: (botId) => ({
+    summary: { total_convs: botId==='bot-1'?842:200, handoff_count: botId==='bot-1'?23:5, avg_latency_ms: 810, avg_rating: 4.7 },
+    daily_volume: Array.from({length:30},(_,i)=>({ date: new Date(Date.now()-i*86400000).toISOString().slice(0,10), convs: Math.floor(15+Math.random()*50) })).reverse(),
+    top_questions: [
+      { content:'Cara cek status pesanan?', frequency:88 },
+      { content:'Proses refund berapa lama?', frequency:72 },
+      { content:'Metode pembayaran apa saja?', frequency:65 },
+      { content:'Cara batalkan pesanan?', frequency:44 },
+    ]
+  })
+};
+
+// ─── API CALLS w/ MOCK FALLBACK ────────────────────────────────
+async function apiLogin(email, password) {
+  if (MOCK_MODE) {
+    setToken('mock_token_demo');
+    return { token:'mock_token_demo', org_id:'org-demo', trial_ends: new Date(Date.now()+14*86400000).toISOString() };
+  }
+  return apiFetch('POST', '/auth/login', { email, password });
+}
+
+async function apiRegister(orgName, email, password) {
+  if (MOCK_MODE) { setToken('mock_token_demo'); return { token:'mock_token_demo', org_id:'org-new' }; }
+  return apiFetch('POST', '/auth/register', { org_name:orgName, email, password });
+}
+
+async function apiGetOrg() {
+  if (MOCK_MODE) return MOCK.org;
+  return apiFetch('GET', '/org');
+}
+
+async function apiUpdatePlan(plan) {
+  if (MOCK_MODE) { MOCK.org.plan = plan; return { message:'ok', plan: plan, limits: MOCK.org.limits }; }
+  return apiFetch('PATCH', '/org/plan', { plan: plan });
+}
+
+async function apiGetIntegrations() {
+  if (MOCK_MODE) return { gmail:{connected:false,email:null}, meta:{connected:false,wa_phone_number_id:null}, webhook:{meta_url:'/webhooks/meta'} };
+  return apiFetch('GET', '/integrations');
+}
+
+async function apiSaveMetaIntegration(body) {
+  if (MOCK_MODE) return { message:'ok', meta:{ wa_phone_number_id: body.wa_phone_number_id || null } };
+  return apiFetch('POST', '/integrations/meta', body);
+}
+
+async function apiMetaMapBot(phoneNumberId, botId) {
+  if (MOCK_MODE) return { message:'ok' };
+  return apiFetch('POST', '/integrations/meta/map-bot', { wa_phone_number_id: phoneNumberId, bot_id: botId });
+}
+
+async function apiMetaSendTest(toNumber, text) {
+  if (MOCK_MODE) return { status:'ok' };
+  return apiFetch('POST', '/integrations/meta/send-test', { to_number: toNumber, text: text });
+}
+
+async function apiMetaSendTemplate(toNumber, templateName, languageCode) {
+  if (MOCK_MODE) return { status:'ok' };
+  return apiFetch('POST', '/integrations/meta/send-template', {
+    to_number: toNumber,
+    template_name: templateName,
+    language_code: languageCode,
+  });
+}
+
+async function apiStartGmail() {
+  if (MOCK_MODE) return { auth_url:'#' };
+  return apiFetch('POST', '/integrations/gmail/start');
+}
+
+async function apiGmailMapBot(botId) {
+  if (MOCK_MODE) return { message:'ok' };
+  return apiFetch('POST', '/integrations/gmail/map-bot', { bot_id: botId });
+}
+
+async function apiGmailPoll() {
+  if (MOCK_MODE) return { processed:0, unread:0 };
+  return apiFetch('POST', '/integrations/gmail/poll', { max_messages: 5, mark_read: true });
+}
+
+async function apiGmailPollerStatus() {
+  if (MOCK_MODE) return { enabled:false, interval_seconds:60, max_messages:5, mark_read:true, running:false };
+  return apiFetch('GET', '/integrations/gmail/poller');
+}
+
+async function apiGmailPollerRunOnce() {
+  if (MOCK_MODE) return { processed:0, unread:0 };
+  return apiFetch('POST', '/integrations/gmail/poller/run-once');
+}
+
+async function apiGenImage(prompt) {
+  if (MOCK_MODE) return { type:'image', url:'' };
+  return apiFetch('POST', '/media/image', { prompt: prompt, size:'1024x1024', quality:'medium' });
+}
+
+async function apiGenVideo(prompt) {
+  if (MOCK_MODE) return { type:'video', url:'', frames:8 };
+  return apiFetch('POST', '/media/video', { prompt: prompt, seconds:4, fps:4 });
+}
+
+async function apiGetBots() {
+  if (MOCK_MODE) return MOCK.bots;
+  return apiFetch('GET', '/bots');
+}
+
+async function apiActivateBot(botId) {
+  if (MOCK_MODE) {
+    const b = MOCK.bots.find(x=>x.id===botId);
+    if (b) b.status = 'active';
+    return { message: 'ok' };
+  }
+  return apiFetch('PATCH', '/bots/'+botId, { status:'active' });
+}
+
+async function apiCreateBot(data) {
+  if (MOCK_MODE) {
+    const b = { id:'bot-'+Date.now(), name:data.name, status:'active', primary_color:data.primary_color||'#0066FF', greeting:data.greeting, system_prompt:data.system_prompt, total_convs:0, total_msgs:0 };
+    MOCK.bots.push(b); MOCK.docs[b.id]=[]; MOCK.convs[b.id]=[];
+    return { bot_id: b.id };
+  }
+  return apiFetch('POST', '/bots', data);
+}
+
+async function apiGetDocs(botId) {
+  if (MOCK_MODE) return MOCK.docs[botId] || [];
+  return apiFetch('GET', '/bots/'+botId+'/documents');
+}
+
+async function apiUploadDoc(botId, file, onProgress) {
+  if (MOCK_MODE) {
+    return new Promise(resolve => {
+      let p = 0;
+      const iv = setInterval(() => {
+        p += 20; if(onProgress) onProgress(p);
+        if (p >= 100) {
+          clearInterval(iv);
+          const d = { id:'d'+Date.now(), filename:file.name, file_size:file.size, chunk_count:0, status:'processing', created_at:new Date().toISOString().slice(0,10) };
+          if (!MOCK.docs[botId]) MOCK.docs[botId] = [];
+          MOCK.docs[botId].unshift(d);
+          setTimeout(() => { d.chunk_count=Math.floor(20+Math.random()*60); d.status='ready'; }, 2500);
+          resolve({ doc_id: d.id });
+        }
+      }, 300);
+    });
+  }
+  const form = new FormData(); form.append('file', file);
+  return new Promise((res,rej) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_BASE+'/bots/'+botId+'/documents');
+    xhr.setRequestHeader('Authorization', 'Bearer '+getToken());
+    if (onProgress) xhr.upload.onprogress = e => { if(e.lengthComputable) onProgress(Math.round(e.loaded/e.total*100)); };
+    xhr.onload = () => { try { const d=JSON.parse(xhr.responseText); xhr.status<300?res(d):rej(d); } catch(e){rej(e);} };
+    xhr.onerror = () => rej(new Error('Network error'));
+    xhr.send(form);
+  });
+}
+
+async function apiGetConvs(botId) {
+  if (MOCK_MODE) return MOCK.convs[botId] || [];
+  return apiFetch('GET', '/bots/'+botId+'/conversations');
+}
+
+async function apiGetAnalytics(botId, days) {
+  if (MOCK_MODE) return MOCK.analytics(botId);
+  return apiFetch('GET', '/bots/'+botId+'/analytics?days='+days);
+}
+
+async function apiGetConvMessages(convId) {
+  if (MOCK_MODE) return [];
+  return apiFetch('GET', '/conversations/' + convId + '/messages');
+}
+
+async function apiGetMessageSources(messageId) {
+  if (MOCK_MODE) return [];
+  return apiFetch('GET', '/messages/' + messageId + '/sources');
+}
+
+async function apiReindexEmbeddings(botId) {
+  if (MOCK_MODE) return { status:'ok', processed:0, failed:0, total:0, model:'mock' };
+  return apiFetch('POST', `/bots/${botId}/documents/reindex`, { include_shared:true, limit_chunks:2000 });
+}
+
+async function apiChat(botId, message, sessionId) {
+  if (MOCK_MODE) {
+    // Mode demo: tidak memanggil AI eksternal. Simulasi jawaban singkat.
+    const answer = "Mode demo aktif — server belum terhubung. Jalankan backend, lalu coba lagi.";
+    return { answer, session_id: sessionId||'mock-sess-'+Date.now(), latency_ms: 50 };
+  }
+  return apiFetch('POST', '/chat/'+botId, { message, session_id:sessionId||null });
+}
+
+async function apiHealth() {
+  const res = await fetch(API_BASE+'/health');
+  return res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APP STATE
+// ═══════════════════════════════════════════════════════════════
+var S = {
+  bots: [],
+  currentBotId: null,
+  chatSession: null,
+  convs: [],
+  chartInstances: {},
+  imageGenerating: false,
+  videoGenerating: false,
+};
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH FLOW
+// ═══════════════════════════════════════════════════════════════
+function authTab(tab, el) {
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('auth-login').style.display    = tab==='login'    ? '':'none';
+  document.getElementById('auth-register').style.display = tab==='register' ? '':'none';
+}
+
+async function doLogin() {
+  const email = document.getElementById('a-email').value.trim();
+  const pass  = document.getElementById('a-pass').value;
+  const btn   = document.getElementById('login-btn');
+  const err   = document.getElementById('auth-err');
+  err.textContent = '';
+  setLoading(btn, true, 'Masuk...');
+  try {
+    const data = await apiLogin(email, pass);
+    MOCK_MODE = false;
+    if (data && data.token) setToken(data.token);
+    else throw new Error('Login gagal: token tidak ditemukan');
+    document.getElementById('sb-user-email').textContent = email;
+    await showApp();
+  } catch(e) {
+    err.textContent = e.message || 'Login gagal. Coba gunakan data demo.';
+  } finally { setLoading(btn, false, 'Masuk →'); }
+}
+
+async function doRegister() {
+  const org  = document.getElementById('r-org').value.trim();
+  const email= document.getElementById('r-email').value.trim();
+  const pass = document.getElementById('r-pass').value;
+  const btn  = document.getElementById('reg-btn');
+  const err  = document.getElementById('reg-err');
+  if (!org||!email||!pass) { err.textContent='Semua field wajib diisi'; return; }
+  setLoading(btn, true, 'Membuat akun...');
+  try {
+    const data = await apiRegister(org, email, pass);
+    MOCK_MODE = false;
+    if (data && data.token) setToken(data.token);
+    else throw new Error('Registrasi gagal: token tidak ditemukan');
+    document.getElementById('sb-org-name').textContent = org;
+    document.getElementById('sb-user-email').textContent = email;
+    await showApp();
+    toast('Selamat datang! Trial 14 hari dimulai.', 'success');
+  } catch(e) {
+    err.textContent = e.message || 'Registrasi gagal';
+  } finally { setLoading(btn, false, 'Buat akun →'); }
+}
+
+function useMockMode() {
+  MOCK_MODE = true;
+  setToken('mock_token_demo');
+  showApp();
+  toast('Mode demo aktif — data tidak disimpan ke server', 'success');
+}
+
+function doLogout() {
+  MOCK_MODE = false;
+  clearToken();
+  S.bots=[]; S.chartInstances={};
+  S.org=null; S.integrations=null; S.currentBotId=null; S.chatSessionId=null;
+  showAuthScreen();
+}
+
+function showAuthScreen() {
+  document.getElementById('app').style.display='none';
+  document.getElementById('auth-screen').style.display='flex';
+  document.getElementById('server-bar').classList.remove('online','offline');
+}
+
+async function showApp() {
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='grid';
+  document.getElementById('mode-badge').textContent = MOCK_MODE ? '● DEMO MODE' : '● LIVE';
+  document.getElementById('mode-badge').style.color = MOCK_MODE ? 'var(--amber)' : 'var(--accent)';
+  document.getElementById('api-url-label').textContent = API_BASE.replace('http://','').replace('https://','');
+  document.getElementById('s-api-url').value = API_BASE;
+  await checkServerStatus();
+  await loadAllData();
+  initVoiceUI();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SERVER STATUS
+// ═══════════════════════════════════════════════════════════════
+async function checkServerStatus() {
+  if (MOCK_MODE) {
+    setServerBar('offline','Mode demo — server tidak terhubung');
+    return;
+  }
+  try {
+    const h = await apiHealth();
+    if (h.db) {
+      setServerBar('online', 'Server online · DB connected · ' + API_BASE);
+    } else {
+      setServerBar('offline', 'Server online tapi DB bermasalah');
+    }
+    document.getElementById('server-status-text').textContent = 'Terhubung ✓';
+  } catch {
+    setServerBar('offline', 'Server tidak dapat dijangkau — ' + API_BASE + ' — pastikan FastAPI berjalan');
+    document.getElementById('server-status-text').textContent = 'Tidak terhubung. Jalankan: uvicorn main:app --reload';
+  }
+}
+
+function setServerBar(type, msg) {
+  const bar = document.getElementById('server-bar');
+  bar.className = type;
+  document.getElementById('server-msg').textContent = msg;
+}
+
+async function checkHealth() {
+  toast('Memeriksa koneksi...');
+  await checkServerStatus();
+}
+
+// === PATCH: auto-detect backend base URL + better health errors ===
+// Override apiHealth/checkServerStatus with more robust versions (fix "Failed to fetch").
+async function apiHealth() {
+  const res = await fetch(API_BASE + '/health', { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+  return data;
+}
+
+async function probeApiBase() {
+  const ports = [8000, 8001, 8002, 8010];
+  const candidates = [];
+  if (location.protocol === 'http:' || location.protocol === 'https:') candidates.push(location.origin);
+  for (const p of ports) {
+    candidates.push('http://127.0.0.1:' + p);
+    candidates.push('http://localhost:' + p);
+  }
+  const seen = new Set();
+  for (const base of candidates) {
+    const b = (base || '').replace(/\/+$/, '');
+    if (!b || seen.has(b)) continue;
+    seen.add(b);
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 1200);
+      const r = await fetch(b + '/health', { signal: ctl.signal, cache: 'no-store' });
+      clearTimeout(t);
+      if (r.ok) return b;
+    } catch {}
+  }
+  return null;
+}
+
+async function checkServerStatus() {
+  if (MOCK_MODE) {
+    setServerBar('offline', 'Mode demo — server tidak terhubung');
+    return;
+  }
+  try {
+    const h = await apiHealth();
+    if (h.db) setServerBar('online', 'Server online · DB connected · ' + API_BASE);
+    else setServerBar('offline', 'Server online tapi DB bermasalah');
+    document.getElementById('server-status-text').textContent = 'Terhubung ✓';
+  } catch (e) {
+    const detected = await probeApiBase();
+    if (detected && detected !== API_BASE) {
+      API_BASE = detected;
+      localStorage.setItem('bn_api_url', detected);
+      try { document.getElementById('api-url-label').textContent = API_BASE.replace('http://', '').replace('https://', ''); } catch {}
+      try { document.getElementById('s-api-url').value = API_BASE; } catch {}
+      try {
+        const h2 = await apiHealth();
+        if (h2.db) setServerBar('online', 'Server online · DB connected · ' + API_BASE);
+        else setServerBar('offline', 'Server online tapi DB bermasalah');
+        document.getElementById('server-status-text').textContent = 'Terhubung ✓';
+        return;
+      } catch {}
+    }
+    setServerBar('offline', 'Server tidak dapat dijangkau — ' + API_BASE + ' — pastikan FastAPI berjalan');
+    document.getElementById('server-status-text').textContent = 'Tidak terhubung. Cek API URL / jalankan backend.';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATA LOADING
+// ═══════════════════════════════════════════════════════════════
+async function loadAllData() {
+  try {
+    S.org = await apiGetOrg();
+    S.integrations = await apiGetIntegrations();
+    S.bots = await apiGetBots();
+    S.currentBotId = S.bots[0]?.id || null;
+    renderSidebar();
+    renderBots();
+    renderBotSelects();
+    renderOverviewMetrics();
+    initVolumeChart();
+    renderBotMini();
+    if (S.currentBotId) {
+      loadDocs();
+      loadConvs();
+    }
+  } catch(e) {
+    toast('Gagal memuat data: '+e.message, 'error');
+  }
+}
+
+function renderSidebar() {
+  document.getElementById('nb-bots').textContent = S.bots.length;
+  if (S.org) {
+    document.getElementById('sb-org-name').textContent = S.org.name || '—';
+    const plan = (S.org.plan || '').toUpperCase();
+    document.getElementById('plan-badge').textContent = plan || '—';
+    const ai = S.org.ai?.effective_mode ? ('AI: ' + S.org.ai.effective_mode.toUpperCase()) : '';
+    const host = MOCK_MODE ? 'demo mode' : API_BASE.split('//')[1];
+    document.getElementById('sb-org-sub').textContent = [host, plan ? ('Plan: '+plan) : null, ai].filter(Boolean).join(' · ');
+    renderSubscriptionUI();
+    renderIntegrationsUI();
+    return;
+  }
+
+  document.getElementById('sb-org-name').textContent = S.bots[0] ? 'Organisasi' : '—';
+  if (!MOCK_MODE) document.getElementById('sb-org-sub').textContent = API_BASE.split('//')[1];
+  else document.getElementById('sb-org-sub').textContent = 'demo mode';
+}
+
+function renderSubscriptionUI() {
+  if (!S.org) return;
+  const plan = (S.org.plan || '').toLowerCase();
+  const ai = S.org.ai || {};
+  const limits = S.org.limits || {};
+  const status = [
+    'Plan: ' + (plan || '—').toUpperCase(),
+    'AI: ' + (ai.effective_mode ? ai.effective_mode.toUpperCase() : '—'),
+    (ai.cloud_ready ? ('Cloud model: ' + (ai.cloud_model || '—')) : 'Cloud model: belum dikonfigurasi'),
+    ('Limits: bot ' + (limits.bot_limit ?? '—') + ' · conv ' + (limits.conv_limit ?? '—') + '/bulan · doc ' + (limits.doc_limit ?? '—')),
+  ].join(' · ');
+  const el = document.getElementById('plan-status');
+  if (el) el.textContent = status;
+
+  // Disable button on active plan
+  const btns = Array.from(document.querySelectorAll('#plan-cards button'));
+  btns.forEach(b => {
+    const m = (b.getAttribute('onclick') || '').match(/setPlan\\('([^']+)'\\)/);
+    const p = m ? m[1] : null;
+    if (!p) return;
+    const isActive = p === plan;
+    b.disabled = isActive;
+    b.textContent = isActive ? 'Aktif' : 'Upgrade';
+  });
+}
+
+function renderIntegrationsUI() {
+  const el = document.getElementById('int-status');
+  if (!el) return;
+  const i = S.integrations || {};
+  const g = i.gmail || {};
+  const m = i.meta || {};
+  const wh = i.webhook || {};
+  el.textContent = 'Gmail: ' + (g.connected ? 'connected' : 'not connected') + ' · Meta: ' + (m.connected ? 'connected' : 'not connected');
+
+  const gw = document.getElementById('gmail-conn');
+  if (gw) gw.textContent = 'status: ' + (g.connected ? 'connected' : 'not connected') + (g.email ? (' · ' + g.email) : '');
+
+  const mw = document.getElementById('meta-conn');
+  if (mw) mw.textContent = 'status: ' + (m.connected ? 'connected' : 'not connected') + (m.wa_phone_number_id ? (' · phone_id: ' + m.wa_phone_number_id) : '');
+
+  const urlEl = document.getElementById('meta-webhook-url');
+  if (urlEl) urlEl.textContent = API_BASE + (wh.meta_url || '/webhooks/meta');
+
+  const phone = document.getElementById('m-wa-phone');
+  if (phone && m.wa_phone_number_id) phone.value = m.wa_phone_number_id;
+  const to = document.getElementById('m-wa-to');
+  if (to && m.default_to_number) to.value = m.default_to_number;
+
+  const gb = document.getElementById('gmail-bot-select');
+  if (gb && g.bot_id) gb.value = g.bot_id;
+}
+
+async function refreshIntegrations() {
+  try {
+    S.integrations = await apiGetIntegrations();
+    renderIntegrationsUI();
+    // best-effort poller status
+    try {
+      const ps = await apiGmailPollerStatus();
+      const el = document.getElementById('gmail-poller');
+      if (el) el.textContent = `poller: ${ps.running ? 'running' : 'stopped'} · interval ${ps.interval_seconds}s · max ${ps.max_messages}`;
+    } catch {
+      const el = document.getElementById('gmail-poller');
+      if (el) el.textContent = 'poller: —';
+    }
+  } catch(e) {
+    // ignore
+  }
+}
+
+async function runGmailPollerOnce() {
+  try {
+    const r = await apiGmailPollerRunOnce();
+    toast('Poller run: processed ' + (r.processed||0) + ' · unread ' + (r.unread||0), 'success');
+  } catch (e) {
+    toast('Gagal run poller: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function connectGmail() {
+  try {
+    const r = await apiStartGmail();
+    if (!r.auth_url) throw new Error('auth_url tidak ditemukan');
+    if (r.redirect_uri) {
+      toast('Gmail redirect_uri: '+r.redirect_uri, 'success');
+    }
+    window.open(r.auth_url, '_blank');
+    toast('Buka tab Gmail untuk authorize, lalu kembali ke dashboard.', 'success');
+  } catch(e) {
+    toast('Gagal connect Gmail: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function saveMeta() {
+  try {
+    const body = {
+      wa_phone_number_id: document.getElementById('m-wa-phone').value.trim(),
+      wa_token: document.getElementById('m-wa-token').value.trim(),
+      page_token: document.getElementById('m-page-token').value.trim(),
+      ig_token: document.getElementById('m-ig-token').value.trim(),
+      default_to_number: document.getElementById('m-wa-to').value.trim(),
+    };
+    await apiSaveMetaIntegration(body);
+    toast('Meta integration tersimpan', 'success');
+    document.getElementById('m-wa-token').value='';
+    document.getElementById('m-page-token').value='';
+    document.getElementById('m-ig-token').value='';
+    await refreshIntegrations();
+  } catch(e) {
+    toast('Gagal simpan Meta: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function sendWATest() {
+  try {
+    const to = document.getElementById('m-wa-to').value.trim();
+    if (!to) { toast('Isi nomor tujuan test (contoh 62812...)', 'error'); return; }
+    const r = await apiMetaSendTest(to, 'Halo! Ini test dari BotNesia.');
+    toast('Test WA terkirim (cek WhatsApp kamu)', 'success');
+  } catch(e) {
+    toast('Gagal kirim test WA: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function sendWATemplate() {
+  try {
+    const to = document.getElementById('m-wa-to').value.trim();
+    const tpl = (document.getElementById('m-wa-template')?.value || '').trim() || 'hello_world';
+    const lang = (document.getElementById('m-wa-lang')?.value || '').trim() || 'en_US';
+    if (!to) { toast('Isi nomor tujuan dulu (contoh 62812...)', 'error'); return; }
+    const r = await apiMetaSendTemplate(to, tpl, lang);
+    toast('Template WA terkirim (cek WhatsApp kamu)', 'success');
+  } catch(e) {
+    toast('Gagal kirim template WA: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function saveWABot() {
+  try {
+    const phoneId = document.getElementById('m-wa-phone').value.trim();
+    const botId = document.getElementById('wa-bot-select').value;
+    if (!phoneId) { toast('Isi WA Phone Number ID dulu', 'error'); return; }
+    if (!botId) { toast('Pilih bot dulu', 'error'); return; }
+    await apiMetaMapBot(phoneId, botId);
+    toast('Mapping WA->bot tersimpan', 'success');
+    await refreshIntegrations();
+  } catch(e) {
+    toast('Gagal map WA->bot: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function saveGmailBot() {
+  try {
+    const botId = document.getElementById('gmail-bot-select').value;
+    if (!botId) { toast('Pilih bot dulu', 'error'); return; }
+    await apiGmailMapBot(botId);
+    toast('Mapping Gmail->bot tersimpan', 'success');
+    await refreshIntegrations();
+  } catch(e) {
+    toast('Gagal map Gmail->bot: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function pollGmail() {
+  try {
+    const r = await apiGmailPoll();
+    toast('Gmail poll: processed '+(r.processed||0)+' · unread '+(r.unread||0), 'success');
+  } catch(e) {
+    toast('Gagal poll Gmail: ' + (e.message || 'error'), 'error');
+  }
+}
+
+async function setPlan(plan) {
+  try {
+    const res = await apiUpdatePlan(plan);
+    toast('Plan diperbarui: ' + (res.plan || plan).toUpperCase(), 'success');
+    S.org = await apiGetOrg();
+    renderSidebar();
+  } catch(e) {
+    toast('Gagal update plan: ' + (e.message || 'error'), 'error');
+  }
+}
+
+function renderBotSelects() {
+  const opts = S.bots.length
+    ? S.bots.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')
+    : '<option value="">— Belum ada bot —</option>';
+  ['chat-bot-select','doc-bot-select','anal-bot-select','conv-bot-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+  ['gmail-bot-select','wa-bot-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+}
+
+function renderOverviewMetrics() {
+  const totalConvs = S.bots.reduce((s,b)=>s+(b.total_convs||0),0);
+  document.getElementById('m-convs').textContent = totalConvs.toLocaleString('id');
+  document.getElementById('m-convs-d').textContent = '↑ dari bulan lalu';
+  document.getElementById('m-res').textContent = '81%';
+  document.getElementById('m-lat').textContent = '0.8s';
+  document.getElementById('m-rat').textContent = '4.7';
+  document.getElementById('m-rat-d').textContent = '★ dari 5';
+}
+
+function renderBotMini() {
+  const el = document.getElementById('bot-mini-list');
+  if (!S.bots.length) { el.innerHTML='<div class="empty"><div class="empty-icon">◻</div><h4>Belum ada bot</h4><p>Buat bot pertama kamu</p></div>'; return; }
+  el.innerHTML = S.bots.map(b=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:${b.status==='active'?'var(--accent)':'var(--muted)'};flex-shrink:0"></div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(b.name)}</div><div style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${(b.total_convs||0).toLocaleString('id')} percakapan</div></div>
+      <button class="btn sm" onclick="testChatBot('${b.id}')">Test →</button>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BOTS PAGE
+// ═══════════════════════════════════════════════════════════════
+function renderBots() {
+  const grid = document.getElementById('bots-grid');
+  document.getElementById('nb-bots').textContent = S.bots.length;
+  if (!S.bots.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-icon">◻</div><h4>Belum ada bot</h4><p>Klik "Buat Bot" di kanan atas</p></div>';
+    return;
+  }
+  grid.innerHTML = S.bots.map(b=>`
+    <div class="bot-card">
+      <div class="bot-card-head">
+        <div class="bot-dot ${b.status}"></div>
+        <div><div class="bot-name">${esc(b.name)}</div><div style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${b.status==='active'?'Aktif':'Nonaktif'}</div></div>
+        <div style="width:18px;height:18px;border-radius:50%;background:${b.primary_color||'#0066FF'};margin-left:auto;flex-shrink:0;border:1px solid var(--border2)"></div>
+      </div>
+      <div class="bot-stat-row">
+        <div class="bot-stat"><div class="bot-stat-v">${(b.total_convs||0).toLocaleString('id')}</div><div class="bot-stat-l">Percakapan</div></div>
+        <div class="bot-stat"><div class="bot-stat-v">${(b.total_msgs||0).toLocaleString('id')}</div><div class="bot-stat-l">Pesan</div></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1" onclick="testChatBot('${b.id}')">Test chat →</button>
+        <button class="btn" onclick="loadDocsForBot('${b.id}')">Dokumen</button>
+        ${b.status!=='active' ? `<button class="btn primary" onclick="activateBot('${b.id}')">Aktifkan</button>` : ''}
+      </div>
+      <div class="snippet-box" onclick="copySnippet('${b.id}')" title="Klik untuk salin">
+        &lt;script src=<span class="snippet-hl">"cdn.botnesia.id/w.js"</span><br>
+        &nbsp;&nbsp;data-bot-id=<span class="snippet-hl">"${b.id}"</span>&gt;&lt;/script&gt;
+      </div>
+    </div>`).join('');
+}
+
+async function activateBot(botId) {
+  try {
+    await apiActivateBot(botId);
+    S.bots = await apiGetBots();
+    renderBots(); renderBotSelects(); renderBotMini();
+    toast('Bot diaktifkan!', 'success');
+  } catch(e) {
+    toast('Gagal aktifkan bot: '+e.message, 'error');
+  }
+}
+
+async function createBot() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { toast('Nama bot tidak boleh kosong'); return; }
+  const btn = document.getElementById('create-bot-btn');
+  setLoading(btn, true, 'Membuat...');
+  try {
+    const res = await apiCreateBot({
+      name,
+      primary_color: '#0066FF',
+      greeting:      document.getElementById('m-greeting').value,
+      system_prompt: document.getElementById('m-prompt').value || null,
+      language:      document.getElementById('m-lang').value,
+    });
+    closeModal('modal-create-bot');
+    S.bots = await apiGetBots();
+    renderBots(); renderBotSelects(); renderBotMini();
+    toast('Bot "'+name+'" berhasil dibuat!', 'success');
+  } catch(e) { toast('Gagal: '+e.message, 'error'); }
+  finally { setLoading(btn, false, 'Buat Bot →'); }
+}
+
+function copySnippet(id) {
+  const s = `<script src="https://cdn.botnesia.id/w.js" data-bot-id="${id}" defer></scr`+'ipt>';
+  navigator.clipboard?.writeText(s).catch(()=>{});
+  toast('Snippet disalin!', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOCUMENTS
+// ═══════════════════════════════════════════════════════════════
+async function loadDocs() {
+  const botId = document.getElementById('doc-bot-select').value || S.currentBotId;
+  if (!botId) return;
+  try {
+    const docs = await apiGetDocs(botId);
+    renderDocsTable(docs);
+    document.getElementById('nb-docs').textContent = docs.length;
+    document.getElementById('doc-summary').textContent = docs.length+' dokumen · '+docs.reduce((a,d)=>a+(d.chunk_count||0),0)+' chunks';
+  } catch(e) { toast('Gagal load dokumen: '+e.message,'error'); }
+}
+
+function loadDocsForBot(botId) {
+  document.getElementById('doc-bot-select').value = botId;
+  goPage('docs', null);
+  loadDocs();
+}
+
+async function reindexEmbeddings() {
+  const botId = document.getElementById('doc-bot-select')?.value || S.currentBotId;
+  if (!botId) { toast('Pilih bot dulu', 'error'); return; }
+  toast('Reindex embeddings dimulai...', 'success');
+  try {
+    const res = await apiReindexEmbeddings(botId);
+    toast(`Reindex selesai: ${res.processed||0} ok, ${res.failed||0} gagal`, (res.failed ? 'error' : 'success'));
+  } catch (e) {
+    toast('Reindex gagal: ' + (e.message || e), 'error');
+  }
+}
+
+function renderDocsTable(docs) {
+  const tbody = document.getElementById('docs-table');
+  if (!docs.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">⊕</div><h4>Belum ada dokumen</h4><p>Upload dokumen untuk knowledge base</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = docs.map(d=>`
+    <tr>
+      <td style="font-family:var(--mono)">${esc(d.filename)}</td>
+      <td style="color:var(--muted2)">${fmtSize(d.file_size)}</td>
+      <td style="font-family:var(--mono)">${d.chunk_count||0}</td>
+      <td><span class="badge ${d.status==='ready'?'green':d.status==='processing'?'amber':'red'}" title="${esc(d.error_msg||'')}">${d.status}</span></td>
+      <td style="color:var(--muted2);font-family:var(--mono);font-size:11px">${d.created_at?.slice(0,10)||'—'}</td>
+      <td><button class="btn danger sm" onclick="deleteDoc('${d.id}')">Hapus</button></td>
+    </tr>`).join('');
+}
+
+async function handleFiles(files) {
+  const botId = document.getElementById('doc-bot-select').value || S.currentBotId;
+  if (!botId) { toast('Pilih bot terlebih dahulu'); return; }
+  for (const file of Array.from(files)) {
+    const prog = document.getElementById('upload-progress');
+    const bar  = document.getElementById('upload-bar');
+    const fn   = document.getElementById('upload-filename');
+    prog.style.display='block'; fn.textContent='Mengupload '+file.name+'...'; bar.style.width='0%';
+    try {
+      const up = await apiUploadDoc(botId, file, pct=>{ bar.style.width=pct+'%'; });
+      prog.style.display='none';
+      if (up && up.status === 'failed') {
+        toast('Dokumen gagal diproses: '+(up.error_msg||'unknown error'), 'error');
+      } else {
+        toast('"'+file.name+'" diupload!','success');
+      }
+      await loadDocs();
+    } catch(e) {
+      prog.style.display='none';
+      toast('Upload gagal: '+e.message,'error');
+    }
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+}
+
+async function apiDeleteDoc(botId, docId) {
+  if (MOCK_MODE) {
+    Object.values(MOCK.docs).forEach(arr => {
+      const i = arr.findIndex(d=>d.id===docId);
+      if (i>-1) arr.splice(i,1);
+    });
+    return { message:'ok' };
+  }
+  return apiFetch('DELETE', '/bots/'+botId+'/documents/'+docId);
+}
+
+async function deleteDoc(docId) {
+  const botId = document.getElementById('doc-bot-select').value || S.currentBotId;
+  if (!botId) { toast('Pilih bot terlebih dahulu'); return; }
+  if (!confirm('Hapus dokumen ini? Chunks-nya juga akan terhapus.')) return;
+  try {
+    await apiDeleteDoc(botId, docId);
+    toast('Dokumen dihapus', 'success');
+    await loadDocs();
+  } catch(e) {
+    toast('Gagal hapus dokumen: '+e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHAT TEST
+// ═══════════════════════════════════════════════════════════════
+function resetChat() {
+  S.chatSession = null;
+  document.getElementById('chat-msgs').innerHTML = '';
+  addBotMsg('Halo! Saya siap ditest. Ketik pertanyaan apa saja.', 'System');
+}
+
+function testChatBot(id) {
+  document.getElementById('chat-bot-select').value = id;
+  resetChat();
+  goPage('chat-test', null);
+}
+
+async function sendChat() {
+  const inp   = document.getElementById('chat-input');
+  const btn   = document.getElementById('send-btn');
+  const botId = document.getElementById('chat-bot-select').value;
+  const msg   = inp.value.trim();
+  if (!msg || btn.disabled) return;
+  if (!botId) { toast('Pilih bot terlebih dahulu'); return; }
+
+  inp.value = ''; btn.disabled = true;
+  addUserMsg(msg);
+  const typEl = addTyping();
+
+  try {
+    const res = await apiChat(botId, msg, S.chatSession);
+    S.chatSession = res.session_id;
+    typEl.remove();
+    const bot = S.bots.find(b=>b.id===botId);
+    let meta = (res.latency_ms!=null ? (res.latency_ms+'ms') : '');
+    addBotMsg(res.answer, (bot?.name||'Bot'), meta);
+    if (S.ttsEnabled) speakText(res.answer || '');
+  } catch(e) {
+    typEl.remove();
+    addBotMsg('Maaf, terjadi kesalahan: ' + errMsg(e), 'Error');
+  } finally { btn.disabled = false; inp.focus(); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VOICE (Browser Web Speech API)
+// ═══════════════════════════════════════════════════════════════
+S.ttsEnabled = false;
+S.voiceActive = false;
+S._rec = null;
+
+function initVoiceUI() {
+  const mic = document.getElementById('mic-btn');
+  const tts = document.getElementById('tts-btn');
+  if (!mic || !tts) return;
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  mic.disabled = !Rec;
+  mic.textContent = Rec ? 'Mic' : 'Mic (N/A)';
+
+  tts.disabled = !('speechSynthesis' in window);
+  tts.textContent = ('speechSynthesis' in window) ? ('Suara: ' + (S.ttsEnabled ? 'ON' : 'OFF')) : 'Suara (N/A)';
+}
+
+function toggleTTS() {
+  if (!('speechSynthesis' in window)) { toast('Browser tidak mendukung voice output', 'error'); return; }
+  S.ttsEnabled = !S.ttsEnabled;
+  const tts = document.getElementById('tts-btn');
+  if (tts) tts.textContent = 'Suara: ' + (S.ttsEnabled ? 'ON' : 'OFF');
+  toast('Voice output ' + (S.ttsEnabled ? 'aktif' : 'mati'), 'success');
+}
+
+function speakText(text) {
+  if (!S.ttsEnabled || !text) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text).slice(0, 900));
+    u.lang = 'id-ID';
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
+
+function toggleVoiceInput() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) { toast('Browser tidak mendukung voice input', 'error'); return; }
+
+  if (S.voiceActive && S._rec) {
+    try { S._rec.stop(); } catch {}
+    S.voiceActive = false;
+    updateMicUI();
+    return;
+  }
+
+  const rec = new Rec();
+  S._rec = rec;
+  rec.lang = 'id-ID';
+  rec.interimResults = true;
+  rec.continuous = false;
+
+  rec.onresult = (ev) => {
+    let txt = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      txt += ev.results[i][0].transcript;
+    }
+    const inp = document.getElementById('chat-input');
+    if (inp) inp.value = txt.trim();
+  };
+  rec.onerror = () => { S.voiceActive = false; updateMicUI(); };
+  rec.onend = () => { S.voiceActive = false; updateMicUI(); };
+
+  try {
+    S.voiceActive = true;
+    updateMicUI();
+    rec.start();
+  } catch(e) {
+    S.voiceActive = false;
+    updateMicUI();
+    toast('Gagal start mic: ' + (e.message || e), 'error');
+  }
+}
+
+function updateMicUI() {
+  const mic = document.getElementById('mic-btn');
+  if (!mic) return;
+  mic.textContent = S.voiceActive ? 'Stop' : 'Mic';
+}
+
+function friendlyMediaErr(e, kind) {
+  const status = e?.status || e?.data?.status;
+  const message = errMsg(e);
+  if (status === 429 || /429|rate limit|terlalu banyak request|queue/i.test(message)) {
+    const retry = parseInt(e?.retryAfter || e?.data?.retry_after || '0', 10);
+    return retry > 0
+      ? `Generate ${kind} lagi ramai. Coba lagi sekitar ${retry} detik lagi.`
+      : `Generate ${kind} lagi ramai. Tunggu sebentar lalu coba lagi.`;
+  }
+  return `Gagal buat ${kind}: ${message}`;
+}
+
+async function genImageFromInput() {
+  const inp = document.getElementById('chat-input');
+  const btn = document.getElementById('gen-image-btn');
+  const prompt = (inp?.value || '').trim();
+  if (!prompt) { toast('Isi prompt dulu', 'error'); return; }
+  if (S.imageGenerating) { toast('Generate gambar masih berjalan.', 'error'); return; }
+  S.imageGenerating = true;
+  if (btn) setLoading(btn, true, 'Memproses...');
+  try {
+    const r = await apiGenImage(prompt);
+    if (!r.url) {
+      if (MOCK_MODE) { toast('Mode demo: media tidak tersedia', 'error'); return; }
+      throw new Error('URL gambar kosong');
+    }
+    addBotMsg('[Gambar dibuat]', 'Media', '');
+    const msgs = document.getElementById('chat-msgs');
+    const d = document.createElement('div');
+    d.className = 'chat-msg bot';
+    d.innerHTML = `<div class="chat-bubble"><img src="${API_BASE + r.url}" style="max-width:100%;border-radius:12px;border:1px solid var(--border)"></div><div class="chat-meta">${now()} · image</div>`;
+    msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    toast(friendlyMediaErr(e, 'gambar'), 'error');
+  } finally {
+    S.imageGenerating = false;
+    if (btn) setLoading(btn, false, 'Gambar');
+  }
+}
+
+async function genVideoFromInput() {
+  const inp = document.getElementById('chat-input');
+  const btn = document.getElementById('gen-video-btn');
+  const prompt = (inp?.value || '').trim();
+  if (!prompt) { toast('Isi prompt dulu', 'error'); return; }
+  if (S.videoGenerating) { toast('Generate video masih berjalan.', 'error'); return; }
+  S.videoGenerating = true;
+  if (btn) setLoading(btn, true, 'Memproses...');
+  try {
+    const r = await apiGenVideo(prompt);
+    if (!r.url) {
+      if (MOCK_MODE) { toast('Mode demo: media tidak tersedia', 'error'); return; }
+      throw new Error('URL video kosong');
+    }
+    const msgs = document.getElementById('chat-msgs');
+    const d = document.createElement('div');
+    d.className = 'chat-msg bot';
+    d.innerHTML = `<div class="chat-bubble"><video src="${API_BASE + r.url}" controls style="max-width:100%;border-radius:12px;border:1px solid var(--border)"></video></div><div class="chat-meta">${now()} · video</div>`;
+    msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    toast(friendlyMediaErr(e, 'video'), 'error');
+  } finally {
+    S.videoGenerating = false;
+    if (btn) setLoading(btn, false, 'Video');
+  }
+}
+
+function addUserMsg(text) {
+  const msgs = document.getElementById('chat-msgs');
+  const t = now();
+  const d = document.createElement('div');
+  d.className = 'chat-msg user';
+  d.innerHTML = `<div class="chat-bubble">${esc(text)}</div><div class="chat-meta">${t}</div>`;
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addBotMsg(text, name, meta) {
+  const msgs = document.getElementById('chat-msgs');
+  const t = now();
+  const d = document.createElement('div');
+  d.className = 'chat-msg bot';
+  d.innerHTML = `<div class="chat-bubble">${esc(text).replace(/\n/g,'<br>')}</div><div class="chat-meta">${t}${name?' · '+name:''}${meta?' · '+meta:''}</div>`;
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addTyping() {
+  const msgs = document.getElementById('chat-msgs');
+  const d = document.createElement('div');
+  d.className = 'chat-msg bot';
+  d.innerHTML = '<div class="chat-bubble"><div class="typing-anim"><span></span><span></span><span></span></div></div>';
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+  return d;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONVERSATIONS
+// ═══════════════════════════════════════════════════════════════
+async function loadConvs() {
+  const botId = document.getElementById('conv-bot-select')?.value || S.currentBotId;
+  if (!botId) return;
+  try {
+    S.convs = await apiGetConvs(botId);
+    renderConvsTable(S.convs);
+  } catch(e) { toast('Gagal load percakapan: '+e.message,'error'); }
+}
+
+function renderConvsTable(convs) {
+  const tbody = document.getElementById('convs-table');
+  if (!convs.length) {
+    tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">Belum ada percakapan</td></tr>';
+    return;
+  }
+  tbody.innerHTML = convs.map(c=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted2)">${fmtTime(c.started_at)}</td>
+      <td>${c.end_user_name||'<span style="color:var(--muted)">Anonim</span>'}</td>
+      <td style="color:var(--muted2)">${c.msg_count} pesan</td>
+      <td>${c.rating?'<span style="color:var(--amber)">'+('★'.repeat(c.rating))+'</span><span style="color:var(--border2)">'+('★'.repeat(5-c.rating))+'</span>':'<span style="color:var(--muted)">—</span>'}</td>
+      <td><span class="badge ${c.handoff_needed?'amber':'green'}">${c.handoff_needed?'handoff':'resolved'}</span></td>
+      <td><button class="btn sm" onclick="openConvDetail('${c.id}')">Detail</button></td>
+    </tr>`).join('');
+}
+
+function filterConvs(val) {
+  const filtered = val==='all' ? S.convs
+    : val==='handoff' ? S.convs.filter(c=>c.handoff_needed)
+    : S.convs.filter(c=>!c.handoff_needed);
+  renderConvsTable(filtered);
+}
+
+async function openConvDetail(convId) {
+  if (!convId) return;
+  const conv = (S.convs || []).find(c => c.id === convId) || null;
+  document.getElementById('conv-detail-id').textContent = convId;
+  const summary = document.getElementById('conv-detail-summary');
+  const box = document.getElementById('conv-detail-msgs');
+  summary.innerHTML = conv ? [
+    `<div class="conv-detail-chip">User: ${esc(conv.end_user_name || 'Anonim')}</div>`,
+    `<div class="conv-detail-chip">Status: ${conv.handoff_needed ? 'Butuh handoff' : 'Resolved'}</div>`,
+    `<div class="conv-detail-chip">Pesan: ${Number(conv.msg_count || 0).toLocaleString('id')}</div>`,
+    `<div class="conv-detail-chip">Mulai: ${conv.started_at ? esc(fmtTime(conv.started_at)) : '—'}</div>`,
+  ].join('') : '';
+  box.innerHTML = '<div class="conv-empty"><div class="loading-spin"></div></div>';
+  showModal('modal-conv-detail');
+  try {
+    const msgs = await apiGetConvMessages(convId);
+    if (!msgs.length) {
+      box.innerHTML = '<div class="conv-empty">Belum ada pesan</div>';
+      return;
+    }
+    box.innerHTML = msgs.map(m => {
+      const roleClass = m.role === 'assistant' ? 'assistant' : (m.role === 'user' ? 'user' : 'system');
+      const role = m.role === 'assistant' ? 'Bot' : (m.role === 'user' ? 'Pelanggan' : 'Sistem');
+      const meta = m.created_at ? fmtTime(m.created_at) : '';
+      const hasSources = (m.role === 'assistant') && Array.isArray(m.source_chunks) && m.source_chunks.length;
+      const srcBtn = hasSources ? `<button class="btn sm" onclick="toggleMsgSources('${m.id}')">Sumber</button>` : '';
+      return `
+        <div class="conv-msg ${roleClass}">
+          <div class="conv-msg-head">
+            <div class="conv-msg-role">${role}</div>
+            <div class="conv-msg-time">${meta || ''}</div>
+          </div>
+          <div class="conv-msg-body">${esc(m.content||'')}</div>
+          ${srcBtn ? `<div class="conv-msg-actions">${srcBtn}</div>` : ''}
+          <div class="conv-msg-sources" id="src-${m.id}"></div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="conv-empty" style="color:var(--danger)">Gagal load: ${esc(e.message||String(e))}</div>`;
+  }
+}
+
+async function toggleMsgSources(messageId) {
+  const el = document.getElementById('src-' + messageId);
+  if (!el) return;
+  if (el.dataset.loaded === '1') {
+    el.style.display = (el.style.display === 'none') ? '' : 'none';
+    return;
+  }
+  el.style.display = '';
+  el.innerHTML = '<div class="loading-spin"></div>';
+  try {
+    const sources = await apiGetMessageSources(messageId);
+    if (!sources.length) {
+      el.innerHTML = '<div style="color:var(--muted2);font-size:12px">Tidak ada sumber tersimpan.</div>';
+      el.dataset.loaded = '1';
+      return;
+    }
+    el.innerHTML = sources.map((s,i)=>`
+      <div style="font-size:12px;line-height:1.5;margin-bottom:10px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${i+1}. ${esc(s.filename||'dokumen')} · chunk #${s.chunk_index}</div>
+        <div style="margin-top:4px;white-space:pre-wrap">${esc(s.content||'')}</div>
+      </div>
+    `).join('');
+    el.dataset.loaded = '1';
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:12px">Gagal load sumber: ${esc(e.message||String(e))}</div>`;
+    el.dataset.loaded = '1';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS
+// ═══════════════════════════════════════════════════════════════
+async function loadAnalytics() {
+  const botId = document.getElementById('anal-bot-select')?.value || S.currentBotId;
+  const days  = document.getElementById('anal-days')?.value || 30;
+  if (!botId) return;
+  try {
+    const d = await apiGetAnalytics(botId, days);
+    document.getElementById('a-convs').textContent    = (d.summary.total_convs||0).toLocaleString('id');
+    document.getElementById('a-handoff').textContent  = d.summary.handoff_count||0;
+    document.getElementById('a-handoff-pct').textContent = d.summary.total_convs
+      ? Math.round((d.summary.handoff_count/d.summary.total_convs)*100)+'% dari total' : '';
+    document.getElementById('a-lat').textContent = d.summary.avg_latency_ms ? Math.round(d.summary.avg_latency_ms)+'ms' : '—';
+    renderDailyChart(d.daily_volume||[]);
+    renderTopQ(d.top_questions||[]);
+  } catch(e) { toast('Gagal load analytics: '+e.message,'error'); }
+}
+
+function renderDailyChart(data) {
+  const ctx = document.getElementById('chart-daily');
+  if (!ctx) return;
+  if (S.chartInstances.daily) S.chartInstances.daily.destroy();
+  S.chartInstances.daily = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:data.map(d=>d.date.slice(5)), datasets:[{ data:data.map(d=>d.convs), backgroundColor:'rgba(0,229,160,.7)', borderRadius:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{color:'#1a1a1a'},ticks:{color:'#555',font:{family:'DM Mono',size:10},maxRotation:45}}, y:{grid:{color:'#1a1a1a'},ticks:{color:'#555',font:{family:'DM Mono',size:10}}} } }
+  });
+}
+
+function renderTopQ(questions) {
+  const tbody = document.getElementById('top-q-table');
+  const max = questions[0]?.frequency || 1;
+  tbody.innerHTML = questions.map((q,i)=>`
+    <tr>
+      <td style="color:var(--muted);font-family:var(--mono)">${i+1}</td>
+      <td style="font-size:12px">${esc(q.content)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:${Math.round(q.frequency/max*60)}px;height:3px;background:var(--accent)"></div>
+          <span style="font-family:var(--mono);font-size:11px">${q.frequency}x</span>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════
+function saveApiUrl() {
+  const url = document.getElementById('s-api-url').value.trim().replace(/\/$/,'');
+  if (!url) { toast('URL tidak boleh kosong','error'); return; }
+  API_BASE = url;
+  localStorage.setItem('bn_api_url', url);
+  document.getElementById('api-url-label').textContent = url.split('//')[1];
+  toast('URL API disimpan. Memeriksa koneksi...','success');
+  checkServerStatus();
+}
+
+function resetApiUrl() {
+  localStorage.removeItem('bn_api_url');
+  API_BASE = DEFAULT_API_BASE;
+  document.getElementById('s-api-url').value = API_BASE;
+  document.getElementById('api-url-label').textContent = API_BASE.replace('http://','').replace('https://','');
+  toast('URL API direset ke default. Memeriksa koneksi...','success');
+  checkServerStatus();
+}
+
+function changeApiUrl() {
+  goPage('settings', null);
+  setTimeout(()=>document.getElementById('s-api-url').focus(), 200);
+}
+
+async function generateApiKey() {
+  if (MOCK_MODE) {
+    document.getElementById('s-apikey').value = 'bn_live_'+Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join('');
+    toast('API key dibuat! Simpan sekarang.','success');
+    return;
+  }
+  try {
+    const res = await apiFetch('POST','/api-keys',{name:'Dashboard Key'});
+    document.getElementById('s-apikey').value = res.key;
+    toast('API key dibuat! Simpan sekarang.','success');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function saveWebhook() {
+  const url = document.getElementById('s-webhook').value.trim();
+  if (!url) { toast('URL webhook tidak boleh kosong'); return; }
+  if (MOCK_MODE) { toast('Webhook tersimpan (mode demo)','success'); return; }
+  try {
+    await apiFetch('POST','/webhooks',{ url, events:['conversation.started','handoff.needed','rating.submitted'] });
+    toast('Webhook tersimpan!','success');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════════════════════
+function initVolumeChart() {
+  const ctx = document.getElementById('chart-volume');
+  if (!ctx) return;
+  if (S.chartInstances.volume) S.chartInstances.volume.destroy();
+  const labels=[], data=[];
+  for (let i=29;i>=0;i--) {
+    const d=new Date(); d.setDate(d.getDate()-i);
+    labels.push(i%5===0?(d.getMonth()+1)+'/'+d.getDate():'');
+    data.push(Math.floor(15+Math.random()*55));
+  }
+  S.chartInstances.volume = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{ data, borderColor:'#00e5a0', borderWidth:1.5, fill:true, backgroundColor:'rgba(0,229,160,.07)', tension:.4, pointRadius:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{grid:{color:'#1a1a1a'},ticks:{color:'#555',font:{family:'DM Mono',size:10}}} } }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function goPage(page, el) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  if (el) el.classList.add('active');
+  const titles = { overview:'Dashboard', bots:'Semua Bot', 'chat-test':'Test Chat', docs:'Dokumen', analytics:'Statistik', conversations:'Percakapan', settings:'Pengaturan' };
+  document.getElementById('topbar-title').textContent = titles[page]||page;
+  if (page==='analytics') setTimeout(loadAnalytics, 50);
+  if (page==='conversations') loadConvs();
+  if (page==='chat-test' && !document.getElementById('chat-msgs').children.length) resetChat();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtSize(b) { if(!b)return'—'; if(b<1024)return b+'B'; if(b<1048576)return Math.round(b/1024)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
+function fmtTime(iso) { if(!iso)return'—'; const d=new Date(iso); return d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes(); }
+function now() { const d=new Date(); return d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes(); }
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show'+(type?' '+type:'');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(()=>{ el.className=''; }, 3000);
+}
+
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function setLoading(btn, on, text) {
+  btn.disabled = on;
+  btn.innerHTML = on ? '<span class="loading-spin"></span> '+text : text;
+}
+
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('show'); });
+});
+
+window.addEventListener('bn:unauthorized', showAuthScreen);
+window.addEventListener('bn:logout', showAuthScreen);
+
+// ─── AUTO INIT ─────────────────────────────────────────────────
+(async function init() {
+  // Cek server status di latar belakang
+  if (!MOCK_MODE) {
+    try {
+      const h = await Promise.race([apiHealth(), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),3000))]);
+      if (h.db) setServerBar('online','Server online · '+API_BASE);
+      else setServerBar('offline','Server online tapi DB bermasalah');
+    } catch {
+      setServerBar('offline','Server belum aktif — jalankan: uvicorn main:app --reload');
+    }
+  }
+  // Kalau sudah ada token, langsung masuk
+  if (getToken()) { await showApp(); }
+})();
+</script>
+</body>
+</html>
