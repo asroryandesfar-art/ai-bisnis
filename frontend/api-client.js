@@ -122,6 +122,7 @@ export const api = {
   handoffQueue: (params = {}) => request(`/api/handoff/queue${encodeQuery(params)}`),
   handoffStats: () => request("/api/handoff/stats"),
   claimHandoff: (id) => request(`/api/handoff/${id}/claim`, { method: "POST" }),
+  replyHandoff: (id, message) => request(`/api/handoff/${id}/reply`, { method: "POST", body: { message } }),
   resolveHandoff: (id, note = null) => request(`/api/handoff/${id}/resolve`, { method: "POST", body: { note } }),
 
   channels: () => request("/api/channels"),

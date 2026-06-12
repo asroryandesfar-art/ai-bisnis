@@ -59,25 +59,52 @@ _SLA_MINUTES = {
 # TRIGGER EVALUATION
 # ============================================================
 
-def evaluate_handoff_trigger(*, confidence: float, sentiment: dict | None,
+def evaluate_handoff_trigger(*, confidence: float | None, sentiment: dict | None,
                              should_escalate: bool, escalation_urgency: str | None,
                              escalation_reason: str | None,
-                             friction_points: list[str] | None) -> tuple[bool, str, str]:
+                             friction_points: list[str] | None,
+                             user_message: str = "", final_answer: str = "",
+                             errors: list[str] | None = None) -> tuple[bool, str, str]:
     """
     Tentukan apakah percakapan ini perlu di-handoff ke manusia.
     Return (should_handoff, reason, priority).
     """
     sentiment = sentiment or {}
     friction_points = friction_points or []
+    errors = errors or []
     label = str(sentiment.get("label", "neutral")).lower()
     score = float(sentiment.get("score", 0.0) or 0.0)
+    message = user_message.lower()
+    answer = final_answer.lower()
+
+    if errors:
+        return True, "ai_error", "high"
+
+    human_requests = (
+        "minta manusia", "bicara dengan manusia", "bicara manusia",
+        "hubungkan ke manusia", "cs manusia", "customer service",
+        "live agent", "human agent", "tidak mau bot",
+    )
+    if any(term in message for term in human_requests):
+        return True, "user_requested_human", "medium"
+
+    unknown_answers = (
+        "saya tidak tahu", "saya belum tahu", "tidak memiliki informasi",
+        "informasi tersebut tidak tersedia", "saya tidak dapat memastikan",
+        "saya tidak bisa memastikan", "di luar pengetahuan saya",
+    )
+    if any(term in answer for term in unknown_answers):
+        return True, "ai_does_not_know", "medium"
 
     # 1) confidence rendah
     if confidence is not None and confidence < HANDOFF_CONFIDENCE_THRESHOLD:
         priority = "high" if confidence < 0.25 else "medium"
         return True, "low_confidence", priority
 
-    # 2) customer marah (sentiment sangat negatif)
+    # 2) customer marah (sentiment atau kata eksplisit)
+    angry_terms = ("marah", "kecewa", "parah", "bodoh", "brengsek", "penipuan", "bohong")
+    if any(term in message for term in angry_terms):
+        return True, "angry_user", "high"
     if label in ("negative", "angry", "frustrated") and abs(score) >= 0.6:
         return True, "angry_sentiment", "high"
 
@@ -117,8 +144,19 @@ async def enqueue_handoff(pool: asyncpg.Pool, *, org_id: str, conversation_id: s
         """INSERT INTO human_queue (org_id, conversation_id, reason, priority, status, sla_due_at)
            VALUES ($1, $2, $3, $4, 'waiting', $5)
            ON CONFLICT (conversation_id) DO UPDATE SET
-               reason = CASE WHEN human_queue.status = 'waiting' THEN EXCLUDED.reason ELSE human_queue.reason END,
-               priority = GREATEST(human_queue.priority, EXCLUDED.priority)
+               reason = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN EXCLUDED.reason
+                             WHEN human_queue.status = 'waiting' THEN EXCLUDED.reason ELSE human_queue.reason END,
+               priority = CASE
+                   WHEN human_queue.status IN ('resolved','cancelled') THEN EXCLUDED.priority
+                   WHEN CASE human_queue.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END
+                      >= CASE EXCLUDED.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END
+                   THEN human_queue.priority ELSE EXCLUDED.priority END,
+               status = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN 'waiting' ELSE human_queue.status END,
+               assigned_agent_id = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN NULL ELSE human_queue.assigned_agent_id END,
+               assigned_at = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN NULL ELSE human_queue.assigned_at END,
+               resolved_at = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN NULL ELSE human_queue.resolved_at END,
+               resolution_note = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN NULL ELSE human_queue.resolution_note END,
+               sla_due_at = CASE WHEN human_queue.status IN ('resolved','cancelled') THEN EXCLUDED.sla_due_at ELSE human_queue.sla_due_at END
            RETURNING *""",
         org_id, conversation_id, reason, priority, sla_due,
     )
@@ -232,13 +270,40 @@ async def resolve_item(pool: asyncpg.Pool, *, org_id: str, queue_id: str, note: 
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Item antrean tidak ditemukan")
     await pool.execute(
-        "UPDATE conversations SET handoff_needed=FALSE, resolved=TRUE, closed_at=NOW() WHERE id=$1",
+        """UPDATE conversations
+           SET handoff_needed=FALSE, assigned_agent_id=NULL, resolved=FALSE, closed_at=NULL
+           WHERE id=$1""",
         row["conversation_id"],
     )
     if dispatch_webhook:
         await dispatch_webhook(org_id, "handoff.resolved", {
             "queue_id": str(row["id"]), "conversation_id": str(row["conversation_id"]),
         }, pool)
+    return dict(row)
+
+
+async def reply_to_item(pool: asyncpg.Pool, *, org_id: str, queue_id: str,
+                        agent_id: str, message: str) -> dict:
+    """Persist a human response while the conversation is assigned."""
+    item = await pool.fetchrow(
+        """SELECT id, conversation_id, status, assigned_agent_id
+           FROM human_queue WHERE id=$1 AND org_id=$2""",
+        queue_id, org_id,
+    )
+    if not item:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Item antrean tidak ditemukan")
+    if item["status"] != "assigned" or str(item["assigned_agent_id"]) != str(agent_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Claim handoff sebelum mengirim balasan")
+    row = await pool.fetchrow(
+        """INSERT INTO messages (conversation_id, role, content, model)
+           VALUES ($1, 'assistant', $2, $3)
+           RETURNING id, conversation_id, role, content, model, created_at""",
+        item["conversation_id"], message.strip(), f"human:{agent_id}",
+    )
+    await pool.execute(
+        "UPDATE conversations SET msg_count=msg_count+1, last_msg_at=NOW() WHERE id=$1",
+        item["conversation_id"],
+    )
     return dict(row)
 
 
@@ -251,6 +316,9 @@ class AssignReq(BaseModel):
 
 class ResolveReq(BaseModel):
     note: str | None = None
+
+class ReplyReq(BaseModel):
+    message: str
 
 
 def build_handoff_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
@@ -312,5 +380,19 @@ def build_handoff_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         item = await resolve_item(pool, org_id=user["org_id"], queue_id=queue_id, note=body.note,
                                   dispatch_webhook=dispatch_webhook)
         return {"queue_item": item}
+
+    @router.post("/{queue_id}/reply")
+    async def reply(
+        queue_id: str, body: ReplyReq,
+        user: Annotated[dict, Depends(require_permission("conversations.reply"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        if not body.message.strip():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pesan tidak boleh kosong")
+        message = await reply_to_item(
+            pool, org_id=user["org_id"], queue_id=queue_id,
+            agent_id=user["id"], message=body.message,
+        )
+        return {"message": message}
 
     return router

@@ -214,6 +214,19 @@ CREATE INDEX IF NOT EXISTS idx_handoff_org      ON human_queue(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_handoff_assignee ON human_queue(assigned_agent_id) WHERE status = 'assigned';
 CREATE INDEX IF NOT EXISTS idx_handoff_priority ON human_queue(org_id, priority, created_at) WHERE status = 'waiting';
 
+-- Human Handoff compatibility contract. `human_queue` remains canonical.
+CREATE OR REPLACE VIEW handoffs AS
+SELECT
+    id,
+    org_id AS tenant_id,
+    conversation_id,
+    reason,
+    CASE WHEN status::text = 'waiting' THEN 'pending' ELSE status::text END AS status,
+    assigned_agent_id AS assigned_to,
+    created_at
+FROM human_queue;
+
+
 -- ============================================================
 -- 4. OMNICHANNEL — channel accounts & unified inbox
 -- ============================================================
