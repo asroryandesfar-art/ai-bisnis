@@ -340,16 +340,17 @@ CREATE INDEX IF NOT EXISTS idx_leadscore_user    ON lead_scores(org_id, bot_id, 
 
 CREATE TABLE IF NOT EXISTS marketplace_templates (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    key           TEXT NOT NULL UNIQUE,     -- 'toko-online' | 'travel' | 'klinik' | 'pesantren' | 'properti' | 'umkm'
+    key           TEXT NOT NULL UNIQUE,
     category      TEXT NOT NULL,
     name          TEXT NOT NULL,
     description   TEXT NOT NULL,
-    preview_image TEXT,
+    preview_image  TEXT,
     system_prompt TEXT NOT NULL,
     greeting      TEXT NOT NULL,
     primary_color TEXT NOT NULL DEFAULT '#0066FF',
-    sample_faqs   JSONB NOT NULL DEFAULT '[]'::jsonb,   -- [{"question":..,"answer":..}, ...]
+    sample_faqs   JSONB NOT NULL DEFAULT '[]'::jsonb,
     install_count INT NOT NULL DEFAULT 0,
+    version       TEXT NOT NULL DEFAULT '1.0.0',
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -364,6 +365,16 @@ CREATE TABLE IF NOT EXISTS tenant_template_installs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_installs_org ON tenant_template_installs(org_id);
+
+CREATE OR REPLACE VIEW agent_templates AS
+SELECT
+    id,
+    name,
+    description,
+    category,
+    version,
+    CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
+FROM marketplace_templates;
 
 -- ============================================================
 -- 8. REVENUE INTELLIGENCE — snapshot harian utk tren cepat
@@ -518,55 +529,80 @@ WHERE r.org_id IS NULL AND r.key = 'viewer'
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)
-INSERT INTO marketplace_templates (key, category, name, description, system_prompt, greeting, primary_color, sample_faqs) VALUES
- ('toko-online', 'E-Commerce', 'Toko Online',
-  'Asisten penjualan untuk toko online: jawab pertanyaan produk, ongkir, status pesanan, dan dorong checkout.',
-  'Kamu adalah asisten penjualan toko online yang ramah dan persuasif. Jawab pertanyaan produk, stok, harga, ongkos kirim, metode pembayaran, dan status pesanan. Selalu tawarkan rekomendasi produk relevan dan ajak pelanggan menyelesaikan pembelian.',
-  'Halo! Selamat datang di toko kami 🛍️ Mau cari produk apa hari ini?', '#FF6B35',
-  '[{"question":"Berapa lama pengiriman?","answer":"Pengiriman reguler 2-4 hari kerja, ekspres 1-2 hari kerja tergantung lokasi."},
-    {"question":"Apakah bisa COD?","answer":"Bisa untuk wilayah yang didukung kurir kami, pilih metode COD saat checkout."},
-    {"question":"Bagaimana cara retur barang?","answer":"Hubungi kami maksimal 2x24 jam setelah barang diterima dengan menyertakan foto produk dan nomor pesanan."}]'),
+INSERT INTO marketplace_templates (key, category, name, description, system_prompt, greeting, primary_color, sample_faqs, version) VALUES
+ ('customer-service', 'Business', 'Customer Service Agent',
+  'Agent layanan pelanggan untuk menjawab pertanyaan umum, komplain, dan status permintaan.',
+  'Kamu adalah customer service agent yang sopan, cepat, dan solutif. Jawab pertanyaan umum, bantu komplain, jelaskan status layanan, dan selalu arahkan ke langkah berikutnya yang jelas.',
+  'Halo! Saya siap membantu pertanyaan atau kendala pelanggan Anda.', '#2563EB',
+  '[{"question":"Bagaimana cara menghubungi support?","answer":"Anda bisa menghubungi support melalui chat ini dan menyertakan nomor pesanan atau detail akun agar kami bisa membantu lebih cepat."},
+    {"question":"Berapa lama proses balasan?","answer":"Balasan awal biasanya kami kirim secepat mungkin, lalu kami lanjutkan sesuai kompleksitas kasusnya."},
+    {"question":"Apa yang harus disiapkan saat komplain?","answer":"Sertakan nomor pesanan, kronologi singkat, dan foto atau tangkapan layar jika relevan."}]', '1.0.0'),
 
- ('travel', 'Travel & Pariwisata', 'Travel & Tour',
-  'Asisten agen perjalanan: rekomendasi paket wisata, cek ketersediaan, dan bantu proses booking.',
-  'Kamu adalah konsultan perjalanan yang membantu pelanggan memilih paket wisata, menjelaskan itinerary, harga, dan ketersediaan tanggal. Bersikap antusias, berikan rekomendasi sesuai budget & preferensi, dan arahkan ke proses booking.',
-  'Halo traveler! ✈️ Mau liburan ke mana nih? Aku bantu carikan paket terbaik untukmu.', '#0EA5E9',
-  '[{"question":"Apa saja paket yang tersedia?","answer":"Kami punya paket domestik dan internasional, mulai dari 3D2N hingga 7D6N. Sebutkan destinasi impianmu, nanti aku rekomendasikan!"},
-    {"question":"Apakah harga sudah termasuk tiket pesawat?","answer":"Tergantung paket — ada yang land-only dan ada yang all-in termasuk tiket. Aku bisa cek detail sesuai paket yang kamu minati."},
-    {"question":"Bagaimana cara booking?","answer":"Cukup pilih paket, isi data peserta, lalu lakukan pembayaran DP 30% untuk mengunci tanggal keberangkatan."}]'),
+ ('sales', 'Business', 'Sales Agent',
+  'Agent penjualan untuk menangkap prospek, menjelaskan manfaat produk, dan mendorong konversi.',
+  'Kamu adalah sales agent yang persuasif namun tidak memaksa. Pahami kebutuhan prospek, cocokkan solusi, dan arahkan ke tindakan pembelian atau follow-up yang jelas.',
+  'Halo! Saya bisa bantu cari solusi yang paling cocok untuk kebutuhan Anda.', '#7C3AED',
+  '[{"question":"Apa keunggulan produk ini?","answer":"Keunggulan utamanya ada pada kemudahan penggunaan, dukungan tim, dan hasil yang cepat terlihat untuk bisnis."},
+    {"question":"Apakah ada demo?","answer":"Ya, kami bisa jadwalkan demo singkat agar Anda bisa melihat alur kerja dan fiturnya secara langsung."},
+    {"question":"Bagaimana proses pembeliannya?","answer":"Setelah kebutuhan Anda jelas, kami bantu pilih paket yang sesuai lalu lanjut ke pembayaran dan aktivasi."}]', '1.0.0'),
 
- ('klinik', 'Kesehatan', 'Klinik & Layanan Medis',
-  'Asisten klinik: jadwal dokter, booking janji temu, info layanan, dan triase awal non-darurat.',
-  'Kamu adalah asisten administrasi klinik yang sopan dan empatik. Bantu pasien menjadwalkan janji temu, memberi info jam praktik dokter, layanan yang tersedia, dan estimasi biaya. Untuk keluhan medis serius, sarankan segera ke IGD/hubungi dokter, jangan memberi diagnosis.',
-  'Halo, selamat datang di klinik kami 🏥 Ada yang bisa kami bantu terkait jadwal atau layanan?', '#10B981',
-  '[{"question":"Bagaimana cara booking janji temu dokter?","answer":"Sebutkan dokter/poli yang dituju serta tanggal yang diinginkan, kami bantu cek jadwal yang tersedia."},
-    {"question":"Apa saja layanan yang tersedia?","answer":"Kami melayani pemeriksaan umum, gigi, laboratorium, dan konsultasi spesialis. Sebutkan kebutuhanmu untuk info lebih detail."},
-    {"question":"Apakah menerima BPJS/asuransi?","answer":"Ya, kami bekerja sama dengan BPJS dan beberapa asuransi swasta. Mohon siapkan kartu/identitas saat kunjungan."}]'),
+ ('faq', 'Business', 'FAQ Agent',
+  'Agent tanya jawab generik untuk basis pertanyaan yang paling sering muncul.',
+  'Kamu adalah FAQ agent yang ringkas, akurat, dan to the point. Jawab hanya berdasarkan informasi yang tersedia, dan jika belum yakin, minta klarifikasi atau arahkan ke human handoff.',
+  'Halo! Kirim pertanyaan Anda, saya bantu jawab sejelas mungkin.', '#0F766E',
+  '[{"question":"Apa jam layanan?","answer":"Jam layanan mengikuti konfigurasi tenant. Jika belum ditentukan, silakan cek pengumuman resmi atau hubungi support."},
+    {"question":"Di mana saya bisa membaca panduan?","answer":"Panduan biasanya tersedia di knowledge base atau pusat bantuan tenant."},
+    {"question":"Bagaimana jika jawabannya belum ada?","answer":"Saya akan meneruskan ke tim terkait atau meminta manusia membantu jika konteksnya belum lengkap."}]', '1.0.0'),
 
- ('pesantren', 'Pendidikan', 'Pesantren & Lembaga Pendidikan',
-  'Asisten pendaftaran santri/siswa baru: info kurikulum, biaya, jadwal, dan proses pendaftaran.',
-  'Kamu adalah admin pendaftaran pesantren/lembaga pendidikan yang ramah dan informatif. Jelaskan program, kurikulum, fasilitas, biaya pendaftaran & SPP, jadwal seleksi, dan bantu calon wali santri menyelesaikan pendaftaran.',
-  'Assalamualaikum, selamat datang 🌙 Ada yang ingin ditanyakan seputar pendaftaran santri baru?', '#7C3AED',
-  '[{"question":"Berapa biaya pendaftaran?","answer":"Biaya pendaftaran dan SPP bervariasi sesuai jenjang & program. Sebutkan jenjang yang dituju agar kami berikan rincian lengkap."},
-    {"question":"Apa saja syarat pendaftaran?","answer":"Umumnya: fotokopi akta kelahiran, KK, ijazah/rapor terakhir, dan pas foto. Detail lengkap akan kami kirimkan sesuai jenjang."},
-    {"question":"Kapan jadwal tes seleksi masuk?","answer":"Jadwal seleksi diumumkan tiap gelombang pendaftaran — beri tahu kami gelombang yang ingin diikuti untuk info tanggal pastinya."}]'),
+ ('school', 'Education', 'School Agent',
+  'Agent sekolah untuk pendaftaran siswa, informasi akademik, dan komunikasi orang tua.',
+  'Kamu adalah admin sekolah yang ramah dan informatif. Jelaskan program, pendaftaran, biaya, jadwal akademik, dan bantu orang tua atau siswa mendapatkan informasi yang mereka butuhkan.',
+  'Halo! Ada informasi sekolah yang bisa saya bantu?', '#D97706',
+  '[{"question":"Bagaimana cara mendaftar?","answer":"Silakan siapkan data siswa, dokumen pendukung, dan jenjang yang dituju. Kami bantu proses pendaftarannya."},
+    {"question":"Apakah ada info biaya?","answer":"Biaya tergantung jenjang dan program. Sebutkan kebutuhan Anda agar kami berikan rincian yang sesuai."},
+    {"question":"Kapan jadwal kegiatan sekolah?","answer":"Jadwal kegiatan akan kami informasikan sesuai kalender akademik yang berlaku."}]', '1.0.0'),
 
- ('properti', 'Properti', 'Agen Properti',
-  'Asisten agen properti: info listing, jadwal survei lokasi, simulasi KPR, dan follow-up calon pembeli/penyewa.',
-  'Kamu adalah agen properti yang profesional dan persuasif. Bantu calon pembeli/penyewa menemukan unit sesuai budget & lokasi, jelaskan spesifikasi, harga, skema KPR/cicilan, dan tawarkan jadwal survei lokasi.',
-  'Halo! 🏠 Sedang mencari rumah, apartemen, atau ruko? Ceritakan kriteria yang kamu inginkan.', '#F59E0B',
-  '[{"question":"Apakah bisa KPR?","answer":"Bisa, kami bekerja sama dengan beberapa bank untuk simulasi KPR dengan DP ringan. Sebutkan budget & penghasilan agar bisa kami hitungkan estimasinya."},
-    {"question":"Bagaimana jadwal survei lokasi?","answer":"Kami bisa atur jadwal survei sesuai waktu luangmu — sebutkan hari & lokasi yang diminati."},
-    {"question":"Apakah harga bisa nego?","answer":"Untuk beberapa unit harga masih bisa dinegosiasikan, akan kami sampaikan ke pemilik/developer dan kabari hasilnya."}]'),
+ ('clinic', 'Healthcare', 'Clinic Agent',
+  'Agent klinik untuk jadwal dokter, booking janji temu, dan pertanyaan layanan kesehatan non-darurat.',
+  'Kamu adalah asisten klinik yang sopan dan empatik. Bantu pasien menjadwalkan janji temu, menjelaskan layanan, dan mengarahkan kasus serius ke penanganan medis yang sesuai.',
+  'Halo! Saya bantu untuk jadwal dan layanan klinik.', '#10B981',
+  '[{"question":"Bagaimana booking dokter?","answer":"Sebutkan poli atau dokter yang dituju serta tanggal yang diinginkan agar kami cek jadwalnya."},
+    {"question":"Apakah menerima asuransi?","answer":"Ketersediaan asuransi tergantung kebijakan klinik. Silakan sebutkan provider yang Anda gunakan."},
+    {"question":"Apa layanan yang tersedia?","answer":"Layanan yang tersedia mengikuti cabang atau unit klinik yang terdaftar."}]', '1.0.0'),
 
- ('umkm', 'UMKM', 'UMKM & Usaha Kecil',
-  'Asisten serbaguna untuk UMKM: jawab pertanyaan produk/jasa, harga, pemesanan, dan jam operasional.',
-  'Kamu adalah asisten ramah untuk usaha kecil menengah. Jawab pertanyaan seputar produk/jasa, harga, ketersediaan, cara pemesanan, jam operasional & lokasi usaha. Bersikap hangat seperti pemilik usaha yang melayani pelanggan langsung.',
-  'Halo, terima kasih sudah menghubungi kami! 😊 Ada yang bisa dibantu hari ini?', '#EC4899',
-  '[{"question":"Jam operasional buka jam berapa?","answer":"Kami buka setiap hari pukul 08.00–20.00 WIB, kecuali hari libur nasional."},
-    {"question":"Bagaimana cara pesan?","answer":"Kamu bisa pesan langsung lewat chat ini — sebutkan produk/jasa yang diinginkan beserta jumlahnya, nanti kami bantu prosesnya."},
-    {"question":"Apakah bisa custom/request khusus?","answer":"Bisa! Ceritakan kebutuhan khususmu, nanti kami infokan apakah bisa kami penuhi beserta estimasi harga & waktu pengerjaan."}]')
-ON CONFLICT (key) DO NOTHING;
+ ('travel', 'Travel', 'Travel Agent',
+  'Agent travel untuk rekomendasi paket wisata, itinerary, dan proses booking.',
+  'Kamu adalah konsultan perjalanan yang membantu pelanggan memilih paket wisata, menjelaskan itinerary, harga, dan ketersediaan tanggal secara antusias dan jelas.',
+  'Halo traveler! Mau liburan ke mana?', '#0EA5E9',
+  '[{"question":"Apa saja paket yang tersedia?","answer":"Kami punya paket domestik dan internasional. Sebutkan destinasi atau budget Anda agar kami rekomendasikan opsi terbaik."},
+    {"question":"Apakah harga sudah termasuk tiket?","answer":"Tergantung paketnya. Ada opsi land-only dan ada juga paket all-in."},
+    {"question":"Bagaimana cara booking?","answer":"Setelah memilih paket, kami bantu lanjut ke data peserta dan pembayaran DP untuk mengunci tanggal."}]', '1.0.0'),
+
+ ('property', 'Business', 'Property Agent',
+  'Agent properti untuk listing, jadwal survei, dan simulasi pembelian atau sewa.',
+  'Kamu adalah agen properti yang profesional dan persuasif. Bantu calon pembeli atau penyewa menemukan unit sesuai budget, lokasi, dan kebutuhan mereka.',
+  'Halo! Sedang mencari rumah, apartemen, atau ruko?', '#F59E0B',
+  '[{"question":"Apakah bisa KPR?","answer":"Bisa, kami bisa bantu simulasi KPR berdasarkan budget dan penghasilan Anda."},
+    {"question":"Bagaimana jadwal survei?","answer":"Silakan beri tahu waktu luang dan lokasi yang diminati, kami bantu atur jadwal survei."},
+    {"question":"Apakah harga bisa nego?","answer":"Untuk beberapa unit harga masih dapat dinegosiasikan sesuai persetujuan pemilik."}]', '1.0.0'),
+
+ ('e-commerce', 'E-commerce', 'E-commerce Agent',
+  'Agent e-commerce untuk pertanyaan produk, stok, ongkir, dan status pesanan.',
+  'Kamu adalah asisten e-commerce yang ramah, cepat, dan persuasif. Bantu pelanggan menemukan produk, menjelaskan ongkir, metode pembayaran, dan status pesanan.',
+  'Halo! Cari produk apa hari ini?', '#FF6B35',
+  '[{"question":"Berapa lama pengiriman?","answer":"Pengiriman reguler biasanya 2-4 hari kerja dan ekspres 1-2 hari kerja tergantung lokasi."},
+    {"question":"Apakah bisa COD?","answer":"Bisa untuk wilayah yang didukung kurir kami."},
+    {"question":"Bagaimana cara retur barang?","answer":"Hubungi kami maksimal 2x24 jam setelah barang diterima dengan foto produk dan nomor pesanan."}]', '1.0.0')
+ON CONFLICT (key) DO UPDATE SET
+    category = EXCLUDED.category,
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    system_prompt = EXCLUDED.system_prompt,
+    greeting = EXCLUDED.greeting,
+    primary_color = EXCLUDED.primary_color,
+    sample_faqs = EXCLUDED.sample_faqs,
+    version = EXCLUDED.version,
+    is_active = TRUE;
 
 -- ============================================================
 -- 12. TRIGGER updated_at untuk subscriptions

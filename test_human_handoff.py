@@ -111,7 +111,7 @@ def test_handoff_routes_and_schema_contract_are_present():
     assert "/api/handoff/{queue_id}/reply" in paths
     assert "/api/handoff/{queue_id}/resolve" in paths
 
-    schema = Path("schema.sql").read_text()
+    schema = (Path(__file__).resolve().parent / "schema.sql").read_text()
     assert "CREATE OR REPLACE VIEW handoffs AS" in schema
     for field in ("tenant_id", "conversation_id", "reason", "status", "assigned_to", "created_at"):
         assert field in schema

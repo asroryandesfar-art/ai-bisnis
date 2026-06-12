@@ -5,6 +5,7 @@ const paths = {
   analytics:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
   observability:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
   costs:'<path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  marketplace:'<path d="M3 7h18l-1.5 12h-15z"/><path d="M7 7a5 5 0 0 1 10 0"/>',
   handoffs:'<path d="M4 4h16v12H7l-3 3z"/><path d="M8 8h8M8 12h5"/>',
   learning:'<path d="M12 3a5 5 0 0 0-3 9v3h6v-3a5 5 0 0 0-3-9z"/><path d="M9 19h6M10 22h4"/>',
   knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
@@ -97,7 +98,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 
 const navGroups = [
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["knowledge","Knowledge Base"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["settings","Settings"]]],
 ];
 
@@ -112,6 +113,7 @@ const routeMeta = {
   conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
   observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
   costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
+  marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
   handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],
   learning:["Feedback Learning","User feedback, failed questions, knowledge gaps, and improvement queue"],
   knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"], team:["Team & Tenants","People, roles, access, and workspace identity"],
