@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","analytics","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -116,6 +116,30 @@ async function loadConversationData(botId = state.selectedBotId) {
     if (!botId) throw error;
     state.conversations = await api.botConversations(botId, {limit:50});
   }
+}
+
+async function renderHumanHandoff() {
+  loadingPage("Human Handoff", "Monitor escalations and let human agents take over safely.");
+  let data, stats;
+  try {
+    [data, stats] = await Promise.all([api.handoffQueue({limit:100}), api.handoffStats()]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  const items = data.queue || [];
+  const summary = stats.stats || {};
+  const rows = items.map((item) => {
+    const pending = item.status === "waiting";
+    const assigned = item.status === "assigned";
+    const mine = String(item.assigned_agent_id || "") === String(state.user?.id || "");
+    const status = pending ? "pending" : item.status;
+    const actions = pending
+      ? `<button class="button button-primary" data-claim-handoff="${esc(item.id)}">Claim</button>`
+      : assigned && mine
+        ? `<button class="button" data-reply-handoff="${esc(item.id)}">Reply</button><button class="button button-primary" data-resolve-handoff="${esc(item.id)}">Resolve</button>`
+        : assigned ? `<span class="subtle">Owned by ${esc(item.assigned_agent_name || "another agent")}</span>` : "";
+    const slaBreached = item.sla_due_at && new Date(item.sla_due_at) < new Date() && item.status !== "resolved";
+    return `<tr><td><span class="table-title">${esc(item.end_user_name || item.end_user_id || "Anonymous customer")}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(String(item.conversation_id).slice(0,8))}</div></td><td>${esc(item.reason || "manual")}</td><td>${statusBadge(status,status)}</td><td>${statusBadge(item.priority || "medium")}</td><td>${esc(item.assigned_agent_name || "Unassigned")}</td><td class="${slaBreached?'trend-down':''}">${item.sla_due_at ? relativeTime(item.sla_due_at) : "—"}${slaBreached?' · breached':''}</td><td><div style="display:flex;gap:6px;align-items:center">${actions}</div></td></tr>`;
+  }).join("");
+  setPage(`${pageHeader("Human Handoff","AI pauses while a human owns the conversation, then resumes after resolution.",`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}<div class="grid grid-4">${metricCard("Pending",formatNumber(summary.waiting),`${formatNumber(summary.urgent_waiting)} urgent`,`handoffs`,summary.waiting?'trend-down':'trend-up')}${metricCard("Assigned",formatNumber(summary.assigned),"Currently owned by agents","team")}${metricCard("Resolved",formatNumber(summary.resolved_24h),"Last 24 hours","dashboard","trend-up")}${metricCard("SLA Breached",formatNumber(summary.sla_breached),summary.avg_resolution_minutes_7d?`${summary.avg_resolution_minutes_7d}m avg resolution`:"No resolution data","analytics",summary.sla_breached?'trend-down':'trend-up')}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Handoff Queue</h3><span class="subtle">Pending, assigned, and resolved conversations</span></div><span class="status-badge active">Tenant isolated</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Reason</th><th>Status</th><th>Priority</th><th>Assigned to</th><th>SLA</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No handoffs","AI escalations will appear here when human assistance is required.")}</div>`);
 }
 
 async function renderConversations() {
@@ -501,7 +525,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -592,6 +616,12 @@ async function sendPlayground(form) {
 }
 
 document.addEventListener("click", async (event) => {
+  const claimHandoff=event.target.closest("[data-claim-handoff]");
+  if(claimHandoff){ try{ await api.claimHandoff(claimHandoff.dataset.claimHandoff); toast("Handoff assigned to you.","success"); await renderHumanHandoff(); }catch(error){ toast(error.message,"error"); } return; }
+  const replyHandoff=event.target.closest("[data-reply-handoff]");
+  if(replyHandoff){ const message=prompt("Balasan manusia ke pelanggan:"); if(message?.trim()){ try{ await api.replyHandoff(replyHandoff.dataset.replyHandoff,message.trim()); toast("Human reply sent.","success"); }catch(error){ toast(error.message,"error"); } } return; }
+  const resolveHandoff=event.target.closest("[data-resolve-handoff]");
+  if(resolveHandoff){ const note=prompt("Catatan resolusi (opsional):") || null; try{ await api.resolveHandoff(resolveHandoff.dataset.resolveHandoff,note); toast("Handoff resolved. AI can resume.","success"); await renderHumanHandoff(); }catch(error){ toast(error.message,"error"); } return; }
   const traceTarget=event.target.closest("[data-observability-trace]");
   if(traceTarget){ await openObservabilityTrace(traceTarget.dataset.observabilityTrace); return; }
   const routeTarget=event.target.closest("[data-route]");

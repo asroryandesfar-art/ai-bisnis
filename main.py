@@ -167,6 +167,7 @@ logger = logging.getLogger("botnesia")
 # dari main.py, tapi main.py perlu panggil fungsi Phase 2 dari Phase 1 endpoints.
 _platform_check_limit = None   # (pool, org_id, dimension) → (bool, dict)
 _platform_enqueue_handoff = None  # (pool, org_id, conv_id, reason, priority) → dict|None
+_platform_evaluate_handoff = None  # deterministic trigger evaluation
 _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, action, ...) → None
 
 # Multi-agent supervisor singleton (cloud-only)
@@ -787,6 +788,28 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_meta_wa_message_dedup_created ON meta_wa_message_dedup(created_at);",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;",
+        """
+        CREATE TABLE IF NOT EXISTS human_queue (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
+            reason TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'medium',
+            status TEXT NOT NULL DEFAULT 'waiting',
+            assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            assigned_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ,
+            resolution_note TEXT, sla_due_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_handoff_org ON human_queue(org_id, status);",
+        "CREATE INDEX IF NOT EXISTS idx_handoff_assignee ON human_queue(assigned_agent_id) WHERE status = 'assigned';",
+        """CREATE OR REPLACE VIEW handoffs AS
+            SELECT id, org_id AS tenant_id, conversation_id, reason,
+                   CASE WHEN status::text='waiting' THEN 'pending' ELSE status::text END AS status,
+                   assigned_agent_id AS assigned_to, created_at
+            FROM human_queue;""",
         """
         CREATE TABLE IF NOT EXISTS ai_traces (
             id UUID PRIMARY KEY, tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2861,6 +2884,35 @@ async def chat(
         user_msg_id, conv_id, body.message,
     )
 
+    # Percakapan yang sedang diambil alih manusia tidak boleh memanggil AI.
+    try:
+        active_handoff = await pool.fetchrow(
+            """SELECT id, status FROM human_queue
+               WHERE conversation_id=$1 AND status IN ('waiting','assigned')""",
+            conv_id,
+        )
+    except Exception:
+        active_handoff = None
+    if active_handoff:
+        handoff_answer = (
+            "Percakapan ini sedang ditangani oleh tim manusia kami. "
+            "Pesan Anda sudah diteruskan dan agent akan membalas secepatnya."
+        )
+        await pool.execute(
+            """INSERT INTO messages
+               (id, conversation_id, role, content, model, input_tokens, output_tokens, latency_ms)
+               VALUES ($1,$2,'assistant',$3,'system:human-handoff',0,0,0)""",
+            str(uuid.uuid4()), conv_id, handoff_answer,
+        )
+        await pool.execute(
+            "UPDATE conversations SET msg_count=msg_count+2, last_msg_at=NOW() WHERE id=$1",
+            conv_id,
+        )
+        return {
+            "answer": handoff_answer, "session_id": conv_id, "latency_ms": 0,
+            "handoff": True, "handoff_status": str(active_handoff["status"]),
+        }
+
     # 5. Ambil riwayat percakapan (max 10 pesan terakhir)
     history = await pool.fetch(
         """SELECT role, content FROM messages
@@ -2955,6 +3007,7 @@ async def chat(
     # 8. Panggil AI (Multi-Agent pipeline buatan kamu)
     t_start = time.monotonic()
     agent_meta: dict | None = None
+    result = None
     try:
         use_cloud = should_use_cloud(bot["plan"], bot["billing_status"])
         supervisor = get_supervisor(use_cloud)
@@ -3007,26 +3060,35 @@ async def chat(
             "reasoning_mode_used": result.reasoning_mode_used,
         }
 
-        if result.should_escalate:
-            await pool.execute(
-                "UPDATE conversations SET handoff_needed=TRUE WHERE id=$1",
-                conv_id,
+        should_handoff = result.should_escalate
+        handoff_reason = result.escalation_reason or "escalation_requested"
+        handoff_priority = (result.escalation_urgency or "medium").lower()
+        if _platform_evaluate_handoff:
+            should_handoff, handoff_reason, handoff_priority = _platform_evaluate_handoff(
+                confidence=result.confidence,
+                sentiment=result.sentiment,
+                should_escalate=result.should_escalate,
+                escalation_urgency=result.escalation_urgency,
+                escalation_reason=result.escalation_reason,
+                friction_points=result.friction_points,
+                user_message=body.message,
+                final_answer=answer,
+                errors=result.errors,
             )
-            # Phase 2: masukkan ke human queue secara otomatis
+        if should_handoff:
+            handoff_message = result.escalation_message or (
+                "Saya akan menghubungkan percakapan ini ke tim manusia agar dapat ditangani lebih lanjut."
+            )
+            if handoff_message.lower() not in answer.lower():
+                answer = answer.rstrip() + "\n\n" + handoff_message
             if _platform_enqueue_handoff:
-                urgency = (result.escalation_urgency or "medium").lower()
-                valid_priorities = {"low", "medium", "high", "urgent"}
-                priority = urgency if urgency in valid_priorities else "medium"
                 try:
                     await _platform_enqueue_handoff(
-                        pool,
-                        org_id=bot["org_id"],
-                        conversation_id=conv_id,
-                        reason=result.escalation_message or "Confidence AI rendah — perlu bantuan manusia",
-                        priority=priority,
+                        pool, org_id=bot["org_id"], conversation_id=conv_id,
+                        reason=handoff_reason, priority=handoff_priority,
                     )
                 except Exception:
-                    pass  # jangan crash chat karena handoff gagal
+                    logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
     except Exception as e:
         if market_answer:
             answer = market_answer
@@ -3036,7 +3098,23 @@ async def chat(
             latency_ms = int((time.monotonic() - t_start) * 1000)
             agent_meta = {"errors": [str(e)], "fallback": "market-data"}
         else:
-            raise HTTPException(503, f"AI service error: {str(e)}")
+            answer = (
+                "Maaf, AI sedang mengalami kendala. Percakapan ini sudah diteruskan "
+                "ke tim manusia agar tetap dapat ditangani."
+            )
+            model_used = "system:human-handoff"
+            input_tokens = 0
+            output_tokens = 0
+            latency_ms = int((time.monotonic() - t_start) * 1000)
+            agent_meta = {"errors": [str(e)], "handoff_reason": "ai_error"}
+            if _platform_enqueue_handoff:
+                try:
+                    await _platform_enqueue_handoff(
+                        pool, org_id=bot["org_id"], conversation_id=conv_id,
+                        reason="ai_error", priority="high",
+                    )
+                except Exception:
+                    logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
 
     # 9. Simpan respons bot
     bot_msg_id = str(uuid.uuid4())
@@ -3057,7 +3135,7 @@ async def chat(
         conv_id,
     )
 
-    if agent_meta is not None:
+    if agent_meta is not None and result is not None:
         try:
             from intelligence.pipeline import persist_intelligence
             asyncio.create_task(
@@ -3678,7 +3756,7 @@ async def health():
 try:
     from bn_platform.rbac import make_permission_checker, build_rbac_router
     from bn_platform.billing import build_billing_router, check_limit
-    from bn_platform.handoff import build_handoff_router, enqueue_handoff
+    from bn_platform.handoff import build_handoff_router, enqueue_handoff, evaluate_handoff_trigger
     from bn_platform.omnichannel import build_omnichannel_router
     from bn_platform.lead_engine import build_lead_router
     from bn_platform.marketplace import build_marketplace_router
@@ -3692,6 +3770,7 @@ try:
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
     _platform_check_limit = check_limit
     _platform_enqueue_handoff = enqueue_handoff
+    _platform_evaluate_handoff = evaluate_handoff_trigger
     _platform_write_audit = _platform_audit_log_fn
 
     # ── 1. Prometheus middleware + GET /metrics ──────────────────

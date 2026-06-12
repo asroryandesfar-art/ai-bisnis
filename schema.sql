@@ -375,3 +375,37 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_conversation ON cost_records(convers
 CREATE INDEX IF NOT EXISTS idx_cost_records_agent ON cost_records(tenant_id, agent_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cost_records_model ON cost_records(tenant_id, model_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, channel, created_at DESC);
+
+-- HUMAN HANDOFF (extends the existing conversation lifecycle; no rebuild)
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS human_queue (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
+    reason TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    status TEXT NOT NULL DEFAULT 'waiting',
+    assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at TIMESTAMPTZ,
+    resolved_at TIMESTAMPTZ,
+    resolution_note TEXT,
+    sla_due_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_handoff_org ON human_queue(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_handoff_assignee ON human_queue(assigned_agent_id) WHERE status = 'assigned';
+
+-- Human Handoff compatibility contract. `human_queue` remains canonical.
+CREATE OR REPLACE VIEW handoffs AS
+SELECT
+    id,
+    org_id AS tenant_id,
+    conversation_id,
+    reason,
+    CASE WHEN status::text = 'waiting' THEN 'pending' ELSE status::text END AS status,
+    assigned_agent_id AS assigned_to,
+    created_at
+FROM human_queue;
