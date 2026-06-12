@@ -291,3 +291,49 @@ WHERE m.role = 'user'
     AND m.created_at >= NOW() - INTERVAL '30 days'
 GROUP BY c.org_id, c.bot_id, m.content
 ORDER BY frequency DESC;
+
+-- ============================================================
+-- AI OBSERVABILITY (request traces and per-agent lifecycle)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ai_traces (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    user_question TEXT NOT NULL,
+    final_answer TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    duration_ms INT,
+    prompt_tokens INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    total_tokens INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agent_executions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    trace_id UUID NOT NULL REFERENCES ai_traces(id) ON DELETE CASCADE,
+    parent_execution_id UUID REFERENCES agent_executions(id) ON DELETE SET NULL,
+    tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    agent_name TEXT NOT NULL,
+    sequence_no INT NOT NULL DEFAULT 0,
+    execution_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    execution_end TIMESTAMPTZ,
+    duration_ms INT,
+    status TEXT NOT NULL DEFAULT 'running',
+    error_message TEXT,
+    confidence_score NUMERIC(7,3),
+    prompt_tokens INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    total_tokens INT NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_traces_tenant_created ON ai_traces(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_traces_conversation ON ai_traces(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_trace_sequence ON agent_executions(trace_id, sequence_no);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_tenant_created ON agent_executions(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_agent_status ON agent_executions(agent_name, status, created_at DESC);
