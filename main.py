@@ -3251,7 +3251,22 @@ def _build_system_prompt(
         "dan tawarkan untuk disambungkan ke tim manusia."
     )
 
-    return f"{base}\n\n{lang_note}{context}"
+    style_guide = (
+        "## Gaya jawaban\n"
+        "Tulis jawaban dengan gaya seperti asisten AI modern (mirip Claude/ChatGPT): jelas, ringkas, "
+        "dan langsung ke inti, tapi tetap ramah dan natural - bukan kaku seperti robot.\n"
+        "- Buka dengan jawaban atau inti informasi yang dicari user, baru tambahkan detail pendukung.\n"
+        "- Gunakan paragraf pendek (1-3 kalimat). Pisahkan ide berbeda dengan baris baru.\n"
+        "- Kalau menjelaskan beberapa poin, langkah, atau opsi, gunakan daftar bernomor atau bullet "
+        "(`-`), jangan digabung jadi satu paragraf panjang.\n"
+        "- Gunakan **teks tebal** untuk menyorot istilah, nama produk, harga, atau hal penting lainnya.\n"
+        "- Hindari basa-basi berlebihan, pengulangan, dan kalimat pembuka generik seperti "
+        '"Tentu, saya akan membantu...". Sapaan singkat di awal percakapan saja sudah cukup.\n'
+        "- Sesuaikan panjang jawaban dengan kompleksitas pertanyaan: pertanyaan sederhana dijawab singkat, "
+        "pertanyaan kompleks dijelaskan lebih lengkap dengan struktur yang rapi."
+    )
+
+    return f"{base}\n\n{style_guide}\n\n{lang_note}{context}"
 
 
 def _looks_like_news_query(text: str) -> bool:

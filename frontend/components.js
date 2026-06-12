@@ -18,6 +18,62 @@ export function esc(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 }
 
+function mdInline(text) {
+  let html = esc(text);
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return html;
+}
+
+// Render a light subset of Markdown (paragraphs, lists, headings, code, bold/italic, links)
+// for assistant chat replies, so AI answers look as structured as Claude/ChatGPT output.
+export function renderMarkdown(text) {
+  const lines = String(text ?? "").replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  let list = null;
+  const flushList = () => {
+    if (list) blocks.push(`<${list.tag}>${list.items.map((item) => `<li>${mdInline(item)}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushList();
+      const code = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); i++; }
+      i++;
+      blocks.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      continue;
+    }
+    const heading = line.match(/^#{1,6}\s+(.*)/);
+    if (heading) { flushList(); blocks.push(`<p><strong>${mdInline(heading[1])}</strong></p>`); i++; continue; }
+    const ul = line.match(/^\s*[-*]\s+(.*)/);
+    if (ul) {
+      if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
+      list.items.push(ul[1]); i++; continue;
+    }
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (ol) {
+      if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; }
+      list.items.push(ol[1]); i++; continue;
+    }
+    if (line.trim() === '') { flushList(); i++; continue; }
+    flushList();
+    const para = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() !== '' && !/^\s*```/.test(lines[i]) && !/^#{1,6}\s+/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+[.)]\s+/.test(lines[i])) {
+      para.push(lines[i]); i++;
+    }
+    blocks.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
+  }
+  flushList();
+  return blocks.join('');
+}
+
 export function initials(value = "BN") {
   return value.split(/\s+/).filter(Boolean).slice(0,2).map((item) => item[0]).join("").toUpperCase() || "BN";
 }
