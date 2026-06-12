@@ -1471,7 +1471,7 @@ async def synthesize_audio(
         communicator = edge_tts.Communicate(
             text,
             voice="id-ID-GadisNeural",
-            rate="-2%",
+            rate="+4%",
             volume="+6%",
             pitch="-1Hz",
             boundary="SentenceBoundary",
@@ -1487,7 +1487,7 @@ async def synthesize_audio(
             headers={
                 "Cache-Control": "no-store",
                 "X-TTS-Voice": "id-ID-GadisNeural",
-                "X-TTS-Rate": "-2%",
+                "X-TTS-Rate": "+4%",
             },
         )
     except HTTPException:
