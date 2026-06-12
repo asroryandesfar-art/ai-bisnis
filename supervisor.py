@@ -18,6 +18,7 @@ from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
 from verification_agent import VerificationAgent
+from agent_observability import observe_agent, trace_request
 
 MAX_RETRIES = 2
 
@@ -83,6 +84,9 @@ class SupervisorResult:
     specialist_results:  dict = field(default_factory=dict)
     verification_issues: list[str] = field(default_factory=list)
     suggest_pro_mode:    bool = False
+    prompt_tokens:       int = 0
+    completion_tokens:   int = 0
+    total_tokens:        int = 0
 
 
 class SupervisorAgent:
@@ -125,6 +129,9 @@ class SupervisorAgent:
         self.verification_agent = VerificationAgent(**kwargs)
 
     async def process(self, context: dict) -> SupervisorResult:
+        return await trace_request(context, lambda: self._process(context))
+
+    async def _process(self, context: dict) -> SupervisorResult:
         """
         Pipeline utama:
           context wajib berisi:
@@ -192,8 +199,9 @@ class SupervisorAgent:
         reasoning_mode = context.get("reasoning_mode", "standard")
         classification = {"complexity": "simple", "source": "skipped"}
         if reasoning_mode == "pro":
-            classification = await self.intent_classifier.classify(
-                context.get("user_message", "")
+            classification = await observe_agent(
+                "intent_classifier", ctx,
+                lambda: self.intent_classifier.classify(context.get("user_message", "")),
             )
 
         reasoning_mode_used = "standard"
@@ -240,7 +248,10 @@ class SupervisorAgent:
                 extra_agent_results["reasoning_agent:risk"] = risk_result
 
             # ── STEP C: Sintesis jawaban akhir dari hasil tim spesialis ─
-            cs_synth = await self.cs_agent.synthesize(ctx, specialist_outputs)
+            cs_synth = await observe_agent(
+                "cs_agent:synthesis", ctx,
+                lambda: self.cs_agent.synthesize(ctx, specialist_outputs),
+            )
             cs_answer = cs_synth.get("answer") or self.cs_agent._clarify_response(
                 context.get("user_message", "")
             )
@@ -251,7 +262,10 @@ class SupervisorAgent:
             # ── STEP D: Verifikasi jawaban + retry terbatas ─
             verify_out: dict = {}
             while True:
-                verify_out = await self.verification_agent.verify(ctx, cs_answer, specialist_outputs)
+                verify_out = await observe_agent(
+                    "verification_agent", ctx,
+                    lambda: self.verification_agent.verify(ctx, cs_answer, specialist_outputs),
+                )
                 if verify_out.get("_llm_unavailable"):
                     verification_passed = True  # don't retry-storm during an outage
                 else:
@@ -270,7 +284,10 @@ class SupervisorAgent:
                     f"Jawaban sebelumnya memiliki masalah: {'; '.join(verification_issues)}. "
                     "Perbaiki jawaban."
                 )
-                cs_synth = await self.cs_agent.synthesize(ctx, specialist_outputs)
+                cs_synth = await observe_agent(
+                    "cs_agent:synthesis", ctx,
+                    lambda: self.cs_agent.synthesize(ctx, specialist_outputs),
+                )
                 cs_answer = cs_synth.get("answer") or cs_answer
                 confidence_score = cs_synth.get("confidence_score", confidence_score)
                 cs_topics = cs_synth.get("topics", cs_topics)

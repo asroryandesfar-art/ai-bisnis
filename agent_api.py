@@ -36,6 +36,7 @@ from supervisor import SupervisorAgent
 # Customer Intelligence — lihat intelligence/ARCHITECTURE.md
 from intelligence.routes_intelligence import intel_router
 from intelligence.pipeline import persist_intelligence
+from intelligence.db import get_pool as get_intelligence_pool
 
 logger = logging.getLogger("agent_api.intelligence")
 
@@ -147,6 +148,11 @@ async def process_message(
 
     supervisor = get_supervisor()
 
+    try:
+        observability_pool = await get_intelligence_pool()
+    except Exception:
+        observability_pool = None
+
     context = {
         "bot_id":                req.bot_id,
         "org_id":                req.org_id,
@@ -156,6 +162,7 @@ async def process_message(
         "knowledge_base_context": req.knowledge_base_context,
         "resolved":              req.resolved,
         "metadata":              req.metadata,
+        "_observability_pool": observability_pool,
     }
 
     result = await supervisor.process(context)

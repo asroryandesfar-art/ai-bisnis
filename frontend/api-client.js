@@ -136,6 +136,8 @@ export const api = {
   gmailPoll: () => request("/integrations/gmail/poller/run-once", { method: "POST" }),
   gmailPoller: () => request("/integrations/gmail/poller"),
   deleteIntegration: (key) => request("/integrations/" + key, { method: "DELETE" }),
+  observabilitySummary: (days = 7) => request("/api/observability/summary" + encodeQuery({ days })),
+  observabilityTrace: (traceId) => request("/api/observability/traces/" + traceId),
   auditLogs: (params = {}) => request(`/api/security/audit-logs${encodeQuery(params)}`),
   securityScan: () => request("/api/security/scan", { method: "POST" }),
 };

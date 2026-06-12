@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 import vendor_bootstrap  # noqa: F401
+from agent_observability import add_token_usage, observe_agent
 
 
 def parse_json_response(raw: str, default: dict | None = None) -> dict:
@@ -113,6 +114,12 @@ class BaseAgent:
                 resp.raise_for_status()
                 data = resp.json() or {}
                 break
+        usage = data.get("usage") or {}
+        add_token_usage(
+            model=model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+        )
         choices = data.get("choices") or []
         if not choices:
             return ""
@@ -158,17 +165,17 @@ class BaseAgent:
         raise NotImplementedError
 
     async def safe_run(self, context: dict) -> AgentResult:
-        """Wrapper run() dengan error handling dan timing."""
-        t = time.monotonic()
-        try:
-            result = await self.run(context)
-            result.latency_ms = int((time.monotonic() - t) * 1000)
-            return result
-        except Exception as e:
-            return AgentResult(
-                agent      = self.name,
-                success    = False,
-                output     = {},
-                latency_ms = int((time.monotonic() - t) * 1000),
-                error      = str(e),
-            )
+        """Wrapper run() dengan error handling, timing, dan tracing."""
+        async def execute() -> AgentResult:
+            t = time.monotonic()
+            try:
+                result = await self.run(context)
+                result.latency_ms = int((time.monotonic() - t) * 1000)
+                return result
+            except Exception as e:
+                return AgentResult(
+                    agent=self.name, success=False, output={},
+                    latency_ms=int((time.monotonic() - t) * 1000), error=str(e),
+                )
+
+        return await observe_agent(self.name, context, execute)

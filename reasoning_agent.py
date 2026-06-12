@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 
 from base import AgentResult, BaseAgent
+from agent_observability import observe_agent
 from finance_fetcher import (
     build_crypto_market_context,
     build_stock_market_context,
@@ -69,10 +70,13 @@ class ReasoningAgent(BaseAgent):
 
     async def run_lens(self, lens: str, context: dict, cross_context: str = "") -> AgentResult:
         """Jalankan satu lensa analisis. Tidak pernah raise — error jadi lens skip."""
-        try:
-            return await self._run_lens(lens, context, cross_context)
-        except Exception as e:
-            return self._skip(lens, f"error: {e}")
+        async def execute() -> AgentResult:
+            try:
+                return await self._run_lens(lens, context, cross_context)
+            except Exception as e:
+                return self._skip(lens, f"error: {e}")
+
+        return await observe_agent(f"reasoning_agent:{lens}", context, execute)
 
     async def _run_lens(self, lens: str, context: dict, cross_context: str) -> AgentResult:
         user_message = context.get("user_message", "")

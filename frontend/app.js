@@ -11,7 +11,7 @@ const state = {
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, documents: [], channels: [], integrations: null,
   chatSession: null, charts: {}, loading: false,
-  analyticsDays: 30, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
+  analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
 };
 
 const el = (selector) => document.querySelector(selector);
@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","analytics","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","analytics","observability","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -163,6 +163,28 @@ async function renderAnalytics(days = state.analyticsDays) {
   const questionRows = questions.map((q,index) => `<tr><td class="mono">${String(index+1).padStart(2,'0')}</td><td><span class="table-title">${esc(q.content)}</span></td><td>${formatNumber(q.frequency)}</td><td><div class="progress" style="min-width:100px"><span style="width:${Math.max(6,Math.round((q.frequency/(questions[0]?.frequency||1))*100))}%"></span></div></td></tr>`).join("");
   setPage(`${pageHeader("Analytics","Track conversation volume, AI quality, and the questions customers ask most.",`<select class="select" data-analytics-bot>${options}</select><select class="select" data-analytics-days><option value="7" ${state.analyticsDays===7?'selected':''}>7 days</option><option value="30" ${state.analyticsDays===30?'selected':''}>30 days</option><option value="90" ${state.analyticsDays===90?'selected':''}>90 days</option></select>`)}<div class="grid grid-4">${metricCard("Conversations",formatNumber(summary.total_convs),`${formatNumber(summary.total_msgs)} total messages`,"chat")}${metricCard("Resolution",`${resolution}%`,`${summary.handoff_count||0} handoffs`,"dashboard",resolution>=80?'trend-up':'')}${metricCard("Average rating",summary.avg_rating?`${Number(summary.avg_rating).toFixed(1)}/5`:'—',"Customer satisfaction","analytics")}${metricCard("AI latency",summary.avg_latency_ms?`${Math.round(summary.avg_latency_ms)}ms`:'—',"Assistant response time","agents")}</div><div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><h3>Daily conversations</h3><span class="status-badge active">Live database</span></div><div class="card-body"><div style="height:300px"><canvas id="analytics-chart"></canvas></div></div></div><div class="card"><div class="card-head"><h3>Service quality</h3></div><div class="card-body"><div class="usage-row"><div class="usage-row-head"><span>AI resolution</span><b>${resolution}%</b></div><div class="progress"><span style="width:${resolution}%"></span></div></div><div class="usage-row"><div class="usage-row-head"><span>Customer rating</span><b>${summary.avg_rating||0}/5</b></div><div class="progress"><span style="width:${Math.min(100,Number(summary.avg_rating||0)*20)}%"></span></div></div><div class="usage-row"><div class="usage-row-head"><span>Automated coverage</span><b>${Math.max(0,100-Math.round((summary.handoff_count||0)/(summary.total_convs||1)*100))}%</b></div><div class="progress"><span style="width:${Math.max(0,100-Math.round((summary.handoff_count||0)/(summary.total_convs||1)*100))}%"></span></div></div></div></div></div><div class="card" style="margin-top:16px"><div class="card-head"><h3>Top customer questions</h3><span class="subtle mono" style="font-size:9px">FROM REAL CONVERSATIONS</span></div>${questionRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Question</th><th>Frequency</th><th>Demand</th></tr></thead><tbody>${questionRows}</tbody></table></div>`:emptyState("No question data","Top questions appear after customers interact with this agent.")}</div>`);
   drawChart("analytics","#analytics-chart",state.analytics.daily_volume||[],"bar");
+}
+
+async function renderObservability(days = state.observabilityDays) {
+  state.observabilityDays = Number(days) || 7;
+  loadingPage("AI Observability","Inspect agent health, latency, token usage, and request traces.");
+  let data;
+  try { data = await api.observabilitySummary(state.observabilityDays); }
+  catch (error) { setPage(errorState(error.message)); return; }
+  const metrics = data.metrics || {};
+  const agentRows = (data.agents || []).map((agent) => `<tr><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td>${statusBadge(agent.failures ? 'error' : 'active', agent.failures ? `${agent.failures} failed` : 'healthy')}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`).join("");
+  const traceRows = (data.traces || []).map((trace) => `<tr data-observability-trace="${esc(trace.id)}"><td class="mono">${esc(String(trace.id).slice(0,8))}</td><td><span class="table-title trace-question">${esc(trace.user_question)}</span></td><td>${statusBadge(trace.status === 'success' ? 'active' : trace.status, trace.status)}</td><td>${formatNumber(trace.agent_count)} agents</td><td>${trace.duration_ms || 0}ms</td><td>${formatNumber(trace.total_tokens)}</td><td>${relativeTime(trace.started_at)}</td></tr>`).join("");
+  setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}<div class="grid grid-3 observability-metrics">${metricCard("Active Agents",formatNumber(metrics.active_agents),"Currently executing","agents")}${metricCard("Failed Agents",formatNumber(metrics.failed_agents),"Executions in selected window","observability",metrics.failed_agents?'trend-down':'trend-up')}${metricCard("Average Latency",`${Math.round(metrics.average_latency_ms||0)}ms`,"Per agent execution","analytics")}${metricCard("Token Usage",formatNumber(metrics.total_tokens),`${formatNumber(metrics.prompt_tokens)} prompt · ${formatNumber(metrics.completion_tokens)} completion`,"billing")}${metricCard("Success Rate",`${Number(metrics.success_rate||0).toFixed(1)}%`,"Completed executions","dashboard","trend-up")}${metricCard("Error Rate",`${Number(metrics.error_rate||0).toFixed(1)}%`,"Failed executions","observability",metrics.error_rate?'trend-down':'trend-up')}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent health</h3><span class="subtle">Latency, failures, and token consumption per agent</span></div></div>${agentRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Executions</th><th>Status</th><th>Avg latency</th><th>Tokens</th><th>Last seen</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No execution data","Send a message to an AI agent to create the first trace.")}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent Trace Viewer</h3><span class="subtle">Open a request to inspect its complete execution chain</span></div></div>${traceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Trace</th><th>User question</th><th>Status</th><th>Chain</th><th>Latency</th><th>Tokens</th><th>Started</th></tr></thead><tbody>${traceRows}</tbody></table></div>`:emptyState("No traces yet","Request traces will appear here after an agent handles a message.")}</div>`);
+}
+
+async function openObservabilityTrace(traceId) {
+  let data;
+  try { data = await api.observabilityTrace(traceId); }
+  catch (error) { toast(error.message,"error"); return; }
+  const trace = data.trace || {};
+  const steps = (data.executions || []).map((step, index) => `<div class="trace-step ${step.status}"><span class="trace-node">${index + 1}</span><div><strong>${esc(step.agent_name)}</strong><p>${esc(step.status)} · ${step.duration_ms || 0}ms · ${formatNumber(step.total_tokens)} tokens${step.confidence_score != null ? ` · confidence ${Number(step.confidence_score).toFixed(1)}` : ''}</p>${step.error_message?`<div class="trace-error">${esc(step.error_message)}</div>`:''}${step.metadata && Object.keys(step.metadata).length?`<pre>${esc(JSON.stringify(step.metadata,null,2))}</pre>`:''}</div></div>`).join("");
+  const body = `<div class="trace-summary"><span class="eyebrow">USER QUESTION</span><p>${esc(trace.user_question)}</p></div><div class="trace-chain">${steps}</div><div class="trace-summary final"><span class="eyebrow">FINAL ANSWER</span><div>${renderMarkdown(trace.final_answer || 'No final answer recorded.')}</div></div><div class="trace-totals"><span>${trace.duration_ms || 0}ms total</span><span>${formatNumber(trace.prompt_tokens)} prompt</span><span>${formatNumber(trace.completion_tokens)} completion</span><span>${formatNumber(trace.total_tokens)} tokens</span></div>`;
+  el("#modal-root").innerHTML = modal({title:`Agent Trace ${String(trace.id).slice(0,8)}`,body,wide:true});
 }
 
 async function renderKnowledge() {
@@ -450,7 +472,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,observability:renderObservability,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -541,6 +563,8 @@ async function sendPlayground(form) {
 }
 
 document.addEventListener("click", async (event) => {
+  const traceTarget=event.target.closest("[data-observability-trace]");
+  if(traceTarget){ await openObservabilityTrace(traceTarget.dataset.observabilityTrace); return; }
   const routeTarget=event.target.closest("[data-route]");
   if(routeTarget){ location.hash=routeTarget.dataset.route; return; }
   const agentTarget=event.target.closest("[data-agent-id]");
@@ -607,6 +631,7 @@ document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-conversation-bot]")){ state.selectedBotId=event.target.value; state.selectedConversationId=null; state.messages=[]; await renderConversations(); }
   if(event.target.matches("[data-analytics-bot]")){ state.selectedBotId=event.target.value; await renderAnalytics(); }
   if(event.target.matches("[data-analytics-days]")) await renderAnalytics(event.target.value);
+  if(event.target.matches("[data-observability-days]")) await renderObservability(event.target.value);
   if(event.target.matches("[data-knowledge-bot]")){ state.selectedBotId=event.target.value; await renderKnowledge(); }
   if(event.target.matches("[data-document-upload]")) await uploadDocument(event.target);
 });
