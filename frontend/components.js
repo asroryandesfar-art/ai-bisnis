@@ -9,6 +9,7 @@ const paths = {
   handoffs:'<path d="M4 4h16v12H7l-3 3z"/><path d="M8 8h8M8 12h5"/>',
   learning:'<path d="M12 3a5 5 0 0 0-3 9v3h6v-3a5 5 0 0 0-3-9z"/><path d="M9 19h6M10 22h4"/>',
   knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
+  "kb-builder":'<path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="4"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
   billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1z"/>',
@@ -98,7 +99,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 
 const navGroups = [
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["settings","Settings"]]],
 ];
 
@@ -116,7 +117,9 @@ const routeMeta = {
   marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
   handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],
   learning:["Feedback Learning","User feedback, failed questions, knowledge gaps, and improvement queue"],
-  knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"], team:["Team & Tenants","People, roles, access, and workspace identity"],
+  knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"],
+  "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
+  team:["Team & Tenants","People, roles, access, and workspace identity"],
   billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],
 };
 export function topbar({ route, health }) {
