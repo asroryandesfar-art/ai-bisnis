@@ -869,6 +869,37 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_cost_records_model ON cost_records(tenant_id, model_name, created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, channel, created_at DESC);",
         "ALTER TABLE bots ADD COLUMN IF NOT EXISTS reasoning_mode TEXT NOT NULL DEFAULT 'standard';",
+        """
+        CREATE TABLE IF NOT EXISTS feedback_records (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE UNIQUE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            rating TEXT NOT NULL CHECK (rating IN ('helpful','not_helpful')),
+            comment TEXT, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS feedback_learning_queue (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE UNIQUE,
+            feedback_id UUID REFERENCES feedback_records(id) ON DELETE SET NULL,
+            question TEXT NOT NULL, answer TEXT NOT NULL DEFAULT '', failure_reason TEXT,
+            action_type TEXT NOT NULL CHECK (action_type IN ('knowledge','prompt','workflow')),
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_progress','resolved','dismissed')),
+            occurrence_count INT NOT NULL DEFAULT 1, resolution_note TEXT, resolved_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_feedback_tenant_created ON feedback_records(tenant_id, created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback_records(tenant_id, rating, created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_feedback_queue_status ON feedback_learning_queue(tenant_id, status, updated_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_feedback_queue_action ON feedback_learning_queue(tenant_id, action_type, occurrence_count DESC);",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -3151,6 +3182,7 @@ async def chat(
     resp = {
         "answer":      answer,
         "session_id":  conv_id,
+        "message_id":  bot_msg_id,
         "latency_ms":  latency_ms,
     }
 
@@ -3572,9 +3604,12 @@ async def get_messages(
         raise HTTPException(404, "Conversation tidak ditemukan")
 
     rows = await pool.fetch(
-        "SELECT id, role, content, latency_ms, created_at, source_chunks FROM messages "
-        "WHERE conversation_id=$1 ORDER BY created_at",
-        conv_id,
+        """SELECT m.id, m.role, m.content, m.model, m.latency_ms, m.created_at, m.source_chunks,
+                  fr.rating AS feedback_rating, fr.comment AS feedback_comment
+           FROM messages m
+           LEFT JOIN feedback_records fr ON fr.message_id=m.id AND fr.tenant_id=$2
+           WHERE m.conversation_id=$1 ORDER BY m.created_at""",
+        conv_id, user["org_id"],
     )
     return [dict(r) for r in rows]
 
@@ -3765,6 +3800,7 @@ try:
     from bn_platform.observability import instrument_app, record_db_pool_stats
     from bn_platform.ai_observability import build_ai_observability_router
     from bn_platform.cost_intelligence import build_cost_intelligence_router
+    from bn_platform.feedback_learning import build_feedback_learning_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -3870,6 +3906,12 @@ try:
     )
     app.include_router(
         build_cost_intelligence_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_feedback_learning_router(
             get_pool=get_pool, get_current_user=get_current_user,
         ),
         prefix="/api",

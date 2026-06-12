@@ -575,3 +575,43 @@ ON CONFLICT (key) DO NOTHING;
 DROP TRIGGER IF EXISTS trg_subs_updated ON subscriptions;
 CREATE TRIGGER trg_subs_updated BEFORE UPDATE ON subscriptions
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- FEEDBACK LEARNING (per-answer feedback and actionable queue)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS feedback_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE UNIQUE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    rating TEXT NOT NULL CHECK (rating IN ('helpful','not_helpful')),
+    comment TEXT,
+    question TEXT NOT NULL DEFAULT '',
+    answer TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS feedback_learning_queue (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE UNIQUE,
+    feedback_id UUID REFERENCES feedback_records(id) ON DELETE SET NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    failure_reason TEXT,
+    action_type TEXT NOT NULL CHECK (action_type IN ('knowledge','prompt','workflow')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_progress','resolved','dismissed')),
+    occurrence_count INT NOT NULL DEFAULT 1,
+    resolution_note TEXT,
+    resolved_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_tenant_created ON feedback_records(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback_records(tenant_id, rating, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_queue_status ON feedback_learning_queue(tenant_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_queue_action ON feedback_learning_queue(tenant_id, action_type, occurrence_count DESC);
