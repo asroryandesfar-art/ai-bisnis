@@ -1,6 +1,6 @@
 import { api, tokenStore, settle } from "/ui/api-client.js";
 import {
-  icon, esc, initials, formatNumber, formatDate, relativeTime, idr,
+  icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
 } from "/ui/components.js";
@@ -125,7 +125,7 @@ async function renderConversations() {
 
 function renderMessagePanel() {
   const conv = state.conversations.find((item) => item.id === state.selectedConversationId);
-  const messages = state.messages.map((message) => `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${esc(message.content).replace(/\n/g,'<br>')}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div></div></div>`).join("");
+  const messages = state.messages.map((message) => `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${message.role==='user'?esc(message.content).replace(/\n/g,'<br>'):renderMarkdown(message.content)}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div></div></div>`).join("");
   return `<header class="chat-head"><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(conv?.end_user_name || 'AN')}</span><div><strong>${esc(conv?.end_user_name || conv?.end_user_email || 'Anonymous customer')}</strong><div style="margin-top:4px">${statusBadge(conv?.handoff_needed?'handoff':'resolved',conv?.handoff_needed?'Needs handoff':'AI handled')}</div></div></div><button class="icon-button">${icon('more')}</button></header><div class="messages">${messages || emptyState("No messages","This conversation does not contain messages.")}</div>`;
 }
 
@@ -523,7 +523,7 @@ async function sendPlayground(form) {
       }
     }
     messages.querySelector("[data-thinking]")?.remove();
-    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${esc(result.answer).replace(/\n/g,"<br>")}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div></div></div>`);
+    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div></div></div>`);
     if (preparedSpeech) {
       speak(result.answer, container, preparedSpeech).catch((error) => voiceStatus(container, `Suara gagal: ${error.message}`));
     }
