@@ -13,6 +13,7 @@ import httpx
 
 import vendor_bootstrap  # noqa: F401
 from agent_observability import add_token_usage, observe_agent
+from cost_intelligence import routed_model
 
 
 def parse_json_response(raw: str, default: dict | None = None) -> dict:
@@ -89,31 +90,41 @@ class BaseAgent:
             raise RuntimeError("API key kosong. Set GROQ_API_KEY untuk mode cloud.")
 
         base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
-        model = self.model or "llama-3.3-70b-versatile"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if response_format is not None:
-            payload["response_format"] = response_format
+        default_model = self.model or "llama-3.3-70b-versatile"
+        selected_model = routed_model(default_model)
+        models = [selected_model]
+        if selected_model != default_model:
+            models.append(default_model)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         max_attempts = 3
         async with httpx.AsyncClient(timeout=60) as client:
-            for attempt in range(max_attempts):
-                resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-                if resp.status_code == 429 and attempt < max_attempts - 1:
-                    # Retry-After dari Groq saat 429 service-capacity bisa sangat besar
-                    # (menit), jadi gunakan backoff pendek tetap agar latensi terkendali.
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                resp.raise_for_status()
-                data = resp.json() or {}
-                break
+            for model_index, model in enumerate(models):
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                if response_format is not None:
+                    payload["response_format"] = response_format
+                try:
+                    for attempt in range(max_attempts):
+                        resp = await client.post(
+                            f"{base_url}/chat/completions", json=payload, headers=headers
+                        )
+                        if resp.status_code == 429 and attempt < max_attempts - 1:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        resp.raise_for_status()
+                        data = resp.json() or {}
+                        break
+                    break
+                except httpx.HTTPStatusError:
+                    if model_index >= len(models) - 1:
+                        raise
         usage = data.get("usage") or {}
         add_token_usage(
             model=model,

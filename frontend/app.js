@@ -9,7 +9,7 @@ const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null,
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
-  conversations: [], messages: [], analytics: null, documents: [], channels: [], integrations: null,
+  conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
   chatSession: null, charts: {}, loading: false,
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
 };
@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","analytics","observability","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","analytics","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -146,7 +146,7 @@ function destroyChart(key) { if (state.charts[key]) { state.charts[key].destroy(
 function drawChart(key, selector, rows, type = "bar") {
   const canvas = el(selector); if (!canvas || !window.Chart) return; destroyChart(key);
   const labels = rows.map((row) => String(row.date || row.label || "").slice(5));
-  const values = rows.map((row) => Number(row.convs ?? row.value ?? 0));
+  const values = rows.map((row) => Number(row.convs ?? row.value ?? row.cost ?? 0));
   state.charts[key] = new Chart(canvas, { type, data:{labels,datasets:[{data:values,borderColor:'#8b7cff',backgroundColor:type==='line'?'rgba(139,124,255,.12)':'rgba(139,124,255,.7)',fill:type==='line',tension:.38,borderWidth:2,pointRadius:0,borderRadius:5}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#697386',font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(105,115,134,.13)'},ticks:{color:'#697386',font:{size:9}}}}} });
 }
 
@@ -185,6 +185,35 @@ async function openObservabilityTrace(traceId) {
   const steps = (data.executions || []).map((step, index) => `<div class="trace-step ${step.status}"><span class="trace-node">${index + 1}</span><div><strong>${esc(step.agent_name)}</strong><p>${esc(step.status)} · ${step.duration_ms || 0}ms · ${formatNumber(step.total_tokens)} tokens${step.confidence_score != null ? ` · confidence ${Number(step.confidence_score).toFixed(1)}` : ''}</p>${step.error_message?`<div class="trace-error">${esc(step.error_message)}</div>`:''}${step.metadata && Object.keys(step.metadata).length?`<pre>${esc(JSON.stringify(step.metadata,null,2))}</pre>`:''}</div></div>`).join("");
   const body = `<div class="trace-summary"><span class="eyebrow">USER QUESTION</span><p>${esc(trace.user_question)}</p></div><div class="trace-chain">${steps}</div><div class="trace-summary final"><span class="eyebrow">FINAL ANSWER</span><div>${renderMarkdown(trace.final_answer || 'No final answer recorded.')}</div></div><div class="trace-totals"><span>${trace.duration_ms || 0}ms total</span><span>${formatNumber(trace.prompt_tokens)} prompt</span><span>${formatNumber(trace.completion_tokens)} completion</span><span>${formatNumber(trace.total_tokens)} tokens</span></div>`;
   el("#modal-root").innerHTML = modal({title:`Agent Trace ${String(trace.id).slice(0,8)}`,body,wide:true});
+}
+
+function usd(value, digits = 4) { return `$${Number(value || 0).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})}`; }
+
+function costBreakdownTable(rows, heading) {
+  const body = (rows || []).map((row) => `<tr><td><span class="table-title">${esc(row.label || 'unknown')}</span></td><td>${usd(row.cost,6)}</td><td>${formatNumber(row.tokens)}</td><td>${formatNumber(row.calls)}</td></tr>`).join("");
+  return `<div class="card"><div class="card-head"><h3>${esc(heading)}</h3></div>${body?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Dimension</th><th>Cost</th><th>Tokens</th><th>Calls</th></tr></thead><tbody>${body}</tbody></table></div>`:emptyState("No cost data","Cost appears after an AI model processes tokens.")}</div>`;
+}
+
+async function renderCostIntelligence() {
+  loadingPage("Cost Intelligence","Track AI operating cost and protect tenant budgets.");
+  try { state.costIntelligence = await api.costIntelligence(); }
+  catch (error) { setPage(errorState(error.message)); return; }
+  const data = state.costIntelligence || {};
+  const budget = data.budget || {};
+  const pct = Math.min(100,Number(budget.percentage||0));
+  const budgetClass = ['warning','critical','exceeded'].includes(budget.level) ? budget.level : 'healthy';
+  const tenantRows = (data.cost_by_tenant || []).map((row) => `<tr><td><span class="table-title">${esc(row.name)}</span><div class="subtle mono">${esc(row.tenant_id)}</div></td><td>${usd(row.cost,6)}</td><td>${formatNumber(row.tokens)}</td></tr>`).join("");
+  const routingRows = (data.model_routing || []).map((row) => `<tr><td>${statusBadge(row.task_complexity==='simple'?'active':'training',row.task_complexity)}</td><td class="mono">${esc(row.routed_model||'default')}</td><td>${formatNumber(row.requests)}</td></tr>`).join("");
+  const budgetPanel = `<div class="card budget-card ${budgetClass}"><div class="card-head"><div><h3>Monthly Budget</h3><span class="subtle">${esc(budget.message||'')}</span></div>${statusBadge(budgetClass,budget.level||'unconfigured')}</div><div class="card-body"><div class="budget-amount"><strong>${usd(data.monthly_cost,4)}</strong><span>of ${budget.monthly_budget_usd?usd(budget.monthly_budget_usd,2):'not configured'}</span></div><div class="progress budget-progress"><span style="width:${pct}%"></span></div><div class="budget-thresholds"><span>80% warning</span><span>90% critical</span><span>100% exceeded</span></div><form data-cost-budget-form class="budget-form"><label class="field"><span>Monthly budget (USD)</span><input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${Number(budget.monthly_budget_usd||0)}" required></label><button class="button button-primary" type="submit">Save budget</button></form></div></div>`;
+  setPage(`${pageHeader("Cost Intelligence","FinOps visibility for every tenant, channel, conversation, agent, and model.",`<span class="status-badge active">USD estimated provider cost</span>`)}<div class="grid grid-4">${metricCard("Monthly Cost",usd(data.monthly_cost),`${formatNumber(data.monthly_calls)} model calls`,"costs")}${metricCard("Daily Cost",usd(data.daily_cost),"Cost since 00:00 UTC","analytics")}${metricCard("Projected Month",usd(data.projected_monthly_cost),"Run-rate projection","billing")}${metricCard("Monthly Tokens",formatNumber(data.monthly_tokens),"Prompt + completion","observability")}</div><div class="grid grid-2" style="margin-top:16px">${budgetPanel}<div class="card"><div class="card-head"><div><h3>Daily AI Cost</h3><span class="subtle">Last 30 days</span></div></div><div class="card-body"><div style="height:270px"><canvas id="cost-daily-chart"></canvas></div></div></div></div><div class="grid grid-2" style="margin-top:16px">${costBreakdownTable(data.cost_by_agent,"Cost By Agent")}${costBreakdownTable(data.cost_by_model,"Cost By Model")}${costBreakdownTable(data.cost_by_channel,"Cost By Channel")}${costBreakdownTable(data.cost_by_conversation,"Cost By Conversation")}</div><div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><h3>Cost By Tenant</h3><span class="subtle">Current tenant scope</span></div>${tenantRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Tenant</th><th>Cost</th><th>Tokens</th></tr></thead><tbody>${tenantRows}</tbody></table></div>`:emptyState("No tenant cost","No model usage recorded this month.")}</div><div class="card"><div class="card-head"><h3>Model Routing</h3><span class="subtle">Simple → economy · Complex → quality</span></div>${routingRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Task</th><th>Model</th><th>Requests</th></tr></thead><tbody>${routingRows}</tbody></table></div>`:emptyState("No routing data","Model route decisions appear after AI requests.")}</div></div>`);
+  drawChart("cost-daily","#cost-daily-chart",data.daily_costs||[],"line");
+}
+
+async function updateCostBudget(form) {
+  if(!form.reportValidity()) return;
+  const value = Number(new FormData(form).get("monthly_budget_usd") || 0);
+  try { await api.updateCostBudget(value); toast("Monthly AI budget updated.","success"); await renderCostIntelligence(); }
+  catch(error) { toast(error.message,"error"); }
 }
 
 async function renderKnowledge() {
@@ -472,7 +501,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,observability:renderObservability,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -624,6 +653,7 @@ document.addEventListener("submit", async (event) => {
   if(event.target.id==="agent-detail-form"){ event.preventDefault(); await submitAgentDetail(event.target); }
   if(event.target.matches("[data-playground-form]")){ event.preventDefault(); await sendPlayground(event.target); }
   if(event.target.matches("[data-kb-url-form]")){ event.preventDefault(); await uploadKnowledgeUrl(event.target); }
+  if(event.target.matches("[data-cost-budget-form]")){ event.preventDefault(); await updateCostBudget(event.target); }
 });
 
 document.addEventListener("change", async (event) => {
