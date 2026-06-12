@@ -3,6 +3,8 @@ agents/base.py — Base class untuk semua agen
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +12,25 @@ from typing import Any
 import httpx
 
 import vendor_bootstrap  # noqa: F401
+
+
+def parse_json_response(raw: str, default: dict | None = None) -> dict:
+    """Parse LLM JSON output dengan fallback markdown code-fence. Tidak pernah raise."""
+    text = (raw or "").strip()
+    if "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1]
+            if text.startswith("json"):
+                text = text[4:]
+    text = text.strip()
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    return dict(default) if default is not None else {}
 
 
 @dataclass
@@ -58,6 +79,7 @@ class BaseAgent:
         messages:    list[dict],
         temperature: float = 0.3,
         max_tokens:  int   = 1024,
+        response_format: dict | None = None,
     ) -> str:
         """
         Cloud LLM call via Groq chat completions.
@@ -73,19 +95,55 @@ class BaseAgent:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        max_attempts = 3
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json() or {}
+            for attempt in range(max_attempts):
+                resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+                if resp.status_code == 429 and attempt < max_attempts - 1:
+                    # Retry-After dari Groq saat 429 service-capacity bisa sangat besar
+                    # (menit), jadi gunakan backoff pendek tetap agar latensi terkendali.
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                resp.raise_for_status()
+                data = resp.json() or {}
+                break
         choices = data.get("choices") or []
         if not choices:
             return ""
         message = (choices[0] or {}).get("message") or {}
         return str(message.get("content") or "").strip()
+
+    async def _call_llm_json(
+        self,
+        messages:    list[dict],
+        temperature: float = 0.2,
+        max_tokens:  int   = 512,
+        default:     dict | None = None,
+    ) -> dict:
+        """LLM call dengan Groq json_object mode + parsing aman.
+
+        Catatan: Groq mewajibkan kata "JSON" muncul di prompt saat
+        response_format json_object dipakai.
+        """
+        try:
+            raw = await self._call_llm(
+                messages, temperature=temperature, max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except Exception:
+            # LLM call gagal total (mis. 429 quota harian) — beda dari respons
+            # kosong/refusal yang valid. Tandai supaya caller bisa pilih pesan
+            # fallback yang lebih jujur ("sistem sibuk" vs "tolong kirim detail").
+            out = dict(default) if default is not None else {}
+            out["_llm_unavailable"] = True
+            return out
+        return parse_json_response(raw, default=default)
 
     async def run(self, context: dict) -> AgentResult:
         """

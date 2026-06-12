@@ -40,6 +40,12 @@ async def persist_intelligence(
             extra_metrics={
                 "product_insights": result.product_insights,
                 "trainer_score": result.trainer_score,
+                "reasoning_mode_used": result.reasoning_mode_used,
+                "confidence_score": result.confidence_score,
+                "verification_passed": result.verification_passed,
+                "retry_count": result.retry_count,
+                "plan": result.plan,
+                "specialist_lenses_used": list(result.specialist_results or {}),
             },
         )
     except Exception:

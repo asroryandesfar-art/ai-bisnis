@@ -120,6 +120,7 @@ class MemoryStore:
     def __init__(self, persist_path: str | None = None):
         self._short: dict[str, ShortTermMemory] = {}       # conv_id → STM
         self._long:  dict[str, UserProfile]     = {}       # user_key → UserProfile
+        self._summaries: dict[str, str]         = {}       # conv_id → ringkasan kumulatif
         self._persist_path = Path(persist_path) if persist_path else None
         if self._persist_path:
             self._load()
@@ -158,15 +159,26 @@ class MemoryStore:
         profile.set_fact(fact_key, value, confidence, source)
         self._save()
 
+    # ── Conversation summary (PROMPT 5 context memory) ─────────────
+
+    def get_conversation_summary(self, conv_id: str) -> str:
+        return self._summaries.get(conv_id, "")
+
+    def set_conversation_summary(self, conv_id: str, summary: str):
+        if not conv_id or not summary:
+            return
+        self._summaries[conv_id] = summary
+        self._save()
+
     # ── Persist ─────────────────────────────────────────────────
 
     def _save(self):
         if not self._persist_path:
             return
         try:
-            data = {}
+            profiles = {}
             for k, profile in self._long.items():
-                data[k] = {
+                profiles[k] = {
                     "user_id":    profile.user_id,
                     "org_id":     profile.org_id,
                     "bot_id":     profile.bot_id,
@@ -178,6 +190,10 @@ class MemoryStore:
                         for fk, fv in profile.facts.items()
                     },
                 }
+            data = {
+                "profiles": profiles,
+                "conversation_summaries": self._summaries,
+            }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         except Exception as e:
@@ -188,7 +204,14 @@ class MemoryStore:
             return
         try:
             data = json.loads(self._persist_path.read_text())
-            for k, d in data.items():
+            # Format baru: {"profiles": {...}, "conversation_summaries": {...}}.
+            # Format lama: profil langsung di root — tetap didukung untuk file lama.
+            if "profiles" in data:
+                profiles = data.get("profiles", {})
+                self._summaries = data.get("conversation_summaries", {})
+            else:
+                profiles = data
+            for k, d in profiles.items():
                 profile = UserProfile(
                     user_id    = d["user_id"],
                     org_id     = d["org_id"],
@@ -200,7 +223,7 @@ class MemoryStore:
                 for fk, fv in d.get("facts", {}).items():
                     profile.facts[fk] = LongTermFact(**fv)
                 self._long[k] = profile
-            print(f"[MemoryStore] Loaded {len(self._long)} user profiles")
+            print(f"[MemoryStore] Loaded {len(self._long)} user profiles, {len(self._summaries)} conversation summaries")
         except Exception as e:
             print(f"[MemoryStore] Load error: {e}")
 
@@ -209,6 +232,7 @@ class MemoryStore:
             "active_conversations": len(self._short),
             "user_profiles":        len(self._long),
             "total_facts":          sum(len(p.facts) for p in self._long.values()),
+            "conversation_summaries": len(self._summaries),
         }
 
 
@@ -249,7 +273,7 @@ Output WAJIB format JSON:
     {"key": "prefers_formal_tone", "value": true, "confidence": 0.7, "source": "inferred"},
     {"key": "last_complaint_topic", "value": "keterlambatan pengiriman", "confidence": 1.0, "source": "extracted"}
   ],
-  "summary": "Satu kalimat ringkasan percakapan ini untuk memori jangka panjang",
+  "summary": "Ringkasan kumulatif percakapan ini (gabungan ringkasan sebelumnya + turn terbaru), 2-4 kalimat",
   "forget_keys": []
 }
 
@@ -258,7 +282,8 @@ Aturan:
 - confidence: 0.0-1.0
 - source: "explicit" (user sebut langsung) | "extracted" (dari konteks) | "inferred" (kesimpulan)
 - forget_keys: daftar key yang harus dihapus (user koreksi info lama)
-- Jika tidak ada fakta yang perlu disimpan, kembalikan facts_to_store: []"""
+- Jika tidak ada fakta yang perlu disimpan, kembalikan facts_to_store: []
+- JANGAN simpan data sensitif (password, OTP, PIN, nomor kartu/CVV, token API) ke dalam facts_to_store atau summary"""
 
     def __init__(
         self,
@@ -305,6 +330,16 @@ Aturan:
                     profile_ctx + "\n\n" + existing_kb
                 ).strip()
 
+        # 2.5 Ringkasan percakapan: beri kesinambungan untuk follow-up
+        # (mis. "Kalau yang Pro gimana?" setelah membahas paket sebelumnya).
+        if conv_id:
+            summary = self.store.get_conversation_summary(conv_id)
+            if summary:
+                existing_kb = enriched.get("knowledge_base_context", "")
+                enriched["knowledge_base_context"] = (
+                    f"## Ringkasan percakapan sejauh ini\n{summary}\n\n" + existing_kb
+                ).strip()
+
         # 3. Tandai user_id di context
         enriched["_memory_user_id"] = user_id
         return enriched
@@ -346,11 +381,15 @@ Aturan:
 
         profile = self.store.get_profile(user_id, org_id, bot_id)
         existing_facts = "\n".join(f"- {k}: {v.value}" for k, v in profile.facts.items()) or "Belum ada."
+        previous_summary = self.store.get_conversation_summary(conv_id) or "Belum ada."
 
         prompt = f"""Analisa percakapan berikut dan ekstrak fakta yang perlu diingat.
 
 FAKTA YANG SUDAH TERSIMPAN:
 {existing_facts}
+
+RINGKASAN PERCAKAPAN SEBELUMNYA:
+{previous_summary}
 
 PERCAKAPAN TERBARU:
 {history_text}
@@ -358,7 +397,9 @@ PERCAKAPAN TERBARU:
 USER: {user_msg}
 BOT: {bot_response}
 
-Ekstrak fakta BARU atau UPDATE fakta yang sudah ada dalam format JSON."""
+Ekstrak fakta BARU atau UPDATE fakta yang sudah ada dalam format JSON. Untuk "summary",
+gabungkan ringkasan sebelumnya dengan informasi baru dari turn ini menjadi satu ringkasan
+kumulatif (jangan hanya meringkas turn ini saja)."""
 
         raw = await self._call_llm(
             [{"role": "user", "content": prompt}],
@@ -394,6 +435,11 @@ Ekstrak fakta BARU atau UPDATE fakta yang sudah ada dalam format JSON."""
         for key in output.get("forget_keys", []):
             if key in profile.facts:
                 del profile.facts[key]
+
+        # Simpan ringkasan kumulatif percakapan untuk follow-up berikutnya
+        new_summary = (output.get("summary") or "").strip()
+        if new_summary and conv_id:
+            self.store.set_conversation_summary(conv_id, new_summary)
 
         # Update counter
         profile.total_convs += 1
