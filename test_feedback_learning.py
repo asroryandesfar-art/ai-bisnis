@@ -108,14 +108,14 @@ def test_feedback_learning_routes_schema_and_ui_are_present():
     assert "/api/feedback-learning/queue" in paths
     assert "/api/feedback-learning/queue/{item_id}" in paths
 
-    schema = Path("schema.sql").read_text()
+    schema = (Path(__file__).resolve().parent / "schema.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS feedback_records" in schema
     assert "CREATE TABLE IF NOT EXISTS feedback_learning_queue" in schema
     for field in ("tenant_id", "conversation_id", "rating", "comment", "created_at"):
         assert field in schema
 
-    frontend = Path("frontend/app.js").read_text()
-    sdk = Path("api.js").read_text()
+    frontend = (Path(__file__).resolve().parent / "frontend/app.js").read_text()
+    sdk = (Path(__file__).resolve().parent / "api.js").read_text()
     assert "/api/feedback-learning/public/${botId}" in sdk
     assert "👍 Helpful" in frontend
     assert "👎 Not Helpful" in frontend

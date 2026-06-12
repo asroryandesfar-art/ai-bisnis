@@ -411,6 +411,47 @@ SELECT
 FROM human_queue;
 
 -- ============================================================
+-- AGENT MARKETPLACE (template catalog + tenant installs)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS marketplace_templates (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    key           TEXT NOT NULL UNIQUE,
+    category      TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    description   TEXT NOT NULL,
+    preview_image  TEXT,
+    system_prompt TEXT NOT NULL,
+    greeting      TEXT NOT NULL,
+    primary_color TEXT NOT NULL DEFAULT '#0066FF',
+    sample_faqs   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    install_count INT NOT NULL DEFAULT 0,
+    version       TEXT NOT NULL DEFAULT '1.0.0',
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_template_installs (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    template_id  UUID NOT NULL REFERENCES marketplace_templates(id),
+    bot_id       UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    installed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_installs_org ON tenant_template_installs(org_id);
+
+CREATE OR REPLACE VIEW agent_templates AS
+SELECT
+    id,
+    name,
+    description,
+    category,
+    version,
+    CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
+FROM marketplace_templates;
+
+-- ============================================================
 -- FEEDBACK LEARNING (per-answer feedback and actionable queue)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS feedback_records (

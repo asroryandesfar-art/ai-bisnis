@@ -83,6 +83,19 @@ export const api = {
     method: "POST", body: { message, session_id: sessionId, user_meta: userMeta },
   }),
 
+  marketplaceTemplates: () => request("/api/marketplace/templates"),
+  marketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}`),
+  marketplaceInstalls: () => request("/api/marketplace/installs"),
+  installMarketplaceTemplate: (template_key, bot_name = null) => request("/api/marketplace/install", {
+    method: "POST", body: { template_key, bot_name },
+  }),
+  updateMarketplaceInstall: (install_id, bot_name = null) => request(`/api/marketplace/installs/${install_id}/update`, {
+    method: "POST", body: { bot_name },
+  }),
+  uninstallMarketplaceInstall: (install_id) => request(`/api/marketplace/installs/${install_id}/uninstall`, {
+    method: "POST",
+  }),
+
   transcribeAudio: (blob, filename = "recording.webm") => {
     const body = new FormData(); body.append("file", blob, filename);
     return request("/audio/transcribe", { method: "POST", body });

@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -255,6 +255,44 @@ async function updateCostBudget(form) {
   catch(error) { toast(error.message,"error"); }
 }
 
+async function renderMarketplace() {
+  loadingPage("Agent Marketplace", "Install, update, and uninstall reusable agents without rebuilding the platform.");
+  try {
+    const [templatesResult, installsResult] = await Promise.all([api.marketplaceTemplates(), api.marketplaceInstalls()]);
+    state.marketplace = {
+      templates: templatesResult.templates || [],
+      installs: installsResult.installs || [],
+    };
+  } catch (error) { setPage(errorState(error.message)); return; }
+
+  const templates = state.marketplace?.templates || [];
+  const installs = state.marketplace?.installs || [];
+  const installedByTemplate = new Map(installs.map((item) => [item.template_key, item]));
+  const categoryOrder = ["Business", "Education", "Healthcare", "E-commerce", "Travel"];
+  const categoryMeta = {
+    Business: "Customer service, sales, FAQ, and property workflows",
+    Education: "School and education operations",
+    Healthcare: "Clinic and patient administration",
+    "E-commerce": "Commerce operations and order support",
+    Travel: "Trip planning and booking assistance",
+  };
+
+  const templateCard = (template) => {
+    const install = installedByTemplate.get(template.key);
+    const installed = !!install;
+    return `<article class="card card-hover marketplace-card"><div class="card-head"><div><h3>${esc(template.name)}</h3><span class="subtle" style="font-size:9px">${esc(template.category)} · v${esc(template.version || '1.0.0')}</span></div>${statusBadge(template.status || 'active', template.status || 'active')}</div><p>${esc(template.description)}</p><div class="marketplace-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">${installed ? `<span class="status-badge active">Installed</span><span class="status-badge ${esc(install.bot_status || 'active')}">${esc(install.bot_status || 'active')}</span>` : `<span class="status-badge ready">Available</span>`}</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center"><div class="subtle mono" style="font-size:8px">${installed ? `Bot: ${esc(install.bot_name || '')}` : `Template: ${esc(template.key)}`}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div></article>`;
+  };
+
+  const categorySections = categoryOrder.map((category) => {
+    const rows = templates.filter((template) => template.category === category);
+    return `<section class="card" style="margin-top:16px"><div class="card-head"><div><h3>${esc(category)}</h3><span class="subtle" style="font-size:9px">${esc(categoryMeta[category] || '')}</span></div><span class="status-badge active">${formatNumber(rows.length)} templates</span></div>${rows.length ? `<div class="grid grid-2" style="padding:16px">${rows.map(templateCard).join('')}</div>` : emptyState("No templates", "No templates are available in this category.")}</section>`;
+  }).join('');
+
+  const installedRows = installs.map((item) => `<tr><td><span class="table-title">${esc(item.template_name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(item.template_key)} · ${esc(item.template_version || '1.0.0')}</div></td><td>${esc(item.template_category || 'Business')}</td><td>${statusBadge(item.bot_status || 'inactive', item.bot_status || 'inactive')}</td><td>${esc(item.bot_name || '—')}</td><td>${relativeTime(item.installed_at)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="button" data-marketplace-update="${esc(item.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(item.id)}">Uninstall</button></div></td></tr>`).join('');
+
+  setPage(`${pageHeader("Agent Marketplace","Install reusable agents like apps, then update or uninstall them per tenant.",`<span class="status-badge active">${formatNumber(templates.length)} templates</span>`)}<div class="grid grid-4">${metricCard("Templates",formatNumber(templates.length),"Reusable agent blueprints","agents")}${metricCard("Installed",formatNumber(installs.length),"Tenant agent installs","dashboard")}${metricCard("Active installs",formatNumber(installs.filter((item) => item.bot_status === 'active').length),"Currently enabled","observability")}${metricCard("Categories",formatNumber(categoryOrder.length),"Business, Education, Healthcare, E-commerce, Travel","knowledge")}</div>${categorySections}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Installed agents</h3><span class="subtle" style="font-size:9px">Manage tenant-specific agent installs</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Category</th><th>Status</th><th>Bot</th><th>Installed</th><th>Action</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("No installed agents","Install a template from the marketplace to create the first reusable agent.")}</div>`);
+}
+
 async function renderKnowledge() {
   loadingPage("Knowledge Base","Manage trusted source documents used to ground AI answers.");
   if (!state.selectedBotId) { setPage(pageHeader("Knowledge Base","Ground agents with company documents.") + emptyState("No agent available","Create an agent before uploading knowledge.")); return; }
@@ -382,6 +420,31 @@ async function pollGmail() { try{const result=await api.gmailPoll(); toast(`Gmai
 function showMetaTest() { el("#modal-root").innerHTML=modal({title:"Send WhatsApp test",body:`<form id="meta-test-form"><label class="field"><span>Destination number</span><input name="to_number" required placeholder="62812..."></label><label class="field" style="margin-top:12px"><span>Message</span><textarea name="text">Halo! Ini test dari BotNesia.</textarea></label></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta-test">Send test</button>`}); }
 async function submitMetaTest(){const form=el("#meta-test-form");if(!form||!form.reportValidity())return;try{await api.sendMetaTest(form.elements.to_number.value,form.elements.text.value);el("#modal-root").innerHTML="";toast("WhatsApp test sent.","success");}catch(error){toast(error.message,"error");}}
 async function showNotifications(){const [queue,audit]=await Promise.all([settle("queue",api.handoffQueue({limit:5})),settle("audit",api.auditLogs({limit:8}))]);const q=queue.ok?(queue.data.queue||[]):[];const logs=audit.ok?(audit.data.logs||[]):[];const body=`<h4>Human handoff</h4>${q.length?q.map((item)=>`<div class="setting-row"><span>${esc(item.reason||'Escalated conversation')}</span>${statusBadge(item.status||'waiting')}</div>`).join(""):"<p class=subtle>No pending handoff.</p>"}<h4 style="margin-top:20px">Recent audit</h4>${logs.length?logs.map((item)=>`<div class="setting-row"><span>${esc(item.action)} - ${esc(item.resource_type)}</span><span class="subtle">${relativeTime(item.created_at)}</span></div>`).join(""):"<p class=subtle>No recent audit events.</p>"}`;el("#modal-root").innerHTML=modal({title:"Notifications",body,wide:true});}
+
+function showMarketplaceInstall(templateKey) {
+  const template = state.marketplace?.templates?.find((item) => item.key === templateKey);
+  if (!template) return toast("Template tidak ditemukan.", "error");
+  el("#modal-root").innerHTML = modal({title:`Install ${template.name}`,body:`<form id="marketplace-install-form" data-template-key="${esc(template.key)}"><div class="form-grid"><label class="field full"><span>Agent name</span><input name="bot_name" value="${esc(`${template.name} (Marketplace)`)}" required></label><div class="field full"><span>Template</span><div class="status-badge active">${esc(template.category)} · v${esc(template.version || '1.0.0')}</div></div><label class="field full"><span>Description</span><textarea readonly style="min-height:100px">${esc(template.description)}</textarea></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-marketplace-install">Install agent</button>`});
+}
+
+async function submitMarketplaceInstall() {
+  const form = el("#marketplace-install-form");
+  if (!form || !form.reportValidity()) return;
+  const botName = form.elements.bot_name?.value?.trim() || null;
+  const templateKey = form.dataset.templateKey;
+  const button = el('[data-action="submit-marketplace-install"]');
+  if (button) { button.disabled = true; button.textContent = "Installing..."; }
+  try {
+    await api.installMarketplaceTemplate(templateKey, botName);
+    el("#modal-root").innerHTML = "";
+    toast("Agent marketplace installed.", "success");
+    await renderMarketplace();
+    await loadCore();
+  } catch (error) {
+    toast(error.message, "error");
+    if (button) { button.disabled = false; button.textContent = "Install agent"; }
+  }
+}
 
 function showCreateAgent() {
   el("#modal-root").innerHTML = modal({title:"Deploy new AI agent",body:`<form id="create-agent-form"><div class="form-grid"><label class="field"><span>Agent name</span><input name="name" required placeholder="Customer Success Agent"></label><label class="field"><span>Language</span><select name="language"><option value="id">Bahasa Indonesia</option><option value="en">English</option></select></label><label class="field full"><span>Greeting</span><textarea name="greeting" style="min-height:80px" placeholder="Halo! Ada yang bisa saya bantu?"></textarea></label><label class="field full"><span>System prompt</span><textarea name="system_prompt" placeholder="You are a professional customer success agent..."></textarea></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-create-agent">Deploy agent</button>`});
@@ -540,7 +603,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -665,6 +728,8 @@ document.addEventListener("click", async (event) => {
   if(action==="refresh") await route();
   if(action==="create-agent") showCreateAgent();
   if(action==="submit-create-agent") await submitCreateAgent();
+  if(action==="marketplace-install") showMarketplaceInstall(event.target.closest("[data-marketplace-install]")?.dataset.marketplaceInstall);
+  if(action==="submit-marketplace-install") await submitMarketplaceInstall();
   if(action==="close-modal") {
     const closeTarget = event.target.closest('[data-action="close-modal"]');
     if(closeTarget?.matches('button') || event.target === closeTarget) el("#modal-root").innerHTML="";
@@ -698,6 +763,8 @@ document.addEventListener("click", async (event) => {
   if(action==="connect-channel") showConnectChannel();
   if(action==="submit-connect-channel") await submitConnectChannel();
   const deleteDoc=event.target.closest("[data-delete-document]"); if(deleteDoc && confirm("Delete this knowledge document?")){ try{ await api.deleteDocument(state.selectedBotId,deleteDoc.dataset.deleteDocument); toast("Document deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} }
+  const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
+  const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan) await checkout(plan.dataset.checkoutPlan);
 });
 
