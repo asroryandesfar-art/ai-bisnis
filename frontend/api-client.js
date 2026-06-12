@@ -141,6 +141,10 @@ export const api = {
   observabilityTrace: (traceId) => request("/api/observability/traces/" + traceId),
   costIntelligence: () => request("/api/cost-intelligence/summary"),
   updateCostBudget: (monthly_budget_usd) => request("/api/cost-intelligence/budget", { method: "PUT", body: { monthly_budget_usd } }),
+  submitFeedback: (message_id, conversation_id, rating, comment = null) => request("/api/feedback-learning/feedback", { method: "POST", body: { message_id, conversation_id, rating, comment } }),
+  feedbackSummary: (days = 30) => request("/api/feedback-learning/summary" + encodeQuery({ days })),
+  feedbackQueue: (params = {}) => request(`/api/feedback-learning/queue${encodeQuery(params)}`),
+  updateFeedbackQueue: (id, status, resolution_note = null) => request(`/api/feedback-learning/queue/${id}`, { method: "PATCH", body: { status, resolution_note } }),
   auditLogs: (params = {}) => request(`/api/security/audit-logs${encodeQuery(params)}`),
   securityScan: () => request("/api/security/scan", { method: "POST" }),
 };

@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -118,6 +118,21 @@ async function loadConversationData(botId = state.selectedBotId) {
   }
 }
 
+function feedbackControls(messageId, conversationId, selected = "") {
+  if (!messageId || !conversationId) return "";
+  return `<div class="feedback-controls" data-feedback-group="${esc(messageId)}"><span>Helpful?</span><button class="feedback-button ${selected==='helpful'?'selected':''}" data-feedback-rating="helpful" data-feedback-message="${esc(messageId)}" data-feedback-conversation="${esc(conversationId)}" title="Helpful">👍 Helpful</button><button class="feedback-button ${selected==='not_helpful'?'selected negative':''}" data-feedback-rating="not_helpful" data-feedback-message="${esc(messageId)}" data-feedback-conversation="${esc(conversationId)}" title="Not Helpful">👎 Not Helpful</button></div>`;
+}
+
+async function renderFeedbackLearning() {
+  loadingPage("Feedback Learning", "Turn real user feedback into knowledge, prompt, and workflow improvements.");
+  let data, queueData;
+  try { [data, queueData] = await Promise.all([api.feedbackSummary(30), api.feedbackQueue()]); }
+  catch (error) { setPage(errorState(error.message)); return; }
+  const listCard = (title, rows, empty, negative = false) => `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div>${rows.length?`<div class="feedback-list">${rows.map((row)=>`<div class="feedback-list-item"><strong>${esc(row.question || 'No question recorded')}</strong><p>${esc(row.comment || row.failure_reason || row.answer || '')}</p><span class="subtle">${formatNumber(row.feedback_count || row.failure_count || row.occurrence_count || 1)} ${negative?'failures':'signals'}</span></div>`).join('')}</div>`:emptyState(empty,"Feedback will appear after users rate AI answers.")}</div>`;
+  const queueRows = (queueData.queue || []).map((item) => `<tr><td><span class="table-title">${esc(item.question)}</span><div class="subtle" style="margin-top:4px">${esc(item.failure_reason || '')}</div></td><td>${statusBadge(item.action_type,item.action_type)}</td><td>${formatNumber(item.occurrence_count)}</td><td>${statusBadge(item.status,item.status)}</td><td><div style="display:flex;gap:6px">${item.status==='pending'?`<button class="button" data-learning-action="in_progress" data-learning-id="${esc(item.id)}">Start</button>`:''}${item.status!=='resolved'&&item.status!=='dismissed'?`<button class="button button-primary" data-learning-action="resolved" data-learning-id="${esc(item.id)}">Resolve</button>`:''}</div></td></tr>`).join('');
+  setPage(`${pageHeader("Feedback Learning","User ratings feed a governed queue for knowledge, prompt, and workflow improvements.",`<span class="status-badge active">30-day feedback window</span>`)}<div class="grid grid-4">${metricCard("Total Feedback",formatNumber(data.total_feedback),`${formatNumber(data.helpful)} helpful`,`learning`)}${metricCard("Helpful Rate",`${Number(data.helpful_rate||0).toFixed(1)}%`,"Positive user ratings","dashboard","trend-up")}${metricCard("Not Helpful",formatNumber(data.not_helpful),"Answers requiring review","observability",data.not_helpful?'trend-down':'trend-up')}${metricCard("Learning Queue",formatNumber(data.queue?.pending),`${formatNumber(data.queue?.in_progress)} in progress`,`knowledge`)}</div><div class="grid grid-2" style="margin-top:16px">${listCard("Top Positive Feedback",data.top_positive_feedback||[],"No positive feedback")}${listCard("Top Negative Feedback",data.top_negative_feedback||[],"No negative feedback",true)}${listCard("Most Failed Questions",data.most_failed_questions||[],"No failed questions",true)}${listCard("Knowledge Gaps",data.knowledge_gaps||[],"No knowledge gaps",true)}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Learning Queue</h3><span class="subtle">Use each item to update knowledge, prompt, or workflow</span></div></div>${queueRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Failed question</th><th>Action</th><th>Signals</th><th>Status</th><th></th></tr></thead><tbody>${queueRows}</tbody></table></div>`:emptyState("Learning queue is empty","Not Helpful ratings automatically create actionable learning items.")}</div>`);
+}
+
 async function renderHumanHandoff() {
   loadingPage("Human Handoff", "Monitor escalations and let human agents take over safely.");
   let data, stats;
@@ -154,7 +169,7 @@ async function renderConversations() {
 
 function renderMessagePanel() {
   const conv = state.conversations.find((item) => item.id === state.selectedConversationId);
-  const messages = state.messages.map((message) => `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${message.role==='user'?esc(message.content).replace(/\n/g,'<br>'):renderMarkdown(message.content)}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div></div></div>`).join("");
+  const messages = state.messages.map((message) => `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${message.role==='user'?esc(message.content).replace(/\n/g,'<br>'):renderMarkdown(message.content)}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div>${message.role==='assistant'&&!String(message.model||'').startsWith('human:')&&!String(message.model||'').includes('human-handoff')?feedbackControls(message.id,state.selectedConversationId,message.feedback_rating):''}</div></div>`).join("");
   return `<header class="chat-head"><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(conv?.end_user_name || 'AN')}</span><div><strong>${esc(conv?.end_user_name || conv?.end_user_email || 'Anonymous customer')}</strong><div style="margin-top:4px">${statusBadge(conv?.handoff_needed?'handoff':'resolved',conv?.handoff_needed?'Needs handoff':'AI handled')}</div></div></div><button class="icon-button">${icon('more')}</button></header><div class="messages">${messages || emptyState("No messages","This conversation does not contain messages.")}</div>`;
 }
 
@@ -525,7 +540,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -600,7 +615,7 @@ async function sendPlayground(form) {
       }
     }
     messages.querySelector("[data-thinking]")?.remove();
-    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div></div></div>`);
+    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div>${feedbackControls(result.message_id,result.session_id)}</div></div>`);
     if (preparedSpeech) {
       speak(result.answer, container, preparedSpeech).catch((error) => voiceStatus(container, `Suara gagal: ${error.message}`));
     }
@@ -616,6 +631,21 @@ async function sendPlayground(form) {
 }
 
 document.addEventListener("click", async (event) => {
+  const feedbackButton=event.target.closest("[data-feedback-rating]");
+  if(feedbackButton){
+    const rating=feedbackButton.dataset.feedbackRating;
+    const comment=rating==='not_helpful' ? (prompt("Apa yang kurang dari jawaban ini? (opsional)") || null) : null;
+    try {
+      await api.submitFeedback(feedbackButton.dataset.feedbackMessage,feedbackButton.dataset.feedbackConversation,rating,comment);
+      const group=feedbackButton.closest("[data-feedback-group]");
+      group?.querySelectorAll(".feedback-button").forEach((button)=>button.classList.toggle("selected",button===feedbackButton));
+      feedbackButton.classList.toggle("negative",rating==='not_helpful');
+      toast(rating==='helpful'?"Feedback Helpful tersimpan.":"Feedback masuk ke learning queue.","success");
+    } catch(error) { toast(error.message,"error"); }
+    return;
+  }
+  const learningAction=event.target.closest("[data-learning-action]");
+  if(learningAction){ const note=learningAction.dataset.learningAction==='resolved' ? (prompt("Catatan perbaikan yang diterapkan:") || null) : null; try{ await api.updateFeedbackQueue(learningAction.dataset.learningId,learningAction.dataset.learningAction,note); toast("Learning queue updated.","success"); await renderFeedbackLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const claimHandoff=event.target.closest("[data-claim-handoff]");
   if(claimHandoff){ try{ await api.claimHandoff(claimHandoff.dataset.claimHandoff); toast("Handoff assigned to you.","success"); await renderHumanHandoff(); }catch(error){ toast(error.message,"error"); } return; }
   const replyHandoff=event.target.closest("[data-reply-handoff]");

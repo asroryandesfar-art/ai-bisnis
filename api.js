@@ -203,6 +203,15 @@ const chat = {
       user_meta:  userMeta,
     });
   },
+
+  feedback(botId, messageId, conversationId, rating, comment = null) {
+    return req('POST', `/api/feedback-learning/public/${botId}`, {
+      message_id: messageId,
+      conversation_id: conversationId,
+      rating,
+      comment,
+    });
+  },
 };
 
 // ─── WEBHOOKS ─────────────────────────────────────────────────
