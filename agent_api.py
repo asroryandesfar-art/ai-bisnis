@@ -46,6 +46,7 @@ logger = logging.getLogger("agent_api.intelligence")
 class Settings(BaseSettings):
     groq_api_key:        str = ""
     groq_model:          str = "llama-3.3-70b-versatile"
+    groq_cheap_model:    str = "llama-3.1-8b-instant"
     groq_base_url:       str = "https://api.groq.com/openai/v1"
     app_url:             str = "https://botnesia.id"
     botnesia_url:        str = "http://localhost:8000"   # URL server BotNesia utama
@@ -163,6 +164,8 @@ async def process_message(
         "resolved":              req.resolved,
         "metadata":              req.metadata,
         "_observability_pool": observability_pool,
+        "_cheap_model": cfg.groq_cheap_model,
+        "_strong_model": cfg.groq_model,
     }
 
     result = await supervisor.process(context)

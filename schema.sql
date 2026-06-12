@@ -337,3 +337,41 @@ CREATE INDEX IF NOT EXISTS idx_ai_traces_conversation ON ai_traces(conversation_
 CREATE INDEX IF NOT EXISTS idx_agent_exec_trace_sequence ON agent_executions(trace_id, sequence_no);
 CREATE INDEX IF NOT EXISTS idx_agent_exec_tenant_created ON agent_executions(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_exec_agent_status ON agent_executions(agent_name, status, created_at DESC);
+
+-- ============================================================
+-- COST INTELLIGENCE (per-call AI provider cost ledger)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cost_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+    trace_id UUID REFERENCES ai_traces(id) ON DELETE SET NULL,
+    execution_id UUID REFERENCES agent_executions(id) ON DELETE SET NULL,
+    model_name TEXT NOT NULL,
+    agent_name TEXT NOT NULL,
+    prompt_tokens INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    token_count INT NOT NULL DEFAULT 0,
+    estimated_cost NUMERIC(18,8) NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    channel TEXT NOT NULL DEFAULT 'widget',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_cost_budgets (
+    tenant_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    monthly_budget_usd NUMERIC(18,2) NOT NULL DEFAULT 0,
+    updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ai_traces ADD COLUMN IF NOT EXISTS routed_model TEXT;
+ALTER TABLE ai_traces ADD COLUMN IF NOT EXISTS task_complexity TEXT;
+ALTER TABLE ai_traces ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'widget';
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_tenant_created ON cost_records(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_records_conversation ON cost_records(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_records_agent ON cost_records(tenant_id, agent_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_records_model ON cost_records(tenant_id, model_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, channel, created_at DESC);

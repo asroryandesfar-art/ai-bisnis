@@ -138,6 +138,8 @@ export const api = {
   deleteIntegration: (key) => request("/integrations/" + key, { method: "DELETE" }),
   observabilitySummary: (days = 7) => request("/api/observability/summary" + encodeQuery({ days })),
   observabilityTrace: (traceId) => request("/api/observability/traces/" + traceId),
+  costIntelligence: () => request("/api/cost-intelligence/summary"),
+  updateCostBudget: (monthly_budget_usd) => request("/api/cost-intelligence/budget", { method: "PUT", body: { monthly_budget_usd } }),
   auditLogs: (params = {}) => request(`/api/security/audit-logs${encodeQuery(params)}`),
   securityScan: () => request("/api/security/scan", { method: "POST" }),
 };

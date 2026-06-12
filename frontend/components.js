@@ -4,6 +4,7 @@ const paths = {
   chat:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>',
   analytics:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
   observability:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+  costs:'<path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
   knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
   billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
@@ -93,7 +94,7 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["analytics","Analytics"],["observability","AI Observability"]]],
+  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["analytics","Analytics"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
   ["PLATFORM", [["knowledge","Knowledge Base"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["settings","Settings"]]],
 ];
@@ -108,6 +109,7 @@ const routeMeta = {
   chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
   conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
   observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
+  costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
   knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"], team:["Team & Tenants","People, roles, access, and workspace identity"],
   billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],
 };

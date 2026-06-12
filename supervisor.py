@@ -87,6 +87,8 @@ class SupervisorResult:
     prompt_tokens:       int = 0
     completion_tokens:   int = 0
     total_tokens:        int = 0
+    routed_model:       str = ""
+    task_complexity:    str = "simple"
 
 
 class SupervisorAgent:

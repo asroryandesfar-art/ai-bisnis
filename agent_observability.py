@@ -7,17 +7,28 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Awaitable, Callable, TypeVar
 
 from bn_platform.observability import record_ai_request, record_token_usage
+from cost_intelligence import choose_model, estimate_cost_usd, reset_model_route, set_model_route
 
 T = TypeVar("T")
+
+
+@dataclass
+class ModelUsage:
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    estimated_cost: Decimal
 
 
 @dataclass
 class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    model_usages: list[ModelUsage] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -29,6 +40,8 @@ class TraceState:
     trace_id: str
     tenant_id: str
     conversation_id: str
+    channel: str = "widget"
+    actual_model: str = ""
     pool: Any = None
     sequence: int = 0
     request_tokens: TokenUsage = field(default_factory=TokenUsage)
@@ -44,20 +57,30 @@ _execution_tokens: contextvars.ContextVar[TokenUsage | None] = contextvars.Conte
 
 
 def add_token_usage(*, model: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
-    """Attach provider token usage to the active agent and request."""
+    """Attach provider token usage and estimated cost to the active execution."""
     prompt = max(0, int(prompt_tokens or 0))
     completion = max(0, int(completion_tokens or 0))
+    model_name = model or "unknown"
     state = _trace_state.get()
     current = _execution_tokens.get()
     if current is not None:
         current.prompt_tokens += prompt
         current.completion_tokens += completion
+        current.model_usages.append(
+            ModelUsage(
+                model=model_name,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                estimated_cost=estimate_cost_usd(model_name, prompt, completion),
+            )
+        )
     if state is not None:
         state.request_tokens.prompt_tokens += prompt
         state.request_tokens.completion_tokens += completion
+        state.actual_model = model_name
     record_token_usage(
         org_id=state.tenant_id if state else None,
-        model=model or "unknown",
+        model=model_name,
         prompt_tokens=prompt,
         completion_tokens=completion,
     )
@@ -103,12 +126,12 @@ async def _execute(pool: Any, sql: str, *args: Any) -> None:
     try:
         await pool.execute(sql, *args)
     except Exception:
-        # Observability must never break the customer response.
+        # Observability and cost accounting must never break customer responses.
         return
 
 
 async def observe_agent(agent_name: str, context: dict, operation: Callable[[], Awaitable[T]]) -> T:
-    """Track one agent lifecycle, including parallel child relationships."""
+    """Track one agent lifecycle, token usage, and provider cost."""
     state = _trace_state.get()
     if state is None:
         return await operation()
@@ -153,6 +176,20 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
             usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
             json.dumps(_output_summary(result), ensure_ascii=True),
         )
+        for model_usage in usage.model_usages:
+            await _execute(
+                state.pool,
+                """INSERT INTO cost_records
+                   (id, tenant_id, conversation_id, trace_id, execution_id,
+                    model_name, agent_name, prompt_tokens, completion_tokens,
+                    token_count, estimated_cost, currency, channel, created_at)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'USD',$12,NOW())""",
+                str(uuid.uuid4()), state.tenant_id, state.conversation_id,
+                state.trace_id, execution_id, model_usage.model, agent_name,
+                model_usage.prompt_tokens, model_usage.completion_tokens,
+                model_usage.prompt_tokens + model_usage.completion_tokens,
+                model_usage.estimated_cost, state.channel,
+            )
         record_ai_request(
             agent=agent_name,
             success=status in {"success", "skipped"},
@@ -163,7 +200,7 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
 
 
 async def trace_request(context: dict, operation: Callable[[], Awaitable[T]]) -> T:
-    """Create one request trace and run the supervisor as its root execution."""
+    """Create one request trace and select the cost-efficient model tier."""
     tenant_id = str(context.get("org_id") or context.get("tenant_id") or "")
     conversation_id = str(context.get("conversation_id") or "")
     pool = context.get("_observability_pool")
@@ -171,16 +208,30 @@ async def trace_request(context: dict, operation: Callable[[], Awaitable[T]]) ->
         return await operation()
 
     trace_id = str(uuid.uuid4())
-    state = TraceState(trace_id, tenant_id, conversation_id, pool)
+    metadata = context.get("metadata") or {}
+    channel = str(metadata.get("channel") or context.get("channel") or "widget")
+    route = choose_model(
+        str(context.get("user_message") or ""),
+        str(context.get("reasoning_mode") or "standard"),
+        str(context.get("_cheap_model") or "llama-3.1-8b-instant"),
+        str(context.get("_strong_model") or "llama-3.3-70b-versatile"),
+    )
+    route_token = set_model_route(route)
+    state = TraceState(
+        trace_id=trace_id, tenant_id=tenant_id, conversation_id=conversation_id,
+        channel=channel, actual_model=route.model, pool=pool,
+    )
     state_token = _trace_state.set(state)
     started = datetime.now(timezone.utc)
     await _execute(
         pool,
         """INSERT INTO ai_traces
-           (id, tenant_id, conversation_id, user_question, status, started_at, created_at)
-           VALUES ($1,$2,$3,$4,'running',$5,NOW())""",
+           (id, tenant_id, conversation_id, user_question, status, started_at,
+            routed_model, task_complexity, channel, created_at)
+           VALUES ($1,$2,$3,$4,'running',$5,$6,$7,$8,NOW())""",
         trace_id, tenant_id, conversation_id,
         str(context.get("user_message") or "")[:10000], started,
+        route.model, route.complexity, channel,
     )
 
     final_answer = ""
@@ -192,6 +243,8 @@ async def trace_request(context: dict, operation: Callable[[], Awaitable[T]]) ->
             result.prompt_tokens = state.request_tokens.prompt_tokens
             result.completion_tokens = state.request_tokens.completion_tokens
             result.total_tokens = state.request_tokens.total_tokens
+            result.routed_model = state.actual_model
+            result.task_complexity = route.complexity
         except (AttributeError, TypeError):
             pass
         trace_status = "error" if getattr(result, "errors", []) and not final_answer else "success"
@@ -202,11 +255,14 @@ async def trace_request(context: dict, operation: Callable[[], Awaitable[T]]) ->
             pool,
             """UPDATE ai_traces
                SET final_answer=$2, status=$3, ended_at=NOW(), duration_ms=$4,
-                   prompt_tokens=$5, completion_tokens=$6, total_tokens=$7
+                   prompt_tokens=$5, completion_tokens=$6, total_tokens=$7,
+                   routed_model=$8
                WHERE id=$1""",
             trace_id, final_answer[:20000], trace_status, duration_ms,
             state.request_tokens.prompt_tokens,
             state.request_tokens.completion_tokens,
             state.request_tokens.total_tokens,
+            state.actual_model,
         )
         _trace_state.reset(state_token)
+        reset_model_route(route_token)
