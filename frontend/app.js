@@ -59,12 +59,6 @@ async function loadCore() {
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
 function loadingPage(title, description) { setPage(`${pageHeader(title,description)}${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
 
-function dashboardChat(bot) {
-  if (!bot) return "";
-  const options = state.bots.map((item) => `<option value="${esc(item.id)}" ${item.id===bot.id?"selected":""}>${esc(item.name)}</option>`).join("");
-  return `<div class="card dashboard-chat" style="margin-top:16px"><div class="card-head"><div><h3>Chat with your agent</h3><span class="subtle" style="font-size:9px">Chat, microphone, and voice replies directly from Conversation Center</span></div><select class="select" data-dashboard-chat-bot>${options}</select></div><div id="playground-messages" class="messages dashboard-chat-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="dashboard-chat-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice">${icon("mic",17)}</button><textarea name="message" placeholder="Ketik pesan untuk agent..." required></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} Send</button></form><div class="voice-status" data-voice-status>Mic ready · AI replies will be read aloud</div></div></div>`;
-}
-
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
   const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
@@ -93,7 +87,7 @@ async function renderDashboard() {
   ].join("");
   const agentRows = state.bots.slice(0,5).map((agent) => `<tr data-agent-id="${esc(agent.id)}"><td><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(agent.name)}</span><div><span class="table-title">${esc(agent.name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(agent.id).slice(0,8)}</div></div></div></td><td>${statusBadge(agent.status)}</td><td>${formatNumber(agent.total_convs)}</td><td>${formatNumber(agent.total_msgs)}</td><td><span class="thinking"><i></i><i></i><i></i></span></td></tr>`).join("");
   const queueHtml = queue.length ? queue.slice(0,5).map((item) => activityItem({ channel:item.priority || 'H', title:item.end_user_name || 'Escalated conversation', description:item.reason || `${item.status} · human queue`, time:relativeTime(item.created_at) })).join("") : activities.length ? activities.map(activityItem).join("") : emptyState("No live activity", "Activity appears after your agents receive conversations.");
-  setPage(`${pageHeader("Command Center",`Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Here is what is happening across ${state.org?.name || 'your workspace'}.`,`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button><button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>`)}<div class="grid grid-4">${metrics}</div><div class="grid dashboard-grid" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Conversation volume</h3><span class="subtle" style="font-size:9px">30-day customer demand</span></div><span class="status-badge active"><span class="live-dot"></span>Live data</span></div><div class="card-body"><div style="height:250px"><canvas id="overview-chart"></canvas></div></div></div><div class="card"><div class="card-head"><div><h3>Live activity</h3><span class="subtle" style="font-size:9px">Latest agent and handoff events</span></div></div><div class="card-body activity-list">${queueHtml}</div></div></div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent fleet</h3><span class="subtle" style="font-size:9px">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>${dashboardChat(bot)}`);
+  setPage(`${pageHeader("Command Center",`Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Here is what is happening across ${state.org?.name || 'your workspace'}.`,`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button><button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>`)}<div class="grid grid-4">${metrics}</div><div class="grid dashboard-grid" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Conversation volume</h3><span class="subtle" style="font-size:9px">30-day customer demand</span></div><span class="status-badge active"><span class="live-dot"></span>Live data</span></div><div class="card-body"><div style="height:250px"><canvas id="overview-chart"></canvas></div></div></div><div class="card"><div class="card-head"><div><h3>Live activity</h3><span class="subtle" style="font-size:9px">Latest agent and handoff events</span></div></div><div class="card-body activity-list">${queueHtml}</div></div></div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent fleet</h3><span class="subtle" style="font-size:9px">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>`);
   drawChart("overview", "#overview-chart", analytics?.daily_volume || [], "line");
 }
 
@@ -128,11 +122,10 @@ async function renderConversations() {
   loadingPage("Conversation Center","Unified customer conversations with AI context and human handoff visibility.");
   if (!state.selectedBotId) { setPage(pageHeader("Conversation Center","Unified inbox across every channel.") + emptyState("No agent selected","Create an agent before opening the conversation center.")); return; }
   try { await loadConversationData(); } catch (error) { setPage(errorState(error.message)); return; }
-  const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
   const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
   const rows = state.conversations.map((conv) => `<div class="conversation-row ${conv.id===state.selectedConversationId?'active':''}" data-conversation-id="${esc(conv.id)}"><span class="avatar">${initials(conv.end_user_name || conv.end_user_email || 'AN')}</span><div class="truncate"><strong class="truncate">${esc(conv.end_user_name || conv.end_user_email || 'Anonymous customer')}</strong><p class="truncate">${esc(conv.channel || "website")} · ${conv.handoff_needed ? "Needs handoff" : (conv.inbox_state || "AI handled")}</p></div><span class="activity-time">${relativeTime(conv.last_msg_at || conv.started_at)}</span></div>`).join("");
   const chat = state.selectedConversationId ? renderMessagePanel() : `<div class="empty-state" style="height:100%"><span class="state-icon">${icon('chat',22)}</span><h3>Select a conversation</h3><p>Open a customer thread to review messages, latency, and knowledge sources.</p></div>`;
-  setPage(`${pageHeader("Conversation Center","Review customer threads, inspect AI answers, and continue testing agents.",`<select class="select" data-conversation-bot>${options}</select><button class="button" data-action="open-playground">Open playground</button>`)}<div class="conversation-layout"><aside class="conversation-list"><div class="conversation-list-head"><input class="input" style="width:100%;min-width:0" data-conversation-search placeholder="Search conversations..."></div><div data-conversation-rows>${rows || emptyState("No conversations","This agent has not received a conversation yet.")}</div></aside><section class="chat-window" id="conversation-chat">${chat}</section></div>${dashboardChat(bot)}`);
+  setPage(`${pageHeader("Conversation Center","Review customer threads, inspect AI answers, and continue testing agents.",`<select class="select" data-conversation-bot>${options}</select>`)}<div class="conversation-layout"><aside class="conversation-list"><div class="conversation-list-head"><input class="input" style="width:100%;min-width:0" data-conversation-search placeholder="Search conversations..."></div><div data-conversation-rows>${rows || emptyState("No conversations","This agent has not received a conversation yet.")}</div></aside><section class="chat-window" id="conversation-chat">${chat}</section></div>`);
 }
 
 function renderMessagePanel() {
@@ -311,13 +304,6 @@ function showAgent(id) {
 
 function closeDrawer() { const drawer=el("#detail-drawer"); drawer.classList.remove("open"); drawer.setAttribute("aria-hidden","true"); }
 
-function showPlayground(botId = state.selectedBotId) {
-  const bot = state.bots.find((item)=>item.id===botId) || state.bots[0]; if (!bot) return toast("Create an agent first.","error");
-  state.chatSession = null;
-  el("#modal-root").innerHTML = modal({title:`Agent playground · ${bot.name}`,wide:true,body:`<div id="playground-messages" class="messages" style="height:360px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px"><div class="message"><div class="message-bubble">${esc(bot.greeting||'Hello. How can I help?')}</div></div></div><form data-playground-form class="chat-composer" style="padding:0;border:0"><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice">${icon('mic',17)}</button><textarea name="message" placeholder="Ask the agent anything..." required></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies">${icon('speaker',17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon('send',14)} Send</button></form><div class="voice-status" data-voice-status>Mic ready · AI replies will be read aloud</div>`});
-  el("[data-playground-form]").dataset.botId = bot.id;
-}
-
 function cleanSpeechText(text) {
   const ordinals = ["", "Pertama", "Kedua", "Ketiga", "Keempat", "Kelima", "Keenam", "Ketujuh", "Kedelapan", "Kesembilan", "Kesepuluh"];
   return String(text || "")
@@ -439,7 +425,7 @@ async function speak(text, container = document, prepared = null) {
 }
 
 async function toggleRecording(button) {
-  const container = button?.closest(".dashboard-chat, .modal") || document;
+  const container = button?.closest(".chat-page") || document;
   const form = button?.closest("form");
   const status = container.querySelector("[data-voice-status]");
   if (state.recorder?.state === "recording") { state.recorder.stop(); return; }
@@ -517,7 +503,7 @@ async function sendPlayground(form) {
   const input = form.elements.message;
   const text = input?.value.trim();
   const botId = form.dataset.botId;
-  const container = form.closest(".dashboard-chat, .chat-page, .modal") || document;
+  const container = form.closest(".chat-page") || document;
   const messages = container.querySelector("#playground-messages");
   const submitButton = form.querySelector('button[type="submit"]');
   if (!text || !botId || !messages) return;
@@ -558,7 +544,7 @@ document.addEventListener("click", async (event) => {
   const routeTarget=event.target.closest("[data-route]");
   if(routeTarget){ location.hash=routeTarget.dataset.route; return; }
   const agentTarget=event.target.closest("[data-agent-id]");
-  if(agentTarget && !event.target.closest('[data-action="test-agent"]')){ showAgent(agentTarget.dataset.agentId); return; }
+  if(agentTarget){ showAgent(agentTarget.dataset.agentId); return; }
   const conversation=event.target.closest("[data-conversation-id]"); if(conversation){ await openConversation(conversation.dataset.conversationId); return; }
   const action=event.target.closest("[data-action]")?.dataset.action;
   if(action==="toggle-sidebar"){ el("#sidebar").classList.toggle("open"); el("#mobile-scrim").classList.toggle("open"); }
@@ -571,8 +557,6 @@ document.addEventListener("click", async (event) => {
     if(closeTarget?.matches('button') || event.target === closeTarget) el("#modal-root").innerHTML="";
   }
   if(action==="close-drawer") closeDrawer();
-  if(action==="test-agent") { closeDrawer(); showPlayground(event.target.closest('[data-agent-id]')?.dataset.agentId); }
-  if(action==="open-playground") showPlayground();
   if(action==="notifications") await showNotifications();
   if(action==="configure-meta") showMetaIntegration();
   if(action==="submit-meta") await submitMetaIntegration();
@@ -586,7 +570,7 @@ document.addEventListener("click", async (event) => {
   if(action==="toggle-recording") await toggleRecording(event.target.closest('[data-action="toggle-recording"]'));
   if(action==="new-chat") { state.chatSession = null; await renderChat(); }
   if(action==="toggle-speech") {
-    const container = event.target.closest(".dashboard-chat, .chat-page, .modal") || document;
+    const container = event.target.closest(".chat-page") || document;
     state.speakReplies = !state.speakReplies;
     if (!state.speakReplies) await stopSpeaking(container);
     voiceStatus(container, state.speakReplies ? "Suara aktif - jawaban AI akan dibaca sampai akhir" : "Suara dimatikan");
@@ -619,7 +603,6 @@ document.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("change", async (event) => {
-  if(event.target.matches("[data-dashboard-chat-bot]")){ state.selectedBotId=event.target.value; state.chatSession=null; await renderDashboard(); }
   if(event.target.matches("[data-chat-page-bot]")){ state.selectedBotId=event.target.value; state.chatSession=null; await renderChat(); }
   if(event.target.matches("[data-conversation-bot]")){ state.selectedBotId=event.target.value; state.selectedConversationId=null; state.messages=[]; await renderConversations(); }
   if(event.target.matches("[data-analytics-bot]")){ state.selectedBotId=event.target.value; await renderAnalytics(); }
