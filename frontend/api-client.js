@@ -114,6 +114,18 @@ export const api = {
     body: { url, title },
   }),
   deleteDocument: (botId, documentId) => request(`/bots/${botId}/documents/${documentId}`, { method: "DELETE" }),
+  importFaqCsv: (botId, file) => {
+    const body = new FormData(); body.append("file", file);
+    return request(`/bots/${botId}/documents/faq-import`, { method: "POST", body });
+  },
+
+  kbOverview: (botId) => request(`/api/knowledge-builder/bots/${botId}/overview`),
+  kbRegenerate: (botId, docId) => request(`/api/knowledge-builder/bots/${botId}/documents/${docId}/generate`, { method: "POST" }),
+  kbFaqs: (botId, status = null) => request(`/api/knowledge-builder/bots/${botId}/faqs${encodeQuery({ status })}`),
+  kbUpdateFaq: (faqId, body) => request(`/api/knowledge-builder/faqs/${faqId}`, { method: "PATCH", body }),
+  kbSops: (botId, status = null) => request(`/api/knowledge-builder/bots/${botId}/sops${encodeQuery({ status })}`),
+  kbUpdateSop: (sopId, body) => request(`/api/knowledge-builder/sops/${sopId}`, { method: "PATCH", body }),
+  kbQuality: (botId) => request(`/api/knowledge-builder/bots/${botId}/quality`),
 
   team: () => request("/api/rbac/team"),
   rbacMe: () => request("/api/rbac/me"),

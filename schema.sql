@@ -490,3 +490,63 @@ CREATE INDEX IF NOT EXISTS idx_feedback_tenant_created ON feedback_records(tenan
 CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback_records(tenant_id, rating, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_queue_status ON feedback_learning_queue(tenant_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_queue_action ON feedback_learning_queue(tenant_id, action_type, occurrence_count DESC);
+
+-- ============================================================
+-- AUTO KNOWLEDGE BUILDER (AI-generated FAQ/SOP/summary/quality)
+-- ============================================================
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS categories JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS suggested_intents JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_error TEXT;
+
+CREATE TABLE IF NOT EXISTS kb_generated_faqs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    category TEXT,
+    source TEXT NOT NULL DEFAULT 'ai',
+    status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested','approved','rejected')),
+    chunk_id UUID REFERENCES doc_chunks(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kb_generated_sops (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    steps JSONB NOT NULL DEFAULT '[]'::jsonb,
+    category TEXT,
+    status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested','approved','rejected')),
+    chunk_id UUID REFERENCES doc_chunks(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kb_quality_reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    completeness_score INT NOT NULL DEFAULT 0,
+    redundancy_score INT NOT NULL DEFAULT 0,
+    coverage_score INT NOT NULL DEFAULT 0,
+    overall_score INT NOT NULL DEFAULT 0,
+    missing_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+    duplicate_groups JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_faqs_org ON kb_generated_faqs(org_id, bot_id, status);
+CREATE INDEX IF NOT EXISTS idx_kb_faqs_document ON kb_generated_faqs(document_id);
+CREATE INDEX IF NOT EXISTS idx_kb_sops_org ON kb_generated_sops(org_id, bot_id, status);
+CREATE INDEX IF NOT EXISTS idx_kb_sops_document ON kb_generated_sops(document_id);
+CREATE INDEX IF NOT EXISTS idx_kb_quality_org ON kb_quality_reports(org_id, bot_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_quality_document ON kb_quality_reports(document_id, created_at DESC);

@@ -29,9 +29,11 @@ Buka dashboard:
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
 import html
+import io
 import json
 import logging
 import os
@@ -66,6 +68,7 @@ from pydantic_settings import BaseSettings
 
 # Multi-agent AI pipeline (user-built)
 from supervisor import SupervisorAgent
+from knowledge_builder_agent import KnowledgeBuilderAgent
 from rate_limiter import RateLimiter, LimitStatus
 from integrations_store import (
     get_integrations,
@@ -172,6 +175,7 @@ _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, acti
 
 # Multi-agent supervisor singleton (cloud-only)
 _supervisor_cloud: SupervisorAgent | None = None
+_knowledge_builder_agent: KnowledgeBuilderAgent | None = None
 
 # Background tasks
 _gmail_poll_task: asyncio.Task | None = None
@@ -286,6 +290,18 @@ def get_supervisor(use_cloud: bool) -> SupervisorAgent:
         )
 
     return _supervisor_cloud
+
+
+def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
+    global _knowledge_builder_agent
+    if _knowledge_builder_agent is None:
+        _knowledge_builder_agent = KnowledgeBuilderAgent(
+            api_key=cfg.groq_api_key,
+            model=cfg.groq_cheap_model or cfg.groq_model,
+            base_url=(cfg.groq_base_url or "").strip() or None,
+            app_url=cfg.app_url,
+        )
+    return _knowledge_builder_agent
 
 # ─── APP ─────────────────────────────────────────────────────
 
@@ -1000,6 +1016,65 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback_records(tenant_id, rating, created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_feedback_queue_status ON feedback_learning_queue(tenant_id, status, updated_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_feedback_queue_action ON feedback_learning_queue(tenant_id, action_type, occurrence_count DESC);",
+        # ── Auto Knowledge Builder ──────────────────────────────
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS categories JSONB NOT NULL DEFAULT '[]'::jsonb;",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS suggested_intents JSONB NOT NULL DEFAULT '[]'::jsonb;",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_status TEXT NOT NULL DEFAULT 'pending';",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_error TEXT;",
+        """
+        CREATE TABLE IF NOT EXISTS kb_generated_faqs (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            category TEXT,
+            source TEXT NOT NULL DEFAULT 'ai',
+            status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested','approved','rejected')),
+            chunk_id UUID REFERENCES doc_chunks(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS kb_generated_sops (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            steps JSONB NOT NULL DEFAULT '[]'::jsonb,
+            category TEXT,
+            status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested','approved','rejected')),
+            chunk_id UUID REFERENCES doc_chunks(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS kb_quality_reports (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+            completeness_score INT NOT NULL DEFAULT 0,
+            redundancy_score INT NOT NULL DEFAULT 0,
+            coverage_score INT NOT NULL DEFAULT 0,
+            overall_score INT NOT NULL DEFAULT 0,
+            missing_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+            duplicate_groups JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_kb_faqs_org ON kb_generated_faqs(org_id, bot_id, status);",
+        "CREATE INDEX IF NOT EXISTS idx_kb_faqs_document ON kb_generated_faqs(document_id);",
+        "CREATE INDEX IF NOT EXISTS idx_kb_sops_org ON kb_generated_sops(org_id, bot_id, status);",
+        "CREATE INDEX IF NOT EXISTS idx_kb_sops_document ON kb_generated_sops(document_id);",
+        "CREATE INDEX IF NOT EXISTS idx_kb_quality_org ON kb_quality_reports(org_id, bot_id, created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_kb_quality_document ON kb_quality_reports(document_id, created_at DESC);",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -2729,11 +2804,16 @@ async def _process_document_sync(
         source_type = (source_type or "file").lower().strip()
         mime_l = (mime or "").lower()
 
+        doc_meta = await pool.fetchrow("SELECT org_id, filename FROM documents WHERE id=$1", doc_id)
+        if not doc_meta:
+            raise ValueError("Dokumen tidak ditemukan.")
+        filename_l = (doc_meta["filename"] or "").lower()
+
         if source_type == "url":
             text = await _fetch_website_text(source_url or "")
         else:
             raw = contents or b""
-            if "pdf" in mime_l:
+            if "pdf" in mime_l or filename_l.endswith(".pdf"):
                 try:
                     import io
                     from pypdf import PdfReader
@@ -2745,7 +2825,7 @@ async def _process_document_sync(
                     text = "\n".join(parts)
                 except Exception as e:
                     raise ValueError(f"Gagal ekstrak teks dari PDF: {e}")
-            elif ("word" in mime_l) or ("docx" in mime_l):
+            elif ("word" in mime_l) or ("docx" in mime_l) or filename_l.endswith(".docx"):
                 try:
                     import io
                     import zipfile
@@ -2763,6 +2843,13 @@ async def _process_document_sync(
                     text = "\n".join(parts)
                 except Exception as e:
                     raise ValueError(f"Gagal ekstrak teks dari DOCX: {e}")
+            elif "csv" in mime_l or filename_l.endswith(".csv"):
+                try:
+                    text = _csv_to_text(raw.decode("utf-8-sig", errors="ignore"))
+                except Exception as e:
+                    raise ValueError(f"Gagal membaca CSV: {e}")
+            elif "markdown" in mime_l or filename_l.endswith((".md", ".markdown")):
+                text = _clean_markdown_text(raw.decode("utf-8", errors="ignore"))
             else:
                 text = raw.decode("utf-8", errors="ignore")
 
@@ -2777,10 +2864,9 @@ async def _process_document_sync(
         if not chunks:
             raise ValueError("Dokumen terlalu pendek untuk di-chunk.")
 
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT org_id FROM documents WHERE id=$1", doc_id)
-            org_id = str(row["org_id"])
+        org_id = str(doc_meta["org_id"])
 
+        async with pool.acquire() as conn:
             chunk_rows: list[tuple[str, str]] = []
             for i, chunk_text in enumerate(chunks):
                 chunk_id = str(uuid.uuid4())
@@ -2795,15 +2881,192 @@ async def _process_document_sync(
             await conn.execute(
                 """UPDATE documents
                    SET status='ready', chunk_count=$1, processed_at=NOW(),
-                       source_type=$2, source_url=$3
+                       source_type=$2, source_url=$3, kb_status='pending', kb_error=NULL
                    WHERE id=$4""",
                 len(chunks), source_type, source_url, doc_id,
             )
+
+        # Auto Knowledge Builder: generate summary/categories/FAQ/SOP/quality
+        # secara asinkron, tidak menghambat response upload (fire-and-forget).
+        asyncio.create_task(_run_knowledge_builder_pipeline(doc_id))
     except Exception as e:
         await pool.execute(
             "UPDATE documents SET status='failed', error_msg=$1 WHERE id=$2",
             str(e), doc_id,
         )
+
+
+def _csv_to_text(raw_text: str, max_rows: int = 500) -> str:
+    """Ubah isi CSV jadi teks naratif untuk chunking/embedding.
+
+    Jika kolom pertanyaan/jawaban (question/pertanyaan, answer/jawaban) terdeteksi,
+    setiap baris diformat sebagai pasangan Q&A agar mudah diekstrak jadi FAQ.
+    Jika tidak, setiap baris diformat sebagai daftar "kolom: nilai".
+    """
+    reader = csv.reader(io.StringIO(raw_text))
+    rows = [r for r in reader if any((c or "").strip() for c in r)]
+    if not rows:
+        return ""
+
+    header = [(c or "").strip().lower() for c in rows[0]]
+    data_rows = rows[1:max_rows + 1]
+
+    q_idx = next((i for i, h in enumerate(header) if h in ("question", "pertanyaan", "q")), None)
+    a_idx = next((i for i, h in enumerate(header) if h in ("answer", "jawaban", "a")), None)
+
+    lines: list[str] = []
+    if q_idx is not None and a_idx is not None:
+        for r in data_rows:
+            if len(r) > max(q_idx, a_idx):
+                q = (r[q_idx] or "").strip()
+                a = (r[a_idx] or "").strip()
+                if q and a:
+                    lines.append(f"Q: {q}\nA: {a}")
+    else:
+        for r in data_rows:
+            cells = []
+            for i, v in enumerate(r):
+                v = (v or "").strip()
+                if not v:
+                    continue
+                col = header[i] if i < len(header) and header[i] else f"col{i + 1}"
+                cells.append(f"{col}: {v}")
+            if cells:
+                lines.append(" | ".join(cells))
+
+    return "\n\n".join(lines)
+
+
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+
+
+def _clean_markdown_text(text: str) -> str:
+    """Bersihkan sintaks markdown dasar agar teks lebih natural untuk embedding/LLM."""
+    t = _MD_LINK_RE.sub(r"\1", text or "")
+    t = re.sub(r"^#{1,6}\s*", "", t, flags=re.MULTILINE)
+    t = re.sub(r"(\*\*|__|\*|_|`)", "", t)
+    t = re.sub(r"^[-*+]\s+", "- ", t, flags=re.MULTILINE)
+    t = re.sub(r"^>\s*", "", t, flags=re.MULTILINE)
+    return t.strip()
+
+
+async def _run_knowledge_builder_pipeline(doc_id: str) -> None:
+    """Auto Knowledge Builder: ringkasan, kategori, tag, intent, FAQ, SOP, dan
+    Knowledge Quality Score untuk satu dokumen.
+
+    Dipanggil fire-and-forget via asyncio.create_task setelah dokumen berhasil
+    di-chunk & di-embed, supaya tidak menghambat response upload.
+    """
+    pool = await get_pool_safe()
+    if not pool:
+        return
+    try:
+        doc = await pool.fetchrow(
+            "SELECT id, org_id, bot_id, filename, status FROM documents WHERE id=$1", doc_id
+        )
+        if not doc or doc["status"] != "ready":
+            return
+
+        await pool.execute(
+            "UPDATE documents SET kb_status='processing', kb_error=NULL WHERE id=$1", doc_id
+        )
+
+        chunk_rows = await pool.fetch(
+            "SELECT content FROM doc_chunks WHERE document_id=$1 ORDER BY chunk_index", doc_id
+        )
+        text = "\n\n".join(r["content"] for r in chunk_rows).strip()
+        if not text:
+            await pool.execute(
+                "UPDATE documents SET kb_status='failed', kb_error=$1 WHERE id=$2",
+                "Tidak ada konten untuk dianalisis.", doc_id,
+            )
+            return
+
+        if not cfg.groq_api_key:
+            await pool.execute(
+                "UPDATE documents SET kb_status='skipped', kb_error=$1 WHERE id=$2",
+                "AI belum dikonfigurasi (GROQ_API_KEY kosong).", doc_id,
+            )
+            return
+
+        agent = get_knowledge_builder_agent()
+        title = doc["filename"] or ""
+        org_id = str(doc["org_id"])
+        bot_id = doc["bot_id"]
+
+        classification = await agent.classify(title=title, text=text)
+        summary = await agent.summarize(title=title, text=text)
+        faqs = await agent.generate_faqs(title=title, text=text)
+        sops = await agent.generate_sops(title=title, text=text)
+        quality = await agent.assess_quality(
+            title=title, text=text,
+            faq_count=len(faqs.get("faqs", [])),
+            sop_count=len(sops.get("sops", [])),
+            existing_categories=classification.get("categories"),
+        )
+
+        if any(part.get("_llm_unavailable") for part in (classification, summary, faqs, sops, quality)):
+            await pool.execute(
+                "UPDATE documents SET kb_status='failed', kb_error=$1 WHERE id=$2",
+                "AI sedang tidak tersedia (limit/quota). Coba generate ulang nanti.", doc_id,
+            )
+            return
+
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """UPDATE documents
+                       SET summary=$1, categories=$2::jsonb, tags=$3::jsonb,
+                           suggested_intents=$4::jsonb, kb_status='ready', kb_error=NULL
+                       WHERE id=$5""",
+                    summary.get("summary") or "",
+                    json.dumps(classification.get("categories") or []),
+                    json.dumps(classification.get("tags") or []),
+                    json.dumps(classification.get("suggested_intents") or []),
+                    doc_id,
+                )
+
+                await conn.execute(
+                    "DELETE FROM kb_generated_faqs WHERE document_id=$1 AND source='ai'", doc_id
+                )
+                for item in faqs.get("faqs", []):
+                    await conn.execute(
+                        """INSERT INTO kb_generated_faqs
+                           (id, org_id, bot_id, document_id, question, answer, category, source, status)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,'ai','suggested')""",
+                        str(uuid.uuid4()), org_id, bot_id, doc_id,
+                        item["question"], item["answer"], item.get("category"),
+                    )
+
+                await conn.execute("DELETE FROM kb_generated_sops WHERE document_id=$1", doc_id)
+                for item in sops.get("sops", []):
+                    await conn.execute(
+                        """INSERT INTO kb_generated_sops
+                           (id, org_id, bot_id, document_id, title, steps, category, status)
+                           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,'suggested')""",
+                        str(uuid.uuid4()), org_id, bot_id, doc_id,
+                        item["title"], json.dumps(item["steps"]), item.get("category"),
+                    )
+
+                await conn.execute(
+                    """INSERT INTO kb_quality_reports
+                       (id, org_id, bot_id, document_id, completeness_score, redundancy_score,
+                        coverage_score, overall_score, missing_topics, duplicate_groups)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)""",
+                    str(uuid.uuid4()), org_id, bot_id, doc_id,
+                    quality["completeness_score"], quality["redundancy_score"],
+                    quality["coverage_score"], quality["overall_score"],
+                    json.dumps(quality["missing_topics"]), json.dumps(quality["duplicate_groups"]),
+                )
+    except Exception as e:
+        logger.exception("Knowledge Builder pipeline gagal untuk dokumen %s", doc_id)
+        try:
+            await pool.execute(
+                "UPDATE documents SET kb_status='failed', kb_error=$1 WHERE id=$2",
+                str(e)[:500], doc_id,
+            )
+        except Exception:
+            pass
 
 
 class KnowledgeBaseUrlReq(BaseModel):
@@ -2859,6 +3122,95 @@ async def upload_document_url(
     await _process_document_sync(pool, doc_id, source_type="url", source_url=url)
     row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
     return {"doc_id": doc_id, "status": row["status"], "error_msg": row["error_msg"]}
+
+
+@app.post("/bots/{bot_id}/documents/faq-import", status_code=201)
+async def import_faq_csv(
+    bot_id: str,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    """Import FAQ langsung dari CSV (kolom question/pertanyaan & answer/jawaban,
+    opsional category/kategori). Setiap baris otomatis di-approve dan langsung
+    masuk knowledge base (doc_chunks + embeddings) tanpa melalui AI generation."""
+    bot = await pool.fetchrow(
+        "SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, user["org_id"]
+    )
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan")
+
+    if _platform_check_limit:
+        ok, detail = await _platform_check_limit(pool, user["org_id"], "knowledge")
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Limit jumlah dokumen knowledge base paket '{detail['plan']}' tercapai "
+                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+            )
+
+    contents = await file.read()
+    try:
+        reader = csv.reader(io.StringIO(contents.decode("utf-8-sig", errors="ignore")))
+        rows = [r for r in reader if any((c or "").strip() for c in r)]
+    except Exception as e:
+        raise HTTPException(400, f"Gagal membaca CSV: {e}")
+
+    if len(rows) < 2:
+        raise HTTPException(400, "CSV harus memiliki header dan minimal 1 baris data.")
+
+    header = [(c or "").strip().lower() for c in rows[0]]
+    q_idx = next((i for i, h in enumerate(header) if h in ("question", "pertanyaan", "q")), None)
+    a_idx = next((i for i, h in enumerate(header) if h in ("answer", "jawaban", "a")), None)
+    c_idx = next((i for i, h in enumerate(header) if h in ("category", "kategori")), None)
+    if q_idx is None or a_idx is None:
+        raise HTTPException(400, "CSV harus memiliki kolom 'question'/'pertanyaan' dan 'answer'/'jawaban'.")
+
+    pairs: list[tuple[str, str, str | None]] = []
+    for r in rows[1:]:
+        if len(r) <= max(q_idx, a_idx):
+            continue
+        q = (r[q_idx] or "").strip()
+        a = (r[a_idx] or "").strip()
+        if not q or not a:
+            continue
+        category = (r[c_idx] or "").strip() if c_idx is not None and len(r) > c_idx else ""
+        pairs.append((q, a, category or None))
+
+    if not pairs:
+        raise HTTPException(400, "Tidak ada pasangan pertanyaan/jawaban valid di CSV.")
+
+    doc_id = str(uuid.uuid4())
+    org_id = user["org_id"]
+    await pool.execute(
+        """INSERT INTO documents
+           (id, org_id, bot_id, filename, file_size, mime_type, status, source_type, source_url,
+            kb_status, chunk_count, processed_at)
+           VALUES ($1,$2,$3,$4,$5,'text/csv','ready','faq_import',NULL,'ready',$6,NOW())""",
+        doc_id, org_id, bot_id, file.filename or "faq-import.csv", len(contents), len(pairs),
+    )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            chunk_rows: list[tuple[str, str]] = []
+            for i, (q, a, category) in enumerate(pairs):
+                chunk_id = str(uuid.uuid4())
+                chunk_text = f"Q: {q}\nA: {a}"
+                await conn.execute(
+                    """INSERT INTO doc_chunks (id, document_id, org_id, chunk_index, content, token_count)
+                       VALUES ($1,$2,$3,$4,$5,$6)""",
+                    chunk_id, doc_id, org_id, i, chunk_text, len(chunk_text.split()),
+                )
+                chunk_rows.append((chunk_id, chunk_text))
+                await conn.execute(
+                    """INSERT INTO kb_generated_faqs
+                       (id, org_id, bot_id, document_id, question, answer, category, source, status, chunk_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,'import','approved',$8)""",
+                    str(uuid.uuid4()), org_id, bot_id, doc_id, q, a, category, chunk_id,
+                )
+            await _store_chunk_embeddings(conn, str(org_id), chunk_rows)
+
+    return {"doc_id": doc_id, "imported": len(pairs), "status": "ready"}
 
 
 @app.get("/bots/{bot_id}/documents")
@@ -3901,6 +4253,7 @@ try:
     from bn_platform.ai_observability import build_ai_observability_router
     from bn_platform.cost_intelligence import build_cost_intelligence_router
     from bn_platform.feedback_learning import build_feedback_learning_router
+    from bn_platform.knowledge_builder import build_knowledge_builder_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -4013,6 +4366,14 @@ try:
     app.include_router(
         build_feedback_learning_router(
             get_pool=get_pool, get_current_user=get_current_user,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_knowledge_builder_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            run_pipeline=_run_knowledge_builder_pipeline,
+            store_chunk_embeddings=_store_chunk_embeddings,
         ),
         prefix="/api",
     )

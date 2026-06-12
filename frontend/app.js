@@ -10,6 +10,7 @@ const state = {
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
+  kbOverview: null, kbFaqs: [], kbSops: [],
   chatSession: null, charts: {}, loading: false,
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
 };
@@ -25,7 +26,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -304,7 +305,45 @@ async function renderKnowledge() {
     const sourceInfo = doc.source_url ? `<div class="subtle mono" style="font-size:8px;margin-top:3px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(doc.source_url)}</div>` : '';
     return `<tr><td><div style="display:flex;align-items:flex-start;gap:10px"><span class="activity-symbol">KB</span><div><span class="table-title">${esc(doc.filename)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(doc.id).slice(0,12)} · ${esc(sourceLabel)}</div>${sourceInfo}</div></div></td><td>${formatFileSize(doc.file_size)}</td><td>${formatNumber(doc.chunk_count)}</td><td>${statusBadge(doc.status,doc.status)}</td><td>${formatDate(doc.created_at)}</td><td><button class="button button-danger" data-delete-document="${esc(doc.id)}">Delete</button></td></tr>`;
   }).join("");
-  setPage(`${pageHeader("Knowledge Base","Upload product docs, policies, FAQs, websites, and playbooks for retrieval-grounded answers.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Upload document<input type="file" data-document-upload accept=".pdf,.docx,.txt" hidden></label><form data-kb-url-form style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input class="input" name="title" placeholder="Judul opsional" style="min-width:180px"><input class="input" name="url" placeholder="https://example.com/kb" style="min-width:240px" required><button class="button button-primary" type="submit">${icon('link',14)} Upload URL</button></form></div>`)}<div class="grid grid-3" style="margin-bottom:16px">${metricCard("Documents",formatNumber(state.documents.length),"Connected to selected agent","knowledge")}${metricCard("Knowledge chunks",formatNumber(state.documents.reduce((n,d)=>n+(d.chunk_count||0),0)),"Searchable retrieval units","analytics")}${metricCard("Ready sources",formatNumber(state.documents.filter(d=>d.status==='ready').length),"Available to AI","agents","trend-up")}</div><div class="card"><div class="card-head"><div><h3>Source library</h3><span class="subtle" style="font-size:9px">PDF, DOCX, TXT, and website URLs</span></div></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Size</th><th>Chunks</th><th>Status</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No knowledge sources","Upload a document or website URL to ground this agent with company information.",`<label class="button button-primary">Upload first document<input type="file" data-document-upload hidden></label>`)}</div>`);
+  setPage(`${pageHeader("Knowledge Base","Upload product docs, policies, FAQs, websites, and playbooks for retrieval-grounded answers.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Upload document<input type="file" data-document-upload accept=".pdf,.docx,.txt,.csv,.md,.markdown" hidden></label><form data-kb-url-form style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input class="input" name="title" placeholder="Judul opsional" style="min-width:180px"><input class="input" name="url" placeholder="https://example.com/kb" style="min-width:240px" required><button class="button button-primary" type="submit">${icon('link',14)} Upload URL</button></form></div>`)}<div class="grid grid-3" style="margin-bottom:16px">${metricCard("Documents",formatNumber(state.documents.length),"Connected to selected agent","knowledge")}${metricCard("Knowledge chunks",formatNumber(state.documents.reduce((n,d)=>n+(d.chunk_count||0),0)),"Searchable retrieval units","analytics")}${metricCard("Ready sources",formatNumber(state.documents.filter(d=>d.status==='ready').length),"Available to AI","agents","trend-up")}</div><div class="card"><div class="card-head"><div><h3>Source library</h3><span class="subtle" style="font-size:9px">PDF, DOCX, TXT, Markdown, CSV, and website URLs</span></div></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Size</th><th>Chunks</th><th>Status</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No knowledge sources","Upload a document or website URL to ground this agent with company information.",`<label class="button button-primary">Upload first document<input type="file" data-document-upload hidden></label>`)}</div>`);
+}
+
+async function renderKnowledgeBuilder() {
+  loadingPage("Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents.");
+  if (!state.selectedBotId) { setPage(pageHeader("Knowledge Builder","Auto-generate knowledge from documents.") + emptyState("No agent available","Create an agent before building knowledge.")); return; }
+  const [overviewResult, faqsResult, sopsResult] = await Promise.all([
+    settle("kbOverview", api.kbOverview(state.selectedBotId)),
+    settle("kbFaqs", api.kbFaqs(state.selectedBotId)),
+    settle("kbSops", api.kbSops(state.selectedBotId)),
+  ]);
+  if (!overviewResult.ok) { setPage(errorState(overviewResult.error.message)); return; }
+  state.kbOverview = overviewResult.data;
+  state.kbFaqs = faqsResult.ok ? faqsResult.data.faqs || [] : [];
+  state.kbSops = sopsResult.ok ? sopsResult.data.sops || [] : [];
+
+  const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
+  const overview = state.kbOverview;
+  const quality = overview.quality || {};
+
+  const documentRows = (overview.documents || []).map((doc) => {
+    const tags = (doc.tags||[]).map(t=>`<span class="status-badge ready" style="margin:2px">${esc(t)}</span>`).join('');
+    const categories = (doc.categories||[]).map(c=>`<span class="status-badge active" style="margin:2px">${esc(c)}</span>`).join('');
+    const kbStatus = doc.kb_status || 'pending';
+    return `<tr><td><span class="table-title">${esc(doc.filename)}</span><div class="subtle" style="font-size:9px;margin-top:3px;max-width:320px">${esc(doc.summary||'')}</div></td><td>${categories||'—'}</td><td>${tags||'—'}</td><td>${statusBadge(kbStatus,kbStatus)}</td><td><button class="button" data-kb-regenerate="${esc(doc.id)}" ${doc.status!=='ready'?'disabled':''}>${icon('refresh',14)} Regenerate</button></td></tr>`;
+  }).join('');
+
+  const faqRows = state.kbFaqs.map((faq) => `<tr><td><span class="table-title">${esc(faq.question)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(faq.answer)}</div></td><td>${esc(faq.category||'—')}</td><td>${statusBadge(faq.status,faq.status)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">${faq.status!=='approved'?`<button class="button button-primary" data-kb-faq-action="approved" data-kb-faq-id="${esc(faq.id)}">Approve</button>`:''}${faq.status!=='rejected'?`<button class="button button-danger" data-kb-faq-action="rejected" data-kb-faq-id="${esc(faq.id)}">Reject</button>`:''}${faq.status!=='suggested'?`<button class="button" data-kb-faq-action="suggested" data-kb-faq-id="${esc(faq.id)}">Reset</button>`:''}<button class="button" data-kb-faq-edit="${esc(faq.id)}">Edit</button></div></td></tr>`).join('');
+
+  const sopRows = state.kbSops.map((sop) => `<tr><td><span class="table-title">${esc(sop.title)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${(sop.steps||[]).map((s,i)=>`${i+1}. ${esc(s)}`).join('<br>')}</div></td><td>${esc(sop.category||'—')}</td><td>${statusBadge(sop.status,sop.status)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">${sop.status!=='approved'?`<button class="button button-primary" data-kb-sop-action="approved" data-kb-sop-id="${esc(sop.id)}">Approve</button>`:''}${sop.status!=='rejected'?`<button class="button button-danger" data-kb-sop-action="rejected" data-kb-sop-id="${esc(sop.id)}">Reject</button>`:''}${sop.status!=='suggested'?`<button class="button" data-kb-sop-action="suggested" data-kb-sop-id="${esc(sop.id)}">Reset</button>`:''}<button class="button" data-kb-sop-edit="${esc(sop.id)}">Edit</button></div></td></tr>`).join('');
+
+  const missingTopics = (overview.missing_topics || []).map((item) => `<span class="status-badge error" style="margin:3px">${esc(item.topic)} (${item.document_count})</span>`).join('') || '<span class="subtle">Tidak ada topik penting yang terdeteksi hilang.</span>';
+
+  setPage(`${pageHeader("Knowledge Builder","Dokumen otomatis dianalisis menjadi ringkasan, kategori, tag, FAQ, SOP, dan skor kualitas knowledge base.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-builder-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Import FAQ CSV<input type="file" data-faq-import accept=".csv" hidden></label></div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Overall quality",`${quality.overall_score||0}`,`${quality.documents_scored||0} dokumen dinilai`,"analytics")}${metricCard("Completeness",`${quality.completeness_score||0}`,"Kelengkapan informasi","knowledge")}${metricCard("Coverage",`${quality.coverage_score||0}`,"Cakupan topik penting","observability")}${metricCard("Redundancy",`${quality.redundancy_score||0}`,"100 = tidak ada duplikasi","learning")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Documents</h3><span class="subtle" style="font-size:9px">Status pemrosesan Auto Knowledge Builder</span></div></div>${documentRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Categories</th><th>Tags</th><th>KB Status</th><th></th></tr></thead><tbody>${documentRows}</tbody></table></div>`:emptyState("Belum ada dokumen","Upload dokumen di Knowledge Base untuk memulai Auto Knowledge Builder.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Generated FAQ</h3><span class="subtle" style="font-size:9px">${overview.faqs?.suggested||0} suggested · ${overview.faqs?.approved||0} approved · ${overview.faqs?.rejected||0} rejected</span></div></div>${faqRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>FAQ</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${faqRows}</tbody></table></div>`:emptyState("Belum ada FAQ","FAQ hasil AI akan muncul di sini setelah dokumen diproses.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Generated SOP</h3><span class="subtle" style="font-size:9px">${overview.sops?.suggested||0} suggested · ${overview.sops?.approved||0} approved · ${overview.sops?.rejected||0} rejected</span></div></div>${sopRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>SOP</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${sopRows}</tbody></table></div>`:emptyState("Belum ada SOP","SOP hasil AI akan muncul di sini setelah dokumen diproses.")}</div>
+  <div class="card"><div class="card-head"><h3>Missing topics</h3></div><div class="card-body" style="padding:16px">${missingTopics}</div></div>`);
 }
 
 function parseFeatures(value) {
@@ -603,7 +642,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -643,6 +682,46 @@ async function uploadKnowledgeUrl(form) {
   try { await api.uploadDocumentUrl(state.selectedBotId, url, title); form.reset(); toast("Website URL uploaded. Processing knowledge chunks.","success"); await renderKnowledge(); }
   catch(error){ toast(error.message,"error"); }
   finally { if (button) button.disabled = false; }
+}
+
+async function uploadFaqCsv(input) {
+  const file=input.files?.[0]; if(!file)return;
+  toast(`Mengimpor ${file.name}...`);
+  try { const result = await api.importFaqCsv(state.selectedBotId,file); toast(`${result.imported} FAQ diimpor ke knowledge base.`,"success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
+  finally { input.value = ""; }
+}
+
+async function regenerateKb(docId) {
+  try { await api.kbRegenerate(state.selectedBotId,docId); toast("Knowledge Builder dijadwalkan ulang untuk dokumen ini.","success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
+}
+
+async function kbFaqAction(faqId, status) {
+  try { await api.kbUpdateFaq(faqId,{status}); toast("FAQ diperbarui.","success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
+}
+
+async function editKbFaq(faqId) {
+  const faq = state.kbFaqs.find((item) => String(item.id)===String(faqId)); if(!faq) return;
+  const question = prompt("Pertanyaan:", faq.question); if(question===null) return;
+  const answer = prompt("Jawaban:", faq.answer); if(answer===null) return;
+  try { await api.kbUpdateFaq(faqId,{question,answer}); toast("FAQ diperbarui.","success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
+}
+
+async function kbSopAction(sopId, status) {
+  try { await api.kbUpdateSop(sopId,{status}); toast("SOP diperbarui.","success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
+}
+
+async function editKbSop(sopId) {
+  const sop = state.kbSops.find((item) => String(item.id)===String(sopId)); if(!sop) return;
+  const title = prompt("Judul SOP:", sop.title); if(title===null) return;
+  const stepsText = prompt("Langkah-langkah (satu per baris):", (sop.steps||[]).join("\n")); if(stepsText===null) return;
+  const steps = stepsText.split("\n").map((item) => item.trim()).filter(Boolean);
+  try { await api.kbUpdateSop(sopId,{title,steps}); toast("SOP diperbarui.","success"); await renderKnowledgeBuilder(); }
+  catch(error){ toast(error.message,"error"); }
 }
 
 async function checkout(planKey) {
@@ -763,6 +842,11 @@ document.addEventListener("click", async (event) => {
   if(action==="connect-channel") showConnectChannel();
   if(action==="submit-connect-channel") await submitConnectChannel();
   const deleteDoc=event.target.closest("[data-delete-document]"); if(deleteDoc && confirm("Delete this knowledge document?")){ try{ await api.deleteDocument(state.selectedBotId,deleteDoc.dataset.deleteDocument); toast("Document deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} }
+  const kbRegenerate=event.target.closest("[data-kb-regenerate]"); if(kbRegenerate){ await regenerateKb(kbRegenerate.dataset.kbRegenerate); return; }
+  const kbFaqActionTarget=event.target.closest("[data-kb-faq-action]"); if(kbFaqActionTarget){ await kbFaqAction(kbFaqActionTarget.dataset.kbFaqId,kbFaqActionTarget.dataset.kbFaqAction); return; }
+  const kbFaqEdit=event.target.closest("[data-kb-faq-edit]"); if(kbFaqEdit){ await editKbFaq(kbFaqEdit.dataset.kbFaqEdit); return; }
+  const kbSopActionTarget=event.target.closest("[data-kb-sop-action]"); if(kbSopActionTarget){ await kbSopAction(kbSopActionTarget.dataset.kbSopId,kbSopActionTarget.dataset.kbSopAction); return; }
+  const kbSopEdit=event.target.closest("[data-kb-sop-edit]"); if(kbSopEdit){ await editKbSop(kbSopEdit.dataset.kbSopEdit); return; }
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan) await checkout(plan.dataset.checkoutPlan);
@@ -791,6 +875,8 @@ document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-observability-days]")) await renderObservability(event.target.value);
   if(event.target.matches("[data-knowledge-bot]")){ state.selectedBotId=event.target.value; await renderKnowledge(); }
   if(event.target.matches("[data-document-upload]")) await uploadDocument(event.target);
+  if(event.target.matches("[data-knowledge-builder-bot]")){ state.selectedBotId=event.target.value; await renderKnowledgeBuilder(); }
+  if(event.target.matches("[data-faq-import]")) await uploadFaqCsv(event.target);
 });
 
 document.addEventListener("input", (event) => {
