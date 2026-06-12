@@ -11,3 +11,12 @@ pydantic==2.7.4
 pydantic-settings==2.3.4
 python-multipart==0.0.9
 pypdf==6.10.2
+
+# --- Intelligence Platform (Conversation Memory, FAQ, Sales, Knowledge Graph) ---
+numpy==2.4.4
+celery[redis]==5.4.0
+redis==5.0.7
+
+# --- Business Platform Phase 2 (RBAC, Billing, Omnichannel, Security, Observability) ---
+cryptography==43.0.1
+prometheus-client==0.20.0

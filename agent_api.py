@@ -15,6 +15,8 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -28,6 +30,14 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from supervisor import SupervisorAgent
+
+# ─── INTELLIGENCE PLATFORM ────────────────────────────────────
+# Conversation Memory, FAQ Engine, Sales Intelligence, Knowledge Graph,
+# Customer Intelligence — lihat intelligence/ARCHITECTURE.md
+from intelligence.routes_intelligence import intel_router
+from intelligence.pipeline import persist_intelligence
+
+logger = logging.getLogger("agent_api.intelligence")
 
 
 # ─── CONFIG ───────────────────────────────────────────────────
@@ -54,6 +64,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Endpoint /intel/* — Conversation Memory, FAQ, Sales Intelligence, Knowledge
+# Graph, Analytics Dashboard, Auto-Learning reports, Customer Intelligence.
+app.include_router(intel_router)
 
 # In-memory store untuk insights (ganti Redis/DB di production)
 _insights_store:  dict[str, list] = defaultdict(list)
@@ -108,7 +122,7 @@ class WebhookEvent(BaseModel):
 async def process_message(
     req: ProcessRequest,
     x_agent_secret: str = Header(default=""),
-) -> None:
+) -> dict:
     if not req.bot_id or not req.org_id or not req.conversation_id or not req.user_message:
         raise HTTPException(400, "Input tidak lengkap")
     """
@@ -145,6 +159,11 @@ async def process_message(
     }
 
     result = await supervisor.process(context)
+
+    # ── Intelligence Platform: persist setelah jawaban siap, TANPA menunggu ──
+    # (fire-and-forget — lihat _persist_intelligence; kegagalan tidak boleh
+    # mempengaruhi response /process)
+    asyncio.create_task(persist_intelligence(dict(context), result))
 
     # Simpan insights ke store
     ts = datetime.now(timezone.utc).isoformat()
@@ -330,8 +349,17 @@ async def get_training(
 @app.get("/health")
 async def health():
     return {
-        "status":  "ok",
-        "model":   cfg.ai_engine,
-        "agents":  ["supervisor", "cs_agent", "escalation_agent", "analytics_agent", "trainer_agent"],
+        "status":  "ok" if cfg.groq_api_key else "degraded",
+        "ai": {
+            "configured": bool(cfg.groq_api_key),
+            "provider": "groq" if cfg.groq_api_key else None,
+            "model": cfg.groq_model if cfg.groq_api_key else None,
+        },
+        "model":   f"groq:{cfg.groq_model}" if cfg.groq_api_key else None,
+        "agents":  [
+            "supervisor", "cs_agent", "escalation_agent", "analytics_agent", "trainer_agent", "memory_agent",
+            "faq_agent", "sales_agent", "knowledge_agent",
+        ],
+        "intelligence_routes": "/intel/* (dashboard, faq, sales, knowledge-graph, reports, customers)",
         "version": "1.0.0",
     }

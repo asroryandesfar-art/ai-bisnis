@@ -1,0 +1,13 @@
+[Unit]
+Description=BotNesia Cloudflare named tunnel
+After=network-online.target botnesia-api.service
+Wants=network-online.target botnesia-api.service
+
+[Service]
+Type=simple
+ExecStart=/home/asrory/.local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --config /home/asrory/.cloudflared/config.yml run botnesia-production
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

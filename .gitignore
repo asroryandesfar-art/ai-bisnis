@@ -16,3 +16,7 @@ data/
 *.log
 *.pem
 *.key
+
+.tts_vendor/
+.venv-tts/
+*.deb

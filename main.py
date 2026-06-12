@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -39,6 +40,7 @@ import time
 import uuid
 import asyncio
 import secrets
+import sys
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -48,12 +50,13 @@ import vendor_bootstrap  # noqa: F401
 
 import asyncpg
 import httpx
+import numpy as np
 from fastapi import (
     Depends, FastAPI, File, HTTPException, Request,
     UploadFile, status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -120,6 +123,7 @@ class Settings(BaseSettings):
     groq_api_key:         str = ""
     groq_model:           str = "llama-3.3-70b-versatile"
     groq_base_url:        str = "https://api.groq.com/openai/v1"
+    groq_whisper_model:   str = "whisper-large-v3-turbo"
 
     # Integrations (optional)
     gmail_client_id:      str = ""
@@ -140,6 +144,7 @@ class Settings(BaseSettings):
     news_max_body_chars:  int = 1400
     news_max_concurrency: int = 3
     news_rss_feeds:       str = ""  # comma-separated news source URLs: RSS/Atom/article links (optional)
+    kb_embedding_dim:     int = 256
     pinecone_api_key:     str = ""
     pinecone_index:       str = "botnesia-chunks"
     jwt_algorithm:        str = "HS256"
@@ -150,10 +155,18 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 cfg = Settings()
 _rate_limiter = RateLimiter()
 logger = logging.getLogger("botnesia")
+
+# ── Phase 2 platform callbacks (set by wiring block at bottom) ───────────────
+# Pola ini menghindari circular import: Phase 2 modules tidak boleh import
+# dari main.py, tapi main.py perlu panggil fungsi Phase 2 dari Phase 1 endpoints.
+_platform_check_limit = None   # (pool, org_id, dimension) → (bool, dict)
+_platform_enqueue_handoff = None  # (pool, org_id, conv_id, reason, priority) → dict|None
+_platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, action, ...) → None
 
 # Multi-agent supervisor singleton (cloud-only)
 _supervisor_cloud: SupervisorAgent | None = None
@@ -161,6 +174,8 @@ _supervisor_cloud: SupervisorAgent | None = None
 # Background tasks
 _gmail_poll_task: asyncio.Task | None = None
 _gmail_poll_stop: asyncio.Event | None = None
+_intelligence_learning_task: asyncio.Task | None = None
+_intelligence_learning_stop: asyncio.Event | None = None
 
 
 class QueueBusyError(RuntimeError):
@@ -287,7 +302,8 @@ app.add_middleware(
 
 # Serve dashboard static (biar FE dan BE satu origin, minim masalah CORS/mixed-content)
 BASE_DIR = Path(__file__).resolve().parent
-_DASHBOARD_PATH = BASE_DIR / "dashboard-connected.html"
+_FRONTEND_DIR = BASE_DIR / "frontend"
+_DASHBOARD_PATH = _FRONTEND_DIR / "index.html"
 _API_JS_PATH = BASE_DIR / "api.js"
 _MULTIAGENT_INDEX_PATH = BASE_DIR / "MultiAgent_Index.html"
 _MULTIAGENT_QUICK_PATH = BASE_DIR / "MultiAgent_Quick_Start.html"
@@ -308,6 +324,25 @@ async def dashboard():
         _DASHBOARD_PATH,
         media_type="text/html",
         headers={"Cache-Control": "no-store"},
+    )
+
+@app.get("/ui/{asset_path:path}", include_in_schema=False)
+async def frontend_asset(asset_path: str):
+    requested = (_FRONTEND_DIR / asset_path).resolve()
+    frontend_root = _FRONTEND_DIR.resolve()
+    if frontend_root not in requested.parents or not requested.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset UI tidak ditemukan")
+    media_types = {
+        ".css": "text/css",
+        ".js": "application/javascript",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    return FileResponse(
+        requested,
+        media_type=media_types.get(requested.suffix.lower(), "application/octet-stream"),
+        headers={"Cache-Control": "no-cache"},
     )
 
 @app.get("/api.js", include_in_schema=False)
@@ -446,6 +481,7 @@ async def get_pool_safe(timeout: float | None = None) -> asyncpg.Pool | None:
 @app.on_event("startup")
 async def startup():
     global _gmail_poll_task, _gmail_poll_stop
+    global _intelligence_learning_task, _intelligence_learning_stop
     try:
         await _replicate_image_queue.start()
         await _replicate_video_queue.start()
@@ -484,9 +520,22 @@ async def startup():
     except Exception as e:
         print(f"[WARN] Gmail poller gagal start: {e}")
 
+    try:
+        from intelligence.pipeline import nightly_learning_loop
+
+        if _intelligence_learning_task is None:
+            _intelligence_learning_stop = asyncio.Event()
+            _intelligence_learning_task = asyncio.create_task(
+                nightly_learning_loop(_intelligence_learning_stop)
+            )
+            print("[OK] Intelligence nightly learning aktif")
+    except Exception as e:
+        print(f"[WARN] Intelligence nightly learning gagal start: {e}")
+
 @app.on_event("shutdown")
 async def shutdown():
     global _pool, _pool_loop, _gmail_poll_task, _gmail_poll_stop
+    global _intelligence_learning_task, _intelligence_learning_stop
     try:
         if _gmail_poll_stop is not None:
             _gmail_poll_stop.set()
@@ -498,6 +547,22 @@ async def shutdown():
     finally:
         _gmail_poll_task = None
         _gmail_poll_stop = None
+    try:
+        if _intelligence_learning_stop is not None:
+            _intelligence_learning_stop.set()
+        if _intelligence_learning_task is not None:
+            try:
+                await asyncio.wait_for(_intelligence_learning_task, timeout=3.0)
+            except BaseException:
+                _intelligence_learning_task.cancel()
+    finally:
+        _intelligence_learning_task = None
+        _intelligence_learning_stop = None
+    try:
+        from intelligence.db import close_pool as close_intelligence_pool
+        await close_intelligence_pool()
+    except BaseException:
+        pass
     try:
         await _replicate_image_queue.shutdown()
         await _replicate_video_queue.shutdown()
@@ -681,6 +746,8 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_doc_chunk_embeddings_org ON doc_chunk_embeddings(org_id);",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'file';",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url TEXT;",
         """
         CREATE TABLE IF NOT EXISTS org_integrations (
             org_id UUID NOT NULL,
@@ -1377,6 +1444,179 @@ class MediaImageReq(BaseModel):
     quality: str = "medium"  # low | medium | high | auto
 
 
+class SpeakAudioReq(BaseModel):
+    text: str = Field(..., min_length=1, max_length=1200)
+
+
+@app.post("/audio/synthesize")
+async def synthesize_audio(
+    body: SpeakAudioReq,
+    user=Depends(get_current_user),
+):
+    text = body.text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{2,}", ". ", text)
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text).strip()
+    if not text:
+        raise HTTPException(400, "Teks suara kosong.")
+
+    vendor_path = BASE_DIR / ".tts_vendor"
+    if str(vendor_path) not in sys.path:
+        sys.path.insert(0, str(vendor_path))
+    try:
+        import edge_tts
+
+        audio = bytearray()
+        communicator = edge_tts.Communicate(
+            text,
+            voice="id-ID-GadisNeural",
+            rate="+9%",
+            volume="+6%",
+            pitch="-1Hz",
+            boundary="SentenceBoundary",
+        )
+        async for chunk in communicator.stream():
+            if chunk.get("type") == "audio":
+                audio.extend(chunk.get("data") or b"")
+        if not audio:
+            raise RuntimeError("Provider tidak mengembalikan audio.")
+        return Response(
+            content=bytes(audio),
+            media_type="audio/mpeg",
+            headers={
+                "Cache-Control": "no-store",
+                "X-TTS-Voice": "id-ID-GadisNeural",
+                "X-TTS-Rate": "+9%",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Neural TTS failed user=%s: %s", user["id"], exc)
+        raise HTTPException(502, "Suara neural sedang tidak tersedia.") from exc
+
+
+@app.post("/audio/speak")
+async def speak_audio(
+    body: SpeakAudioReq,
+    user=Depends(get_current_user),
+):
+    text = re.sub(r"\s+", " ", body.text).strip()
+    if not text:
+        raise HTTPException(400, "Teks suara kosong.")
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "spd-say",
+            "--wait",
+            "--output-module", "espeak-ng",
+            "--language", "id",
+            "--voice-type", "female1",
+            "--rate", "-8",
+            "--pitch", "2",
+            "--volume", "35",
+            "--punctuation-mode", "some",
+            text,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        timeout = max(20.0, min(120.0, len(text) / 8.0))
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        if process.returncode != 0:
+            detail = (stderr or b"").decode("utf-8", errors="ignore").strip()
+            raise RuntimeError(detail or f"spd-say exit {process.returncode}")
+        return {"status": "spoken", "characters": len(text)}
+    except FileNotFoundError as exc:
+        raise HTTPException(503, "Engine suara lokal tidak tersedia.") from exc
+    except asyncio.TimeoutError as exc:
+        try:
+            process.kill()
+        except Exception:
+            pass
+        raise HTTPException(504, "Pembacaan suara melewati batas waktu.") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Local TTS failed user=%s: %s", user["id"], exc)
+        raise HTTPException(502, "Engine suara lokal gagal membaca teks.") from exc
+
+
+@app.post("/audio/stop")
+async def stop_audio(user=Depends(get_current_user)):
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "spd-say", "--cancel",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except Exception as exc:
+        logger.debug("Stop local TTS failed user=%s: %s", user["id"], exc)
+    return {"status": "stopped"}
+
+
+@app.post("/audio/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    if not cfg.groq_api_key:
+        raise HTTPException(503, "GROQ_API_KEY belum dikonfigurasi.")
+
+    allowed_types = {
+        "audio/webm", "audio/ogg", "audio/wav", "audio/x-wav",
+        "audio/mpeg", "audio/mp4", "audio/x-m4a", "video/webm",
+    }
+    raw_content_type = (file.content_type or "").lower()
+    content_type = raw_content_type.split(";", 1)[0].strip()
+    if content_type and content_type not in allowed_types:
+        raise HTTPException(415, f"Format audio tidak didukung: {content_type}")
+
+    audio = await file.read(10 * 1024 * 1024 + 1)
+    if not audio:
+        raise HTTPException(400, "Rekaman audio kosong.")
+    if len(audio) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Rekaman audio maksimal 10 MB.")
+
+    filename = file.filename or "recording.webm"
+    headers = {"Authorization": f"Bearer {cfg.groq_api_key}"}
+    data = {
+        "model": cfg.groq_whisper_model,
+        "language": "id",
+        "response_format": "json",
+        "temperature": "0",
+    }
+    files = {"file": (filename, audio, content_type or "audio/webm")}
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.post(
+                f"{cfg.groq_base_url.rstrip('/')}/audio/transcriptions",
+                headers=headers,
+                data=data,
+                files=files,
+            )
+        if response.status_code == 401:
+            raise HTTPException(503, "GROQ_API_KEY tidak valid.")
+        if response.status_code == 429:
+            raise HTTPException(429, "Layanan transkripsi sedang sibuk. Coba lagi sebentar.")
+        response.raise_for_status()
+        payload = response.json()
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            raise HTTPException(422, "Ucapan tidak terdeteksi. Coba bicara lebih jelas.")
+        logger.info("Audio transcription success user=%s bytes=%s", user["id"], len(audio))
+        return {"text": text, "model": cfg.groq_whisper_model}
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Groq transcription rejected status=%s", exc.response.status_code)
+        raise HTTPException(502, "Provider transkripsi menolak rekaman audio.") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("Groq transcription connection failed: %s", exc)
+        raise HTTPException(502, "Tidak dapat menghubungi layanan transkripsi.") from exc
+
+
 @app.post("/media/image")
 async def generate_image(
     body: MediaImageReq,
@@ -1700,7 +1940,7 @@ async def gmail_oauth_callback(
         pass
 
     # Redirect balik ke dashboard settings
-    return RedirectResponse(url="/dashboard#page-settings")
+    return RedirectResponse(url="/dashboard#settings")
 
 
 class GmailMapBotReq(BaseModel):
@@ -2097,7 +2337,7 @@ async def list_bots(
 ):
     rows = await pool.fetch(
         """SELECT id, name, status, primary_color, greeting, language,
-                  total_convs, total_msgs, created_at
+                  system_prompt, temperature, total_convs, total_msgs, created_at
            FROM bots WHERE org_id=$1 ORDER BY created_at DESC""",
         user["org_id"],
     )
@@ -2110,16 +2350,25 @@ async def create_bot(
     user=Depends(get_current_user),
     pool=Depends(get_pool),
 ):
-    # Cek limit plan
-    count = await pool.fetchval(
-        "SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive'",
-        user["org_id"],
-    )
-    limit = await pool.fetchval(
-        "SELECT bot_limit FROM organizations WHERE id=$1", user["org_id"]
-    )
-    if count >= limit:
-        raise HTTPException(402, f"Paket kamu hanya boleh {limit} bot aktif. Upgrade untuk tambah lebih.")
+    # Cek limit plan (Phase 2: gunakan check_limit dari subscriptions/plans)
+    if _platform_check_limit:
+        ok, detail = await _platform_check_limit(pool, user["org_id"], "agents")
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Limit jumlah AI agent paket '{detail['plan']}' tercapai "
+                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+            )
+    else:
+        # Fallback ke logika lama (jika Phase 2 belum dimuat)
+        count = await pool.fetchval(
+            "SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive'", user["org_id"]
+        )
+        limit = await pool.fetchval(
+            "SELECT bot_limit FROM organizations WHERE id=$1", user["org_id"]
+        )
+        if count >= limit:
+            raise HTTPException(402, f"Paket kamu hanya boleh {limit} bot aktif. Upgrade untuk tambah lebih.")
 
     bot_id = str(uuid.uuid4())
     status_val = body.status if body.status in {"active", "training", "inactive"} else "active"
@@ -2131,6 +2380,17 @@ async def create_bot(
         body.primary_color, body.greeting,
         body.language, body.system_prompt,
     )
+    # Audit log (Phase 2)
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=user["org_id"], actor_user_id=user["id"],
+                actor_email=user.get("email"), action="create",
+                resource_type="bot", resource_id=bot_id,
+                metadata={"name": body.name, "status": status_val},
+            )
+        except Exception:
+            pass
     return {"bot_id": bot_id, "status": status_val, "message": "Bot berhasil dibuat"}
 
 
@@ -2196,29 +2456,38 @@ async def upload_document(
         raise HTTPException(404, "Bot tidak ditemukan")
 
     # Cek limit dokumen
-    doc_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM documents WHERE org_id=$1", user["org_id"]
-    )
-    doc_limit = await pool.fetchval(
-        "SELECT doc_limit FROM organizations WHERE id=$1", user["org_id"]
-    )
-    if doc_count >= doc_limit:
-        raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
+    if _platform_check_limit:
+        ok, detail = await _platform_check_limit(pool, user["org_id"], "knowledge")
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Limit jumlah dokumen knowledge base paket '{detail['plan']}' tercapai "
+                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+            )
+    else:
+        doc_count = await pool.fetchval(
+            "SELECT COUNT(*) FROM documents WHERE org_id=$1", user["org_id"]
+        )
+        doc_limit = await pool.fetchval(
+            "SELECT doc_limit FROM organizations WHERE id=$1", user["org_id"]
+        )
+        if doc_count >= doc_limit:
+            raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
 
     contents = await file.read()
     doc_id   = str(uuid.uuid4())
 
     # Simpan metadata ke DB
     await pool.execute(
-        """INSERT INTO documents (id, org_id, bot_id, filename, file_size, mime_type, status)
-           VALUES ($1,$2,$3,$4,$5,$6,'pending')""",
+        """INSERT INTO documents (id, org_id, bot_id, filename, file_size, mime_type, status, source_type, source_url)
+           VALUES ($1,$2,$3,$4,$5,$6,'pending','file',NULL)""",
         doc_id, user["org_id"], bot_id,
         file.filename, len(contents), file.content_type,
     )
 
     # Di production: kirim ke queue (Celery/BullMQ) untuk proses async
     # Untuk sekarang: proses langsung (simplified)
-    await _process_document_sync(pool, doc_id, contents, file.content_type or "")
+    await _process_document_sync(pool, doc_id, contents=contents, mime=file.content_type or "", source_type="file")
 
     # Proses saat ini synchronous, jadi status sudah final (ready/failed)
     row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
@@ -2226,95 +2495,153 @@ async def upload_document(
 
 
 async def _process_document_sync(
-    pool: asyncpg.Pool, doc_id: str, content: bytes, mime: str
+    pool: asyncpg.Pool,
+    doc_id: str,
+    *,
+    contents: bytes | None = None,
+    mime: str = "",
+    source_type: str = "file",
+    source_url: str | None = None,
 ):
     """
     Simplified sync processing.
     Di production: jalankan di background worker (Celery + Redis).
     """
     try:
-        # 1. Ekstrak teks
         text = ""
+        source_type = (source_type or "file").lower().strip()
         mime_l = (mime or "").lower()
 
-        # PDF
-        if ("pdf" in mime_l):
-            try:
-                import io
-                from pypdf import PdfReader
-
-                reader = PdfReader(io.BytesIO(content))
-                parts = []
-                for page in reader.pages:
-                    parts.append(page.extract_text() or "")
-                text = "\n".join(parts)
-            except Exception as e:
-                raise ValueError(f"Gagal ekstrak teks dari PDF: {e}")
-
-        # DOCX
-        elif ("word" in mime_l) or ("docx" in mime_l):
-            try:
-                import io
-                import zipfile
-                import xml.etree.ElementTree as ET
-
-                with zipfile.ZipFile(io.BytesIO(content)) as z:
-                    xml_bytes = z.read("word/document.xml")
-
-                # Parse OOXML and extract all text nodes (w:t)
-                root = ET.fromstring(xml_bytes)
-                ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-                parts = []
-                for node in root.findall(".//w:t", ns):
-                    if node.text:
-                        parts.append(node.text)
-                text = "\n".join(parts)
-            except Exception as e:
-                raise ValueError(f"Gagal ekstrak teks dari DOCX: {e}")
-
-        # Plain text fallback (txt/csv/md/json, dll)
+        if source_type == "url":
+            text = await _fetch_website_text(source_url or "")
         else:
-            text = content.decode("utf-8", errors="ignore")
+            raw = contents or b""
+            if "pdf" in mime_l:
+                try:
+                    import io
+                    from pypdf import PdfReader
 
-        # PostgreSQL TEXT tidak menerima byte NUL (\x00).
+                    reader = PdfReader(io.BytesIO(raw))
+                    parts = []
+                    for page in reader.pages:
+                        parts.append(page.extract_text() or "")
+                    text = "\n".join(parts)
+                except Exception as e:
+                    raise ValueError(f"Gagal ekstrak teks dari PDF: {e}")
+            elif ("word" in mime_l) or ("docx" in mime_l):
+                try:
+                    import io
+                    import zipfile
+                    import xml.etree.ElementTree as ET
+
+                    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                        xml_bytes = z.read("word/document.xml")
+
+                    root = ET.fromstring(xml_bytes)
+                    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                    parts = []
+                    for node in root.findall(".//w:t", ns):
+                        if node.text:
+                            parts.append(node.text)
+                    text = "\n".join(parts)
+                except Exception as e:
+                    raise ValueError(f"Gagal ekstrak teks dari DOCX: {e}")
+            else:
+                text = raw.decode("utf-8", errors="ignore")
+
         if "\x00" in text:
             text = text.replace("\x00", "")
-        # Buang karakter kontrol (kecuali tab/newline) agar insert ke DB aman.
         text = "".join(ch for ch in text if (ch >= " " or ch in "\n\t"))
         text = text.strip()
         if not text:
             raise ValueError("Dokumen tidak menghasilkan teks yang bisa diproses.")
 
-        # 2. Chunking (sederhana — 500 kata per chunk)
-        words  = text.split()
-        size   = 500
-        chunks = [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
+        chunks = _chunk_text(text, size=350)
+        if not chunks:
+            raise ValueError("Dokumen terlalu pendek untuk di-chunk.")
 
-        # 3. Simpan chunks ke DB
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT org_id FROM documents WHERE id=$1", doc_id
-            )
+            row = await conn.fetchrow("SELECT org_id FROM documents WHERE id=$1", doc_id)
             org_id = str(row["org_id"])
 
+            chunk_rows: list[tuple[str, str]] = []
             for i, chunk_text in enumerate(chunks):
                 chunk_id = str(uuid.uuid4())
                 await conn.execute(
-                    """INSERT INTO doc_chunks (id, document_id, org_id, chunk_index, content)
-                       VALUES ($1,$2,$3,$4,$5)""",
-                    chunk_id, doc_id, org_id, i, chunk_text,
+                    """INSERT INTO doc_chunks (id, document_id, org_id, chunk_index, content, token_count)
+                       VALUES ($1,$2,$3,$4,$5,$6)""",
+                    chunk_id, doc_id, org_id, i, chunk_text, len(chunk_text.split()),
                 )
+                chunk_rows.append((chunk_id, chunk_text))
 
+            await _store_chunk_embeddings(conn, org_id, chunk_rows)
             await conn.execute(
-                """UPDATE documents SET status='ready', chunk_count=$1, processed_at=NOW()
-                   WHERE id=$2""",
-                len(chunks), doc_id,
+                """UPDATE documents
+                   SET status='ready', chunk_count=$1, processed_at=NOW(),
+                       source_type=$2, source_url=$3
+                   WHERE id=$4""",
+                len(chunks), source_type, source_url, doc_id,
             )
     except Exception as e:
         await pool.execute(
             "UPDATE documents SET status='failed', error_msg=$1 WHERE id=$2",
             str(e), doc_id,
         )
+
+
+class KnowledgeBaseUrlReq(BaseModel):
+    url: str
+    title: str | None = None
+
+
+@app.post("/bots/{bot_id}/documents/url", status_code=201)
+async def upload_document_url(
+    bot_id: str,
+    body: KnowledgeBaseUrlReq,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    """Upload sumber URL ke knowledge base bot."""
+    bot = await pool.fetchrow(
+        "SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, user["org_id"]
+    )
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan")
+
+    url = (body.url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL harus diawali http:// atau https://")
+
+    if _platform_check_limit:
+        ok, detail = await _platform_check_limit(pool, user["org_id"], "knowledge")
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Limit jumlah dokumen knowledge base paket '{detail['plan']}' tercapai "
+                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+            )
+    else:
+        doc_count = await pool.fetchval(
+            "SELECT COUNT(*) FROM documents WHERE org_id=$1", user["org_id"]
+        )
+        doc_limit = await pool.fetchval(
+            "SELECT doc_limit FROM organizations WHERE id=$1", user["org_id"]
+        )
+        if doc_count >= doc_limit:
+            raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
+
+    title = (body.title or _title_from_url(url)).strip() or _title_from_url(url)
+    doc_id = str(uuid.uuid4())
+    await pool.execute(
+        """INSERT INTO documents (id, org_id, bot_id, filename, file_size, mime_type, status, source_type, source_url)
+           VALUES ($1,$2,$3,$4,$5,$6,'pending','url',$7)""",
+        doc_id, user["org_id"], bot_id,
+        title, 0, "text/html", url,
+    )
+
+    await _process_document_sync(pool, doc_id, source_type="url", source_url=url)
+    row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
+    return {"doc_id": doc_id, "status": row["status"], "error_msg": row["error_msg"]}
 
 
 @app.get("/bots/{bot_id}/documents")
@@ -2324,7 +2651,8 @@ async def list_documents(
     pool=Depends(get_pool),
 ):
     rows = await pool.fetch(
-        """SELECT id, filename, file_size, status, chunk_count, error_msg, created_at, processed_at
+        """SELECT id, filename, file_size, status, chunk_count, error_msg, created_at, processed_at,
+                  source_type, source_url
            FROM documents WHERE bot_id=$1 AND org_id=$2 ORDER BY created_at DESC""",
         bot_id, user["org_id"],
     )
@@ -2424,14 +2752,23 @@ async def chat(
         # Jangan sampai rate limiter crash chat
         pass
 
-    # 2. Cek quota percakapan bulan ini
-    conv_this_month = await pool.fetchval(
-        """SELECT COUNT(*) FROM conversations
-           WHERE org_id=$1 AND started_at >= DATE_TRUNC('month', NOW())""",
-        bot["org_id"],
-    )
-    if conv_this_month >= bot["conv_limit"]:
-        raise HTTPException(429, "Batas percakapan bulan ini tercapai. Upgrade plan.")
+    # 2. Cek quota percakapan bulan ini (Phase 2: gunakan check_limit dari subscriptions/plans)
+    if _platform_check_limit:
+        ok, detail = await _platform_check_limit(pool, bot["org_id"], "conversations")
+        if not ok:
+            raise HTTPException(
+                429,
+                f"Limit percakapan/bulan paket '{detail['plan']}' tercapai "
+                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+            )
+    else:
+        conv_this_month = await pool.fetchval(
+            """SELECT COUNT(*) FROM conversations
+               WHERE org_id=$1 AND started_at >= DATE_TRUNC('month', NOW())""",
+            bot["org_id"],
+        )
+        if conv_this_month >= bot["conv_limit"]:
+            raise HTTPException(429, "Batas percakapan bulan ini tercapai. Upgrade plan.")
 
     # 3. Ambil atau buat conversation
     conv_id = body.session_id
@@ -2473,7 +2810,7 @@ async def chat(
     ]
 
     # 6. RAG: cari chunks relevan dari knowledge base
-    relevant_chunks = await _retrieve_chunks(pool, bot["org_id"], body.message)
+    relevant_chunks = await _retrieve_chunks(pool, bot["org_id"], body.message, bot_id=bot_id)
 
     # 7. Bangun system prompt
     system = _build_system_prompt(bot["system_prompt"], relevant_chunks, bot["language"])
@@ -2506,26 +2843,35 @@ async def chat(
     if cfg.news_enabled and _looks_like_news_query(body.message):
         try:
             rss_urls = [u.strip() for u in (cfg.news_rss_feeds or "").split(",") if u.strip()] or None
+            news_needs_bodies = _news_needs_full_bodies(body.message)
+            news_limit = max(1, min(10, int(cfg.news_max_items or 6)))
+            if not news_needs_bodies:
+                news_limit = min(news_limit, 3)
+            news_timeout = float(cfg.news_timeout_seconds or 8.0)
+            if not news_needs_bodies:
+                news_timeout = min(news_timeout, 4.0)
             news_ctx = await asyncio.wait_for(
                 build_news_context(
                     body.message,
-                    limit=max(1, min(10, int(cfg.news_max_items or 6))),
-                    include_bodies=bool(cfg.news_include_bodies),
-                    fetch_timeout_s=float(cfg.news_timeout_seconds or 8.0),
+                    limit=news_limit,
+                    include_bodies=bool(cfg.news_include_bodies and news_needs_bodies),
+                    fetch_timeout_s=news_timeout,
                     max_body_chars=max(200, min(6000, int(cfg.news_max_body_chars or 1400))),
                     max_concurrency=max(1, min(8, int(cfg.news_max_concurrency or 3))),
                     rss_urls=rss_urls,
                 ),
-                timeout=float(cfg.news_timeout_seconds or 8.0),
+                timeout=news_timeout,
             )
             if news_ctx:
                 system = (
                     system
                     + "\n\n## Berita terkini (real-time):\n"
                     + news_ctx
-                    + "\n\nInstruksi penting: Jika ada bagian `Kutipan relevan`, jawab HANYA berdasarkan kutipan itu. "
-                      "Jangan mencantumkan sumber, nama media, atau link kecuali user memintanya. "
-                      "Jangan menambah detail yang tidak ada di kutipan/teks. Kalau kutipan tidak cukup, bilang 'data artikel tidak cukup' dan minta link/sumber lain."
+                    + "\n\nInstruksi penting: Jawab berdasarkan data berita di atas dan jangan menambah fakta yang tidak tersedia. "
+                      "Untuk setiap berita, cantumkan judul, media/feed, tanggal terbit jika ada, dan URL sumber. "
+                      "Jika teks artikel tersedia, gunakan teks dan kutipan sebagai dasar utama. Jika hanya ringkasan RSS yang tersedia, "
+                      "tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. "
+                      "Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
                 )
         except Exception:
             pass
@@ -2536,18 +2882,17 @@ async def chat(
     try:
         use_cloud = should_use_cloud(bot["plan"], bot["billing_status"])
         supervisor = get_supervisor(use_cloud)
-        result = await supervisor.process(
-            {
-                "bot_id": bot_id,
-                "org_id": str(bot["org_id"]),
-                "conversation_id": conv_id,
-                "user_message": body.message,
-                "messages": messages_for_claude,
-                "knowledge_base_context": system,
-                "resolved": False,
-                "metadata": body.user_meta or {},
-            }
-        )
+        intelligence_context = {
+            "bot_id": bot_id,
+            "org_id": str(bot["org_id"]),
+            "conversation_id": conv_id,
+            "user_message": body.message,
+            "messages": messages_for_claude,
+            "knowledge_base_context": system,
+            "resolved": False,
+            "metadata": body.user_meta or {},
+        }
+        result = await supervisor.process(intelligence_context)
         answer = result.final_answer
         if market_answer:
             answer = market_answer
@@ -2574,6 +2919,21 @@ async def chat(
                 "UPDATE conversations SET handoff_needed=TRUE WHERE id=$1",
                 conv_id,
             )
+            # Phase 2: masukkan ke human queue secara otomatis
+            if _platform_enqueue_handoff:
+                urgency = (result.escalation_urgency or "medium").lower()
+                valid_priorities = {"low", "medium", "high", "urgent"}
+                priority = urgency if urgency in valid_priorities else "medium"
+                try:
+                    await _platform_enqueue_handoff(
+                        pool,
+                        org_id=bot["org_id"],
+                        conversation_id=conv_id,
+                        reason=result.escalation_message or "Confidence AI rendah — perlu bantuan manusia",
+                        priority=priority,
+                    )
+                except Exception:
+                    pass  # jangan crash chat karena handoff gagal
     except Exception as e:
         if market_answer:
             answer = market_answer
@@ -2604,6 +2964,19 @@ async def chat(
         conv_id,
     )
 
+    if agent_meta is not None:
+        try:
+            from intelligence.pipeline import persist_intelligence
+            asyncio.create_task(
+                persist_intelligence(
+                    dict(intelligence_context),
+                    result,
+                    bot_response=answer,
+                )
+            )
+        except Exception:
+            logger.exception("Gagal menjadwalkan persistensi Intelligence")
+
     resp = {
         "answer":      answer,
         "session_id":  conv_id,
@@ -2631,32 +3004,233 @@ async def chat(
 
 
 async def _retrieve_chunks(
-    pool: asyncpg.Pool, org_id: str, query: str, top_k: int = 5
+    pool: asyncpg.Pool,
+    org_id: str,
+    query: str,
+    *,
+    bot_id: str | None = None,
+    top_k: int = 5,
 ) -> list[dict]:
     """
-    Simplified keyword search.
-    Cloud-only mode: gunakan pencarian keyword internal.
+    Hybrid retrieval: keyword + lokal vector embedding.
+    Selalu dibatasi ke org yang sama; jika bot_id ada, prioritaskan dokumen bot itu + shared docs.
     """
-    q = (query or "").strip().lower()
-    tokens = re.findall(r"[a-zA-Z0-9_]+", q)[:12]
-    tokens = [t for t in tokens if len(t) >= 3]
-    if not tokens:
+    q = (query or "").strip()
+    if not q:
         return []
 
-    like_params = [f"%{t}%" for t in tokens[:8]]
-    where = " OR ".join([f"content ILIKE ${i+2}" for i in range(len(like_params))])
-    sql = f"""SELECT id, content FROM doc_chunks
-              WHERE org_id=$1 AND ({where})
-              LIMIT 200"""
-    rows = await pool.fetch(sql, org_id, *like_params)
+    rows = await _fetch_kb_candidates(pool, str(org_id), bot_id=str(bot_id) if bot_id else None, limit=2000)
+    if not rows:
+        return []
 
-    def score(text: str) -> int:
-        tl = (text or "").lower()
-        return sum(1 for t in tokens if t in tl)
+    query_vec = _text_to_embedding(q)
+    query_tokens = _tokenize_text(q)
+    scored: list[tuple[float, dict]] = []
+    for row in rows:
+        score = _score_kb_candidate(query_tokens, query_vec, row.get("content") or "", row.get("embedding"))
+        if score > 0:
+            scored.append((score, row))
 
-    scored = [(score(r["content"]), dict(r)) for r in rows]
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [r for s, r in scored[:top_k] if s > 0]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    out = []
+    for _, row in scored[:top_k]:
+        out.append(
+            {
+                "id": row["id"],
+                "content": row["content"],
+                "document_id": row.get("document_id"),
+                "chunk_index": row.get("chunk_index"),
+                "filename": row.get("filename"),
+                "source_type": row.get("source_type"),
+                "source_url": row.get("source_url"),
+            }
+        )
+    return out
+
+
+
+
+KB_EMBED_DIM = 256
+
+
+def _tokenize_text(text: str) -> list[str]:
+    tokens = re.findall(r"[a-zA-Z0-9_]+", (text or "").lower())
+    return [t for t in tokens if len(t) >= 2]
+
+
+def _chunk_text(text: str, size: int = 350) -> list[str]:
+    words = (text or "").split()
+    if not words:
+        return []
+    size = max(80, min(700, int(size)))
+    return [" ".join(words[i:i + size]).strip() for i in range(0, len(words), size)]
+
+
+def _text_to_embedding(text: str, dim: int | None = None) -> list[float]:
+    dim = int(dim or cfg.kb_embedding_dim or KB_EMBED_DIM)
+    dim = max(32, min(1024, dim))
+    vec = np.zeros(dim, dtype=np.float32)
+    tokens = _tokenize_text(text)
+    if not tokens:
+        return vec.tolist()
+    for tok in tokens:
+        h = int(hashlib.sha1(tok.encode("utf-8")).hexdigest(), 16)
+        idx = h % dim
+        vec[idx] += 1.0 + (len(tok) / 12.0)
+    norm = float(np.linalg.norm(vec))
+    if norm > 0:
+        vec /= norm
+    return vec.astype(np.float32).tolist()
+
+
+def _cosine_similarity(a: list[float] | None, b: list[float] | None) -> float:
+    if not a or not b:
+        return 0.0
+    va = np.asarray(a, dtype=np.float32)
+    vb = np.asarray(b, dtype=np.float32)
+    if va.shape != vb.shape or not va.size:
+        return 0.0
+    denom = float(np.linalg.norm(va) * np.linalg.norm(vb))
+    if denom <= 0:
+        return 0.0
+    return float(np.dot(va, vb) / denom)
+
+
+def _score_kb_candidate(query_tokens: list[str], query_vec: list[float], content: str, embedding: object) -> float:
+    content_lower = (content or "").lower()
+    keyword_hits = sum(1 for t in query_tokens if t in content_lower)
+    kw_score = keyword_hits / max(1, len(query_tokens))
+    emb_score = 0.0
+    if isinstance(embedding, list):
+        emb_score = _cosine_similarity(query_vec, embedding)
+    return (emb_score * 0.78) + (kw_score * 0.22)
+
+
+def _title_from_url(url: str) -> str:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.netloc or "website"
+        path = (parsed.path or "/").strip("/")
+        slug = path.replace("/", " ").replace("-", " ")
+        title = f"{host} {slug}".strip()
+        return title[:160] if title else host[:160]
+    except Exception:
+        return url[:160]
+
+
+_TAG_RE = re.compile(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>")
+
+
+def _strip_html(text: str) -> str:
+    t = html.unescape(text or "")
+    t = re.sub(r"(?is)<[^>]+>", " ", t)
+    t = re.sub(r"&nbsp;", " ", t)
+    t = re.sub(r"\s+", " ", t)
+    return t.strip()
+
+
+def _extract_web_text(html_text: str, max_chars: int = 16000) -> str:
+    if not html_text:
+        return ""
+    h = _TAG_RE.sub(" ", html_text)
+    m = re.search(r"(?is)<article[^>]*>(.*?)</article>", h)
+    if m:
+        h = m.group(1)
+    paragraphs = re.findall(r"(?is)<p[^>]*>(.*?)</p>", h)
+    texts: list[str] = []
+    for p in paragraphs:
+        t = _strip_html(p)
+        if len(t) >= 30:
+            texts.append(t)
+    if not texts:
+        t = _strip_html(h)
+        return t[:max_chars].strip()
+    out = "\n".join(texts)
+    return out[:max_chars].strip()
+
+
+async def _fetch_website_text(url: str, timeout_s: float = 15.0) -> str:
+    url = (url or "").strip()
+    if not url:
+        return ""
+    headers = {"User-Agent": "BotNesia/1.0 (+knowledge-base)"}
+    async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True, headers=headers) as client:
+        try:
+            res = await client.get(url)
+            res.raise_for_status()
+            text = _extract_web_text(res.text, max_chars=16000)
+            if len(text) >= 300:
+                return text
+        except Exception:
+            pass
+        try:
+            proxy = await client.get("https://r.jina.ai/" + url)
+            proxy.raise_for_status()
+            text = _extract_web_text(proxy.text, max_chars=16000)
+            if text:
+                return text
+        except Exception:
+            pass
+    return ""
+
+
+async def _store_chunk_embeddings(
+    conn: asyncpg.Connection,
+    org_id: str,
+    chunk_rows: list[tuple[str, str]],
+) -> None:
+    if not chunk_rows:
+        return
+    for chunk_id, chunk_text in chunk_rows:
+        embedding = _text_to_embedding(chunk_text)
+        await conn.execute(
+            """INSERT INTO doc_chunk_embeddings (chunk_id, org_id, embedding, model)
+               VALUES ($1,$2,$3,$4)
+               ON CONFLICT (chunk_id) DO UPDATE
+               SET org_id=EXCLUDED.org_id,
+                   embedding=EXCLUDED.embedding,
+                   model=EXCLUDED.model""",
+            chunk_id,
+            org_id,
+            embedding,
+            f"hash-emb-{cfg.kb_embedding_dim or KB_EMBED_DIM}",
+        )
+
+
+async def _fetch_kb_candidates(
+    pool: asyncpg.Pool,
+    org_id: str,
+    *,
+    bot_id: str | None = None,
+    limit: int = 2000,
+) -> list[dict]:
+    params: list[object] = [org_id]
+    where = ["c.org_id=$1"]
+    if bot_id:
+        params.append(bot_id)
+        where.append("(d.bot_id=$2 OR d.bot_id IS NULL)")
+    where_sql = " AND ".join(where)
+    sql = f"""
+        SELECT c.id, c.content, c.document_id, c.chunk_index, c.created_at,
+               d.filename, d.source_type, d.source_url, e.embedding
+        FROM doc_chunks c
+        JOIN documents d ON d.id = c.document_id
+        LEFT JOIN doc_chunk_embeddings e ON e.chunk_id = c.id
+        WHERE {where_sql}
+        ORDER BY c.created_at DESC
+        LIMIT {int(limit)}
+    """
+    rows = await pool.fetch(sql, *params)
+    out: list[dict] = []
+    for row in rows:
+        emb = row.get("embedding")
+        if isinstance(emb, str):
+            try:
+                emb = json.loads(emb)
+            except Exception:
+                emb = None
+        out.append({**dict(row), "embedding": emb})
+    return out
 
 
 def _build_system_prompt(
@@ -2699,6 +3273,23 @@ def _looks_like_news_query(text: str) -> bool:
     if "http://" in t or "https://" in t:
         return True
     return any(k in t for k in keys)
+
+
+def _news_needs_full_bodies(text: str) -> bool:
+    t = (text or "").lower()
+    detail_keys = [
+        "detail",
+        "lengkap",
+        "isi",
+        "full",
+        "selengkapnya",
+        "kutipan",
+        "quote",
+        "analisis",
+        "penjelasan",
+        "breakdown",
+    ]
+    return any(k in t for k in detail_keys)
 
 
 # ─── ROUTE: ANALYTICS ─────────────────────────────────────────
@@ -2954,9 +3545,249 @@ async def health():
         except Exception:
             pass
     return {
-        "status":  "ok" if db_ok else "degraded",
+        "status":  "ok" if db_ok and schema_ok and bool(cfg.groq_api_key) else "degraded",
         "db":      db_ok,
         "schema":  schema_ok if db_ok else False,
+        "ai": {
+            "configured": bool(cfg.groq_api_key),
+            "provider": "groq" if cfg.groq_api_key else None,
+            "model": cfg.groq_model if cfg.groq_api_key else None,
+        },
         "model":   f"groq:{cfg.groq_model}",
         "version": "1.0.0",
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PHASE 2 — BUSINESS PLATFORM (bn_platform) WIRING
+#
+# CATATAN POLA: factory function menerima `get_pool`/`get_current_user`/
+# `require_permission`/... sebagai parameter (dependency injection) agar
+# modul bn_platform TIDAK perlu `from main import ...` di top-level
+# (yang akan menyebabkan circular import karena main.py sangat besar).
+# Semua dependency dioper secara eksplisit di sini setelah terdefinisi.
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from bn_platform.rbac import make_permission_checker, build_rbac_router
+    from bn_platform.billing import build_billing_router, check_limit
+    from bn_platform.handoff import build_handoff_router, enqueue_handoff
+    from bn_platform.omnichannel import build_omnichannel_router
+    from bn_platform.lead_engine import build_lead_router
+    from bn_platform.marketplace import build_marketplace_router
+    from bn_platform.revenue_intel import build_revenue_router
+    from bn_platform.security import build_security_router, write_audit_log as _platform_audit_log_fn
+    from bn_platform.observability import instrument_app, record_db_pool_stats
+
+    # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
+    # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
+    _platform_check_limit = check_limit
+    _platform_enqueue_handoff = enqueue_handoff
+    _platform_write_audit = _platform_audit_log_fn
+
+    # ── 1. Prometheus middleware + GET /metrics ──────────────────
+    instrument_app(app)
+
+    # ── 2. RBAC require_permission dependency factory ────────────
+    require_permission = make_permission_checker(
+        get_current_user=get_current_user, get_pool=get_pool,
+    )
+
+    # ── 3. Adapter: pesan masuk Telegram → pipeline chat existing ─
+    async def _route_inbound_platform_message(
+        *, org_id: str, bot_id: str, channel: str,
+        external_user_id: str, text: str, display_name: str,
+    ) -> str:
+        """Teruskan pesan masuk omnichannel (Telegram/dst) ke pipeline chat existing.
+        Pola identik dengan `_meta_route_and_reply_whatsapp` — session_id deterministik
+        per (channel, external_user_id) supaya percakapan tetap satu thread."""
+        pool = await get_pool_safe()
+        if not pool:
+            return "Maaf, sistem sedang tidak tersedia. Coba lagi sebentar."
+        session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{channel}:{external_user_id}"))
+        user_meta = {"userId": external_user_id, "channel": channel, "display_name": display_name}
+        req = ChatReq(message=text, session_id=session_id, user_meta=user_meta)
+        try:
+            resp = await chat(bot_id=bot_id, body=req, pool=pool)
+            return (resp.get("answer") if isinstance(resp, dict) else None) or ""
+        except Exception:
+            logger.exception("Route inbound platform message failed (org=%s bot=%s channel=%s)", org_id, bot_id, channel)
+            return "Maaf, terjadi kesalahan. Tim kami sudah diberitahu."
+
+    # ── 4. Daftarkan semua router Phase 2 ───────────────────────
+    #    prefix="/api" konsisten dengan endpoint existing di main.py
+    #    Catatan webhook: URL yang didaftarkan ke Midtrans/Xendit/Telegram
+    #    harus menyertakan "/api" prefix ini (mis. {APP_URL}/api/billing/webhooks/midtrans)
+    app.include_router(
+        build_rbac_router(get_pool=get_pool, get_current_user=get_current_user, hash_password=hash_password, check_limit=check_limit),
+        prefix="/api",
+    )
+    app.include_router(
+        build_billing_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            dispatch_webhook=dispatch_webhook,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_handoff_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            dispatch_webhook=dispatch_webhook,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_omnichannel_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            app_url=cfg.app_url,
+            route_inbound_message=_route_inbound_platform_message,
+            check_limit=check_limit,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_lead_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_marketplace_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            check_limit=check_limit,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_revenue_router(get_pool=get_pool, get_current_user=get_current_user),
+        prefix="/api",
+    )
+    app.include_router(
+        build_security_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+
+    # ── 5. Admin Dashboard & Customer 360 — agregasi ringan ─────
+    from bn_platform.lead_engine import lead_funnel_summary
+    from bn_platform.omnichannel import inbox_summary as _inbox_summary
+
+    @app.get("/api/dashboard/overview")
+    async def dashboard_overview(
+        user=Depends(get_current_user),
+        pool=Depends(get_pool),
+    ):
+        """Admin Dashboard: metrik harian/mingguan tenant ini."""
+        org_id = user["org_id"]
+        # Total conversation & message count
+        conv_row = await pool.fetchrow(
+            """SELECT COUNT(*) AS total_convs,
+                      COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '30 days') AS convs_30d
+               FROM conversations WHERE org_id=$1""",
+            org_id,
+        )
+        # Active users (unique end_user_id last 30 days)
+        active_users = await pool.fetchval(
+            "SELECT COUNT(DISTINCT end_user_id) FROM conversations WHERE org_id=$1 AND started_at >= NOW() - INTERVAL '30 days'",
+            org_id,
+        )
+        # Conversion rate (resulted_in_purchase signals)
+        conv_rate_row = await pool.fetchrow(
+            """SELECT COUNT(*) AS total_signals,
+                      COUNT(*) FILTER (WHERE resulted_in_purchase) AS converted
+               FROM sales_signals ss
+               JOIN conversations c ON c.id = ss.conversation_id
+               WHERE c.org_id=$1 AND ss.created_at >= NOW() - INTERVAL '30 days'""",
+            org_id,
+        )
+        conversion_rate = 0.0
+        if conv_rate_row and conv_rate_row["total_signals"]:
+            conversion_rate = round(conv_rate_row["converted"] / conv_rate_row["total_signals"], 4)
+        # FAQ growth (new entries published last 30 days)
+        faq_growth = await pool.fetchval(
+            "SELECT COUNT(*) FROM faq_entries WHERE org_id=$1 AND status='published' AND created_at >= NOW() - INTERVAL '30 days'",
+            org_id,
+        )
+        # Lead funnel
+        funnel = await lead_funnel_summary(pool, org_id=org_id)
+        # Inbox summary
+        inbox = await _inbox_summary(pool, org_id=org_id)
+        return {
+            "total_conversations": conv_row["total_convs"],
+            "conversations_30d": conv_row["convs_30d"],
+            "active_users_30d": active_users,
+            "conversion_rate_30d": conversion_rate,
+            "faq_entries_published_30d": faq_growth,
+            "lead_funnel": funnel,
+            "inbox": inbox,
+        }
+
+    @app.get("/api/customers/{end_user_id}/360")
+    async def customer_360(
+        end_user_id: str,
+        user=Depends(get_current_user),
+        pool=Depends(get_pool),
+        bot_id: str | None = None,
+    ):
+        """Customer 360: profil lengkap, riwayat chat, pembelian, komplain, lead score."""
+        org_id = user["org_id"]
+        # Profil dari Phase 1 Intelligence
+        profile = await pool.fetchrow(
+            """SELECT * FROM customer_profiles WHERE org_id=$1 AND end_user_id=$2
+               ORDER BY updated_at DESC LIMIT 1""",
+            org_id, end_user_id,
+        ) if not bot_id else await pool.fetchrow(
+            "SELECT * FROM customer_profiles WHERE org_id=$1 AND bot_id=$2 AND end_user_id=$3",
+            org_id, bot_id, end_user_id,
+        )
+        # Riwayat percakapan (10 terakhir)
+        conversations = await pool.fetch(
+            """SELECT id, started_at, msg_count, channel, channel_account_id, assigned_agent_id, closed_at
+               FROM conversations WHERE org_id=$1 AND end_user_id=$2
+               ORDER BY started_at DESC LIMIT 10""",
+            org_id, end_user_id,
+        )
+        # Sinyal penjualan & keluhan (60 hari terakhir)
+        signals = await pool.fetch(
+            """SELECT ss.signal_type, ss.created_at, ss.resulted_in_purchase, c.id AS conv_id
+               FROM sales_signals ss
+               JOIN conversations c ON c.id = ss.conversation_id
+               WHERE c.org_id=$1 AND c.end_user_id=$2 AND ss.created_at >= NOW() - INTERVAL '60 days'
+               ORDER BY ss.created_at DESC LIMIT 30""",
+            org_id, end_user_id,
+        )
+        # Skor lead terbaru
+        lead = await pool.fetchrow(
+            """SELECT score, category, signals, recommended_action, computed_at
+               FROM lead_scores WHERE org_id=$1 AND end_user_id=$2
+               ORDER BY computed_at DESC LIMIT 1""",
+            org_id, end_user_id,
+        )
+        return {
+            "profile": dict(profile) if profile else None,
+            "recent_conversations": [dict(r) for r in conversations],
+            "recent_signals": [dict(r) for r in signals],
+            "lead": dict(lead) if lead else None,
+        }
+
+    logger.info("bn_platform Phase 2 berhasil di-mount: RBAC, Billing, Handoff, Omnichannel, "
+                "Leads, Marketplace, Revenue, Security, Observability (/metrics), Dashboard, Customer 360")
+
+except ImportError as _bn_err:
+    logger.warning("bn_platform belum ter-install atau dependency kurang (%s) — Phase 2 dilewati. "
+                   "Jalankan: pip install cryptography prometheus-client", _bn_err)
+
+
+# Intelligence endpoints share the main process in local/single-service mode.
+try:
+    from intelligence.routes_intelligence import intel_router
+    app.include_router(intel_router)
+    logger.info("Intelligence routes mounted at /intel")
+except ImportError as _intel_err:
+    logger.warning("Intelligence routes tidak tersedia: %s", _intel_err)

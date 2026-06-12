@@ -3,43 +3,48 @@ agents/cs_agent.py — CS Agent
 Menjawab pertanyaan pelanggan menggunakan konteks percakapan + knowledge base.
 """
 from __future__ import annotations
-import os
 from base import BaseAgent, AgentResult
-from news_fetcher import build_news_context
 
 
 class CSAgent(BaseAgent):
     name = "cs_agent"
-    system_prompt = """Kamu adalah CS Agent cerdas dalam sistem multi-agent BotNesia.
+    system_prompt = """Kamu adalah asisten AI bisnis BotNesia yang menggunakan Groq untuk menjawab pertanyaan pengguna.
 
 Tugasmu:
-1. Analisa pertanyaan pelanggan dengan cermat
-2. Buat jawaban yang akurat, ramah, dan singkat berdasarkan konteks
-3. Kalau butuh info tambahan, minta dengan jelas (singkat)
-4. Jika user bertanya integrasi channel (WhatsApp/Facebook/Instagram/Gmail/Website), jelaskan langkah setup ringkas di BotNesia.
-5. Jika user meminta dibuatkan gambar/video: jelaskan bahwa BotNesia bisa generate media lewat fitur **Gambar/Video** di dashboard (atau endpoint `/media/image` dan `/media/video`), minta prompt yang jelas, lalu berikan prompt yang siap dipakai. Jangan mengatakan "tidak bisa membuat gambar".
+1. Pahami tujuan pengguna dan berikan jawaban yang langsung berguna.
+2. Untuk masalah teknis, jelaskan penyebab yang paling mungkin lalu berikan langkah pemeriksaan/perbaikan berurutan, meskipun detail pengguna belum lengkap.
+3. Setelah memberikan solusi awal, kamu boleh meminta maksimal dua informasi penting untuk mempersempit diagnosis.
+4. Untuk strategi bisnis, berikan rekomendasi konkret, prioritas tindakan, dan contoh bila membantu.
+5. Jika user bertanya integrasi channel (WhatsApp/Facebook/Instagram/Gmail/Website), jelaskan langkah setup ringkas di BotNesia.
+6. Jika user meminta gambar/video, arahkan ke fitur **Gambar/Video** di dashboard atau endpoint `/media/image` dan `/media/video`, lalu bantu membuat prompt siap pakai.
 
 Aturan:
-- Jawab SELALU dalam Bahasa Indonesia
-- Jangan buat-buat informasi — lebih baik jujur tidak tahu, tapi jangan langsung menolak.
-- Jika tidak yakin dengan detail, jangan mengatakan "tidak bisa". Minta detail tambahan secara sopan dan tawarkan langkah atau alternatif.
-- Output HARUS berupa teks jawaban saja (jangan JSON, jangan menampilkan confidence/topics/metadata).
-- Untuk berita/artikel: jika ada bagian "Kutipan relevan", jawaban WAJIB hanya berdasarkan kutipan/teks itu. Jika teks artikel tidak tersedia atau tidak cukup data, katakan "data artikel tidak cukup" dan minta link publisher asli.
+- Jawab SELALU dalam Bahasa Indonesia.
+- Jangan mengganti jawaban dengan formulir klarifikasi umum. Berikan solusi awal terlebih dahulu.
+- Jangan mengarang fakta. Bedakan fakta dari dugaan atau diagnosis sementara.
+- Jangan membuat placeholder seperti "Rp X", harga perkiraan, nama paket, URL, batas fitur, atau kebijakan yang tidak tersedia di konteks. Jika data spesifik belum tersedia, katakan tepat bagian mana yang belum diketahui lalu beri langkah untuk memastikannya.
+- Untuk berita, gunakan hanya data pada konteks berita real-time. Cantumkan judul, media, tanggal terbit, dan URL sumber yang tersedia. Jika hanya ada judul/ringkasan RSS, nyatakan batasan itu tanpa menolak merangkum informasi yang tersedia.
+- Output HARUS berupa teks jawaban saja, tanpa JSON atau metadata internal.
 """
 
-    refusal_indicators = [
+    refusal_indicators = (
         "saya tidak tahu",
-        "gak tahu",
-        "nggak tahu",
-        "tidak bisa",
-        "maaf",
-        "sayangnya",
-        "sorry",
-    ]
+        "saya belum tahu",
+        "saya tidak dapat membantu",
+        "saya tidak bisa membantu",
+        "i cannot help",
+        "i can't help",
+    )
 
     def _is_refusal(self, text: str) -> bool:
-        normalized = (text or "").lower()
-        return any(marker in normalized for marker in self.refusal_indicators)
+        normalized = " ".join((text or "").lower().split()).strip(" .,!?:;")
+        if not normalized:
+            return True
+        # Kata "maaf" atau "tidak bisa" sering muncul di diagnosis yang tetap
+        # berguna. Hanya anggap gagal bila seluruh jawaban memang berupa penolakan singkat.
+        if len(normalized) > 180 or "\n" in (text or ""):
+            return False
+        return any(normalized.startswith(marker) for marker in self.refusal_indicators)
 
     def _clarify_response(self, user_msg: str) -> str:
         return (
@@ -64,35 +69,6 @@ Aturan:
             if kb_context:
                 system_parts.append("\n## Konteks knowledge base\n" + kb_context.strip())
 
-            msg_l = (user_msg or "").lower()
-            news_triggers = [
-                "berita",
-                "news",
-                "terbaru",
-                "terkini",
-                "hari ini",
-                "kemarin",
-                "tadi",
-                "update",
-                "trending",
-                "viral",
-                "headline",
-            ]
-            if any(k in msg_l for k in news_triggers):
-                try:
-                    rss_urls = [u.strip() for u in (os.getenv("NEWS_RSS_FEEDS", "") or "").split(",") if u.strip()] or None
-                    news_ctx = await build_news_context(user_msg, limit=6, include_bodies=True, rss_urls=rss_urls)
-                except Exception:
-                    news_ctx = ""
-                if news_ctx:
-                    system_parts.append(
-                        "\n## Berita terbaru (RSS)\n"
-                        + news_ctx
-                        + "\n\nInstruksi: Gunakan daftar berita di atas sebagai konteks. "
-                        "Jika user meminta ringkasan isi artikel, gunakan kutipan/teks artikel yang tersedia. "
-                        "Jika user meminta 'berita terkini', rangkum 3-6 poin utama dan sertakan link sumber dari RSS. "
-                        "Jika teks artikel tidak tersedia atau belum cukup, katakan 'data artikel tidak cukup' dan minta link publisher."
-                    )
 
             system = "\n\n".join(system_parts).strip()
 
@@ -106,9 +82,21 @@ Aturan:
                 )
             chat_history.append({"role": "user", "content": user_msg})
 
-            answer = await self._call_llm(chat_history, temperature=0.3, max_tokens=900)
-            answer = answer.strip()
-            if not answer or self._is_refusal(answer):
+            answer = (await self._call_llm(chat_history, temperature=0.3, max_tokens=1400)).strip()
+            if self._is_refusal(answer):
+                retry_history = chat_history + [
+                    {"role": "assistant", "content": answer or ""},
+                    {
+                        "role": "system",
+                        "content": (
+                            "Jawaban sebelumnya belum membantu. Jawab ulang secara langsung: sebutkan "
+                            "penyebab yang paling mungkin, berikan sedikitnya tiga langkah tindakan yang "
+                            "bisa dicoba sekarang, lalu ajukan maksimal dua pertanyaan lanjutan."
+                        ),
+                    },
+                ]
+                answer = (await self._call_llm(retry_history, temperature=0.2, max_tokens=1400)).strip()
+            if not answer:
                 answer = self._clarify_response(user_msg)
 
             output = {

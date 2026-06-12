@@ -1,0 +1,27 @@
+# Contoh scrape config Prometheus untuk BotNesia.
+# Salin ke prometheus.yml di server Prometheus / sertakan via Docker volume.
+#
+# Jika METRICS_AUTH_TOKEN diisi di .env, tambahkan `authorization` di bawah ini.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: botnesia-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]        # service name dari docker-compose.yml
+        labels:
+          service: botnesia-api
+    # Aktifkan baris di bawah jika METRICS_AUTH_TOKEN diset di .env:
+    # authorization:
+    #   type: Bearer
+    #   credentials: "REPLACE_WITH_METRICS_AUTH_TOKEN"
+
+  - job_name: botnesia-agent-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["agent_api:8001"]  # service name dari docker-compose.yml
+        labels:
+          service: botnesia-agent-api

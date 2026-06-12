@@ -1,0 +1,571 @@
+"""
+bn_platform/billing.py — Subscription & Billing
+
+Paket: Free, Starter, Pro, Business, Enterprise (lihat schema_platform.sql §2/§11
+untuk definisi limit per paket — tabel `plans`). Mendukung dua payment gateway
+populer di Indonesia:
+
+  • Midtrans  — Snap API (redirect ke halaman pembayaran terhosting Midtrans)
+    Docs: https://docs.midtrans.com/docs/snap-snap-integration-guide
+  • Xendit    — Invoices API (redirect ke invoice page Xendit)
+    Docs: https://developers.xendit.co/api-reference/#create-invoice
+
+Alur checkout:
+  1. POST /billing/checkout {plan_key, billing_cycle, provider}
+       -> buat baris `invoices` (status=open) + panggil API provider
+       -> simpan provider_invoice_id & provider_payment_url
+       -> kembalikan redirect_url ke frontend
+  2. User membayar di halaman provider
+  3. Provider memanggil webhook kita (POST /billing/webhooks/{provider})
+       -> verifikasi signature/token
+       -> tandai invoice `paid`, catat di `payment_history`
+       -> aktifkan/extend `subscriptions` (status=active, period+30/365 hari)
+       -> dispatch_webhook(org_id, "subscription.activated", ...) ke klien
+
+Enforcement limit paket dilakukan oleh `check_limit()` — dipanggil dari
+endpoint pembuatan resource (bots, users, dokumen, channel) di main.py.
+"""
+# from __future__ import annotations  # dihapus: menyebabkan Depends(closure_var) gagal di-resolve oleh FastAPI get_type_hints()
+
+import hashlib
+import hmac
+import json
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Awaitable, Callable
+
+import asyncpg
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+
+from .config import cfg as platform_cfg
+from .security import _check_rate_limit, _BILLING_MAX_REQUESTS
+
+logger = logging.getLogger("bn_platform.billing")
+
+GetCurrentUser = Callable[..., Awaitable[dict]]
+GetPool        = Callable[..., Awaitable[asyncpg.Pool]]
+DispatchWebhook = Callable[..., Awaitable[None]]
+
+MIDTRANS_SNAP_URL = (
+    "https://app.midtrans.com/snap/v1/transactions"
+    if platform_cfg.midtrans_is_production else
+    "https://app.sandbox.midtrans.com/snap/v1/transactions"
+)
+XENDIT_INVOICE_URL = "https://api.xendit.co/v2/invoices"
+
+# Limit field di tabel `plans` -> nama yang dipakai saat enforcement
+LIMIT_FIELDS = {
+    "conversations": "max_conversations_per_month",
+    "agents":        "max_agents",
+    "users":         "max_users",
+    "knowledge":     "max_knowledge_docs",
+    "channels":      "max_channels",
+}
+
+
+# ============================================================
+# REPOSITORY
+# ============================================================
+
+async def get_plan_by_key(pool: asyncpg.Pool, key: str) -> dict | None:
+    row = await pool.fetchrow("SELECT * FROM plans WHERE key=$1 AND is_active=TRUE", key)
+    return dict(row) if row else None
+
+
+async def list_plans(pool: asyncpg.Pool) -> list[dict]:
+    rows = await pool.fetch("SELECT * FROM plans WHERE is_active=TRUE ORDER BY sort_order")
+    return [dict(r) for r in rows]
+
+
+async def get_active_subscription(pool: asyncpg.Pool, org_id: str) -> dict | None:
+    row = await pool.fetchrow(
+        """SELECT s.*, p.key AS plan_key, p.name AS plan_name,
+                  p.max_conversations_per_month, p.max_agents, p.max_users,
+                  p.max_knowledge_docs, p.max_channels, p.features,
+                  p.price_monthly_idr, p.price_yearly_idr
+           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+           WHERE s.org_id = $1""",
+        org_id,
+    )
+    return dict(row) if row else None
+
+
+async def ensure_subscription(pool: asyncpg.Pool, org_id: str) -> dict:
+    """Pastikan tenant punya baris subscription (auto-provision Free + trial saat baru daftar)."""
+    sub = await get_active_subscription(pool, org_id)
+    if sub:
+        return sub
+    free_plan = await get_plan_by_key(pool, "free")
+    if not free_plan:
+        raise RuntimeError("Plan 'free' tidak ditemukan — jalankan schema_platform.sql")
+    trial_ends = datetime.now(timezone.utc) + timedelta(days=platform_cfg.trial_days)
+    await pool.execute(
+        """INSERT INTO subscriptions (org_id, plan_id, status, trial_ends_at,
+                                      current_period_start, current_period_end)
+           VALUES ($1, $2, 'trialing', $3, NOW(), $3)
+           ON CONFLICT (org_id) DO NOTHING""",
+        org_id, free_plan["id"], trial_ends,
+    )
+    return await get_active_subscription(pool, org_id)
+
+
+async def current_usage(pool: asyncpg.Pool, org_id: str) -> dict:
+    """Hitung pemakaian bulan berjalan untuk tiap dimensi limit."""
+    row = await pool.fetchrow(
+        """SELECT
+             (SELECT COUNT(*) FROM conversations
+                WHERE org_id=$1 AND started_at >= DATE_TRUNC('month', NOW()))      AS conversations,
+             (SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive')   AS agents,
+             (SELECT COUNT(*) FROM users WHERE org_id=$1 AND is_active=TRUE)        AS users,
+             (SELECT COUNT(*) FROM documents WHERE org_id=$1)                      AS knowledge,
+             (SELECT COUNT(*) FROM channel_accounts WHERE org_id=$1 AND is_active)  AS channels
+        """,
+        org_id,
+    )
+    return dict(row)
+
+
+async def check_limit(pool: asyncpg.Pool, org_id: str, dimension: str) -> tuple[bool, dict]:
+    """
+    Periksa apakah tenant masih di bawah limit paketnya untuk `dimension`
+    (salah satu dari LIMIT_FIELDS keys). Return (allowed, detail).
+    -1 pada kolom limit berarti unlimited (paket Enterprise).
+
+    Dipanggil SEBELUM membuat resource baru, contoh di main.py:
+
+        ok, detail = await check_limit(pool, org_id, "agents")
+        if not ok:
+            raise HTTPException(402, f"Limit paket '{detail['plan']}' tercapai ({detail['used']}/{detail['limit']})")
+    """
+    if dimension not in LIMIT_FIELDS:
+        raise ValueError(f"Dimensi limit tidak dikenal: {dimension}")
+    sub = await ensure_subscription(pool, org_id)
+    limit_value = sub[LIMIT_FIELDS[dimension]]
+    usage = await current_usage(pool, org_id)
+    used = usage[dimension]
+    detail = {"plan": sub["plan_key"], "dimension": dimension, "used": used, "limit": limit_value}
+    if limit_value == -1:
+        return True, detail
+    return used < limit_value, detail
+
+
+def _generate_invoice_number() -> str:
+    now = datetime.now(timezone.utc)
+    return f"INV-{now:%Y%m}-{uuid.uuid4().hex[:8].upper()}"
+
+
+async def create_invoice(
+    pool: asyncpg.Pool, *, org_id: str, subscription_id: str | None,
+    amount_idr: int, description: str, provider: str | None = None,
+) -> dict:
+    row = await pool.fetchrow(
+        """INSERT INTO invoices (org_id, subscription_id, invoice_number, status,
+                                 amount_idr, description, provider, due_date)
+           VALUES ($1, $2, $3, 'open', $4, $5, $6, $7)
+           RETURNING *""",
+        org_id, subscription_id, _generate_invoice_number(), amount_idr, description,
+        provider, datetime.now(timezone.utc) + timedelta(days=platform_cfg.invoice_due_days),
+    )
+    return dict(row)
+
+
+# ============================================================
+# MIDTRANS — Snap API
+# ============================================================
+
+async def midtrans_create_transaction(*, order_id: str, amount_idr: int,
+                                       customer_name: str, customer_email: str) -> dict:
+    """
+    Buat transaksi Snap. Mengembalikan {"token": ..., "redirect_url": ...}.
+    Auth: HTTP Basic dengan server_key sebagai username, password kosong
+    (lihat https://docs.midtrans.com/docs/snap-snap-integration-guide#1-get-snap-token).
+    """
+    if not platform_cfg.midtrans_server_key:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Midtrans belum dikonfigurasi (MIDTRANS_SERVER_KEY kosong)")
+
+    payload = {
+        "transaction_details": {"order_id": order_id, "gross_amount": amount_idr},
+        "customer_details": {"first_name": customer_name or "Customer", "email": customer_email or ""},
+        "credit_card": {"secure": True},
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            MIDTRANS_SNAP_URL, json=payload,
+            auth=(platform_cfg.midtrans_server_key, ""),
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+        )
+    if resp.status_code >= 400:
+        logger.error("Midtrans create transaction gagal: %s %s", resp.status_code, resp.text[:500])
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Gagal membuat transaksi Midtrans")
+    data = resp.json()
+    return {"token": data.get("token"), "redirect_url": data.get("redirect_url")}
+
+
+def midtrans_verify_signature(*, order_id: str, status_code: str, gross_amount: str, signature_key: str) -> bool:
+    """
+    Verifikasi signature notifikasi Midtrans:
+      SHA512(order_id + status_code + gross_amount + server_key) == signature_key
+    https://docs.midtrans.com/docs/https-notification-webhooks#notification-payload
+    """
+    if not platform_cfg.midtrans_server_key:
+        return False
+    raw = f"{order_id}{status_code}{gross_amount}{platform_cfg.midtrans_server_key}"
+    expected = hashlib.sha512(raw.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(expected, signature_key or "")
+
+
+# ============================================================
+# XENDIT — Invoices API
+# ============================================================
+
+async def xendit_create_invoice(*, external_id: str, amount_idr: int,
+                                 customer_name: str, customer_email: str,
+                                 description: str) -> dict:
+    """
+    Buat invoice Xendit. Mengembalikan {"id": ..., "invoice_url": ...}.
+    Auth: HTTP Basic dengan secret_key sebagai username, password kosong.
+    https://developers.xendit.co/api-reference/#create-invoice
+    """
+    if not platform_cfg.xendit_secret_key:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Xendit belum dikonfigurasi (XENDIT_SECRET_KEY kosong)")
+
+    payload = {
+        "external_id": external_id,
+        "amount": amount_idr,
+        "currency": "IDR",
+        "description": description,
+        "customer": {"given_names": customer_name or "Customer", "email": customer_email or ""},
+        "invoice_duration": platform_cfg.invoice_due_days * 24 * 3600,
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            XENDIT_INVOICE_URL, json=payload,
+            auth=(platform_cfg.xendit_secret_key, ""),
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+        )
+    if resp.status_code >= 400:
+        logger.error("Xendit create invoice gagal: %s %s", resp.status_code, resp.text[:500])
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Gagal membuat invoice Xendit")
+    data = resp.json()
+    return {"id": data.get("id"), "invoice_url": data.get("invoice_url")}
+
+
+def xendit_verify_callback_token(token: str | None) -> bool:
+    """Bandingkan header `x-callback-token` dengan token yang dikonfigurasi di Xendit dashboard."""
+    if not platform_cfg.xendit_callback_token:
+        return False
+    return hmac.compare_digest(platform_cfg.xendit_callback_token, token or "")
+
+
+# ============================================================
+# SUBSCRIPTION LIFECYCLE
+# ============================================================
+
+async def activate_subscription(pool: asyncpg.Pool, *, org_id: str, plan_key: str,
+                                 billing_cycle: str = "monthly") -> dict:
+    plan = await get_plan_by_key(pool, plan_key)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{plan_key}' tidak ditemukan")
+    days = 365 if billing_cycle == "yearly" else 30
+    period_end = datetime.now(timezone.utc) + timedelta(days=days)
+    row = await pool.fetchrow(
+        """INSERT INTO subscriptions (org_id, plan_id, status, billing_cycle,
+                                      current_period_start, current_period_end,
+                                      cancel_at_period_end, canceled_at, trial_ends_at)
+           VALUES ($1, $2, 'active', $3, NOW(), $4, FALSE, NULL, NULL)
+           ON CONFLICT (org_id) DO UPDATE SET
+               plan_id = EXCLUDED.plan_id,
+               status = 'active',
+               billing_cycle = EXCLUDED.billing_cycle,
+               current_period_start = NOW(),
+               current_period_end = EXCLUDED.current_period_end,
+               cancel_at_period_end = FALSE,
+               canceled_at = NULL,
+               updated_at = NOW()
+           RETURNING *""",
+        org_id, plan["id"], billing_cycle, period_end,
+    )
+    # sinkronkan kolom legacy organizations.plan agar fitur lama tetap konsisten
+    legacy_plan = {"free": "starter", "starter": "starter", "pro": "growth",
+                   "business": "scale", "enterprise": "scale"}.get(plan_key, "starter")
+    await pool.execute(
+        "UPDATE organizations SET plan=$1, billing_status='active' WHERE id=$2",
+        legacy_plan, org_id,
+    )
+    return dict(row)
+
+
+async def cancel_subscription(pool: asyncpg.Pool, *, org_id: str, at_period_end: bool = True) -> dict:
+    if at_period_end:
+        row = await pool.fetchrow(
+            """UPDATE subscriptions SET cancel_at_period_end=TRUE, updated_at=NOW()
+               WHERE org_id=$1 RETURNING *""", org_id,
+        )
+    else:
+        row = await pool.fetchrow(
+            """UPDATE subscriptions SET status='canceled', canceled_at=NOW(), updated_at=NOW()
+               WHERE org_id=$1 RETURNING *""", org_id,
+        )
+        await pool.execute("UPDATE organizations SET billing_status='canceled' WHERE id=$1", org_id)
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subscription tidak ditemukan")
+    return dict(row)
+
+
+async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str,
+                             provider_tx_id: str | None, payment_method: str | None,
+                             raw_payload: dict) -> None:
+    await pool.execute(
+        "UPDATE invoices SET status='paid', paid_at=NOW() WHERE id=$1", invoice["id"],
+    )
+    await pool.execute(
+        """INSERT INTO payment_history (org_id, invoice_id, provider, provider_transaction_id,
+                                        amount_idr, status, payment_method, raw_payload)
+           VALUES ($1,$2,$3,$4,$5,'paid',$6,$7)""",
+        invoice["org_id"], invoice["id"], provider, provider_tx_id,
+        invoice["amount_idr"], payment_method, json.dumps(raw_payload or {}),
+    )
+    meta = invoice.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except json.JSONDecodeError:
+            meta = {}
+    plan_key = meta.get("plan_key") if isinstance(meta, dict) else None
+    cycle = (meta.get("billing_cycle") if isinstance(meta, dict) else None) or "monthly"
+    if plan_key:
+        await activate_subscription(pool, org_id=invoice["org_id"], plan_key=plan_key, billing_cycle=cycle)
+    await pool.execute(
+        """INSERT INTO audit_logs (org_id, action, resource_type, resource_id, metadata)
+           VALUES ($1, 'payment', 'invoice', $2, $3)""",
+        invoice["org_id"], str(invoice["id"]),
+        json.dumps({"provider": provider, "amount_idr": int(invoice["amount_idr"]), "status": "paid"}),
+    )
+
+
+# ============================================================
+# ROUTER
+# ============================================================
+
+class CheckoutReq(BaseModel):
+    plan_key:      str
+    billing_cycle: str = Field(default="monthly", pattern="^(monthly|yearly)$")
+    provider:      str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
+
+
+class CancelReq(BaseModel):
+    at_period_end: bool = True
+
+
+def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
+                          require_permission, dispatch_webhook: DispatchWebhook | None = None) -> APIRouter:
+    router = APIRouter(prefix="/billing", tags=["billing"])
+
+    @router.get("/plans")
+    async def get_plans(pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
+        return {"plans": await list_plans(pool)}
+
+    @router.get("/subscription")
+    async def get_subscription(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        sub = await ensure_subscription(pool, user["org_id"])
+        usage = await current_usage(pool, user["org_id"])
+        limits = {dim: sub[field] for dim, field in LIMIT_FIELDS.items()}
+        return {"subscription": sub, "usage": usage, "limits": limits}
+
+    @router.get("/usage")
+    async def get_usage(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        results = {}
+        for dim in LIMIT_FIELDS:
+            ok, detail = await check_limit(pool, user["org_id"], dim)
+            results[dim] = {**detail, "within_limit": ok}
+        return {"usage": results}
+
+    @router.post("/checkout", status_code=status.HTTP_201_CREATED)
+    async def checkout(
+        body: CheckoutReq,
+        user: Annotated[dict, Depends(require_permission("billing.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        plan = await get_plan_by_key(pool, body.plan_key)
+        if not plan:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{body.plan_key}' tidak ditemukan")
+        amount = plan["price_yearly_idr"] if body.billing_cycle == "yearly" else plan["price_monthly_idr"]
+        if amount <= 0:
+            # Plan gratis: aktifkan langsung tanpa proses pembayaran
+            sub = await activate_subscription(pool, org_id=user["org_id"], plan_key=body.plan_key,
+                                               billing_cycle=body.billing_cycle)
+            return {"requires_payment": False, "subscription": sub}
+
+        sub = await ensure_subscription(pool, user["org_id"])
+        invoice = await create_invoice(
+            pool, org_id=user["org_id"], subscription_id=sub["id"], amount_idr=amount,
+            description=f"Upgrade ke paket {plan['name']} ({body.billing_cycle})",
+            provider=("manual" if body.provider == "local" else body.provider),
+        )
+        await pool.execute(
+            "UPDATE invoices SET metadata = metadata || $2::jsonb WHERE id=$1",
+            invoice["id"], json.dumps({"plan_key": body.plan_key, "billing_cycle": body.billing_cycle}),
+        )
+
+        org = await pool.fetchrow("SELECT name FROM organizations WHERE id=$1", user["org_id"])
+        customer_name = (org["name"] if org else None) or user.get("full_name") or "Customer"
+        customer_email = user.get("email") or ""
+
+        if body.provider == "local":
+            if not platform_cfg.local_billing_enabled:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Billing lokal dinonaktifkan")
+            invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", invoice["id"]))
+            await _mark_invoice_paid(
+                pool, invoice, provider="manual",
+                provider_tx_id=f"local-{invoice['invoice_number']}",
+                payment_method="local-development",
+                raw_payload={"mode": "local", "approved_by": user.get("email")},
+            )
+            return {
+                "requires_payment": False,
+                "local": True,
+                "invoice_id": str(invoice["id"]),
+                "invoice_number": invoice["invoice_number"],
+                "subscription": await get_active_subscription(pool, user["org_id"]),
+            }
+
+        if body.provider == "midtrans":
+            result = await midtrans_create_transaction(
+                order_id=invoice["invoice_number"], amount_idr=amount,
+                customer_name=customer_name, customer_email=customer_email,
+            )
+            redirect_url = result["redirect_url"]
+            provider_id = invoice["invoice_number"]
+        else:
+            result = await xendit_create_invoice(
+                external_id=invoice["invoice_number"], amount_idr=amount,
+                customer_name=customer_name, customer_email=customer_email,
+                description=invoice["description"],
+            )
+            redirect_url = result["invoice_url"]
+            provider_id = result["id"]
+
+        await pool.execute(
+            "UPDATE invoices SET provider_invoice_id=$1, provider_payment_url=$2 WHERE id=$3",
+            provider_id, redirect_url, invoice["id"],
+        )
+        return {
+            "requires_payment": True,
+            "invoice_id": str(invoice["id"]),
+            "invoice_number": invoice["invoice_number"],
+            "amount_idr": amount,
+            "provider": body.provider,
+            "redirect_url": redirect_url,
+        }
+
+    @router.post("/cancel")
+    async def cancel(
+        body: CancelReq,
+        user: Annotated[dict, Depends(require_permission("billing.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        sub = await cancel_subscription(pool, org_id=user["org_id"], at_period_end=body.at_period_end)
+        return {"subscription": sub}
+
+    @router.get("/invoices")
+    async def list_invoices(
+        user: Annotated[dict, Depends(require_permission("billing.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        limit: int = 20, offset: int = 0,
+    ):
+        rows = await pool.fetch(
+            """SELECT id, invoice_number, status, amount_idr, currency, description,
+                      provider, provider_payment_url, due_date, paid_at, created_at
+               FROM invoices WHERE org_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
+            user["org_id"], limit, offset,
+        )
+        return {"invoices": [dict(r) for r in rows]}
+
+    @router.get("/payments")
+    async def list_payments(
+        user: Annotated[dict, Depends(require_permission("billing.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        limit: int = 20, offset: int = 0,
+    ):
+        rows = await pool.fetch(
+            """SELECT id, invoice_id, provider, provider_transaction_id, amount_idr,
+                      status, payment_method, received_at
+               FROM payment_history WHERE org_id=$1 ORDER BY received_at DESC LIMIT $2 OFFSET $3""",
+            user["org_id"], limit, offset,
+        )
+        return {"payments": [dict(r) for r in rows]}
+
+    # ── Webhook: Midtrans HTTP Notification ────────────────────
+    @router.post("/webhooks/midtrans", include_in_schema=False)
+    async def midtrans_webhook(request: Request, pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
+        payload = await request.json()
+        order_id     = str(payload.get("order_id", ""))
+        status_code  = str(payload.get("status_code", ""))
+        gross_amount = str(payload.get("gross_amount", ""))
+        signature    = str(payload.get("signature_key", ""))
+        transaction_status = payload.get("transaction_status")
+
+        if not midtrans_verify_signature(order_id=order_id, status_code=status_code,
+                                          gross_amount=gross_amount, signature_key=signature):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Signature tidak valid")
+
+        invoice = await pool.fetchrow("SELECT * FROM invoices WHERE invoice_number=$1", order_id)
+        if not invoice:
+            return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
+        invoice = dict(invoice)
+
+        if transaction_status in ("settlement", "capture") and invoice["status"] != "paid":
+            await _mark_invoice_paid(
+                pool, invoice, provider="midtrans",
+                provider_tx_id=str(payload.get("transaction_id", "")),
+                payment_method=payload.get("payment_type"),
+                raw_payload=payload,
+            )
+            if dispatch_webhook:
+                await dispatch_webhook(invoice["org_id"], "subscription.activated",
+                                       {"invoice_number": order_id, "provider": "midtrans"}, pool)
+        elif transaction_status in ("expire", "cancel", "deny"):
+            await pool.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+        return {"ok": True}
+
+    # ── Webhook: Xendit Invoice Callback ────────────────────────
+    @router.post("/webhooks/xendit", include_in_schema=False)
+    async def xendit_webhook(request: Request, pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
+        token = request.headers.get("x-callback-token")
+        if not xendit_verify_callback_token(token):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Callback token tidak valid")
+
+        payload = await request.json()
+        external_id = str(payload.get("external_id", ""))
+        xendit_status = str(payload.get("status", "")).upper()
+
+        invoice = await pool.fetchrow("SELECT * FROM invoices WHERE invoice_number=$1", external_id)
+        if not invoice:
+            return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
+        invoice = dict(invoice)
+
+        if xendit_status == "PAID" and invoice["status"] != "paid":
+            await _mark_invoice_paid(
+                pool, invoice, provider="xendit",
+                provider_tx_id=str(payload.get("id", "")),
+                payment_method=payload.get("payment_method") or payload.get("payment_channel"),
+                raw_payload=payload,
+            )
+            if dispatch_webhook:
+                await dispatch_webhook(invoice["org_id"], "subscription.activated",
+                                       {"invoice_number": external_id, "provider": "xendit"}, pool)
+        elif xendit_status in ("EXPIRED", "FAILED"):
+            await pool.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+        return {"ok": True}
+
+    return router

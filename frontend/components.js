@@ -1,0 +1,87 @@
+const paths = {
+  dashboard:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+  agents:'<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M8 3 6 1M16 3l2-2"/>',
+  chat:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>',
+  analytics:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
+  knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
+  team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
+  billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="m6 6 12 12M18 6 6 18"/>', bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>', arrow:'<path d="m9 18 6-6-6-6"/>', refresh:'<path d="M20 6v5h-5M4 18v-5h5"/><path d="M18 9a7 7 0 0 0-12-2L4 11M6 15a7 7 0 0 0 12 2l2-4"/>', upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/>', send:'<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>', speaker:'<path d="M11 5 6 9H2v6h4l5 4zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>', more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
+};
+
+export function icon(name, size = 18) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.dashboard}</svg>`;
+}
+
+export function esc(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+}
+
+export function initials(value = "BN") {
+  return value.split(/\s+/).filter(Boolean).slice(0,2).map((item) => item[0]).join("").toUpperCase() || "BN";
+}
+
+export function formatNumber(value) { return Number(value || 0).toLocaleString("id-ID"); }
+export function formatDate(value, options = {}) {
+  if (!value) return "—";
+  const date = new Date(value); if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("id-ID", { day:"2-digit", month:"short", year:"numeric", ...options }).format(date);
+}
+export function relativeTime(value) {
+  if (!value) return "—"; const seconds = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
+  if (seconds < 60) return `${Math.floor(seconds)}d lalu`; if (seconds < 3600) return `${Math.floor(seconds/60)}m lalu`;
+  if (seconds < 86400) return `${Math.floor(seconds/3600)}j lalu`; return `${Math.floor(seconds/86400)}h lalu`;
+}
+export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
+
+const navGroups = [
+  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["conversations","Conversations"],["analytics","Analytics"]]],
+  ["PLATFORM", [["knowledge","Knowledge Base"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["SYSTEM", [["settings","Settings"]]],
+];
+
+export function sidebar({ route, org, user, counts = {} }) {
+  const items = navGroups.map(([section, links]) => `<div class="nav-section">${section}</div>${links.map(([key,label]) => `<button class="nav-item ${route===key?'active':''}" data-route="${key}">${icon(key)}<span>${label}</span>${counts[key] !== undefined ? `<span class="nav-count">${counts[key]}</span>` : ''}</button>`).join('')}`).join('');
+  return `<div class="sidebar-head"><a class="brand" href="#dashboard"><span class="brand-mark">BN</span><span>BotNesia</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
+}
+
+const routeMeta = {
+  dashboard:["Command Center","Live overview of your AI operations"], agents:["AI Agent Center","Deploy, monitor, and tune every customer-facing agent"],
+  conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
+  knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"], team:["Team & Tenants","People, roles, access, and workspace identity"],
+  billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],
+};
+export function topbar({ route, health }) {
+  const [title, description] = routeMeta[route] || routeMeta.dashboard;
+  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="Search agents, conversations..."><kbd class="mono">⌘K</kbd></label><span class="status-badge ${health?.status==='ok'?'active':'error'}">${health?.status==='ok'?'Systems operational':'Degraded'}</span><button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button><button class="button button-primary" data-action="create-agent">${icon('plus',15)}<span class="button-label">New agent</span></button></div>`;
+}
+
+export function pageHeader(title, description, actions = "") { return `<div class="page-header"><div><span class="eyebrow">BOTNESIA PLATFORM</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><div class="header-actions">${actions}</div></div>`; }
+export function statusBadge(status = "unknown", label = status) { return `<span class="status-badge ${esc(status)}">${esc(label)}</span>`; }
+export function metricCard(label, value, meta, iconName = "analytics", trend = "") { return `<article class="card metric-card card-hover"><div class="metric-top"><span class="metric-label">${esc(label)}</span><span class="metric-icon">${icon(iconName,16)}</span></div><div class="metric-value">${value}</div><div class="metric-meta ${trend}">${meta}</div></article>`; }
+export function skeletonCards(count = 4) { return `<div class="grid grid-4">${Array.from({length:count},()=>'<div class="skeleton skeleton-card"></div>').join('')}</div>`; }
+export function emptyState(title, description, action = "") { return `<div class="empty-state"><span class="state-icon">${icon('agents',22)}</span><h3>${esc(title)}</h3><p>${esc(description)}</p>${action ? `<div style="margin-top:16px">${action}</div>` : ''}</div>`; }
+export function errorState(message) { return `<div class="error-state"><span class="state-icon">!</span><h3>Data tidak dapat dimuat</h3><p>${esc(message)}</p><button class="button" style="margin-top:14px" data-action="refresh">${icon('refresh',14)} Coba lagi</button></div>`; }
+
+export function agentCard(bot) {
+  const status = bot.status || "inactive";
+  return `<article class="card card-hover agent-card" data-agent-id="${esc(bot.id)}"><div class="agent-card-top"><span class="agent-icon">${initials(bot.name)}</span><div style="min-width:0;flex:1"><h3 class="truncate">${esc(bot.name)}</h3>${statusBadge(status)}</div><button class="icon-button" data-agent-id="${esc(bot.id)}">${icon('more',14)}</button></div><p>${esc(bot.greeting || 'AI agent configured for customer operations.')}</p><div class="agent-stats"><div><b>${formatNumber(bot.total_convs)}</b><span>Conversations</span></div><div><b>${formatNumber(bot.total_msgs)}</b><span>Messages</span></div></div></article>`;
+}
+
+export function activityItem(item) {
+  return `<div class="activity-item"><span class="activity-symbol">${initials(item.channel || 'AI')}</span><div><strong>${esc(item.title)}</strong><p>${esc(item.description)}</p></div><span class="activity-time">${esc(item.time)}</span></div>`;
+}
+
+export function modal({ title, body, footer = "", wide = false }) {
+  return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" style="${wide?'width:min(760px,100%)':''}" role="dialog" aria-modal="true"><header class="modal-head"><strong>${esc(title)}</strong><button class="icon-button" data-action="close-modal">${icon('close',16)}</button></header><div class="modal-body">${body}</div>${footer?`<footer class="modal-foot">${footer}</footer>`:''}</section></div>`;
+}
+
+export function agentDrawer(bot) {
+  return `<div class="drawer-head"><div><span class="eyebrow">AGENT DETAIL</span><h3 style="margin:7px 0 0">${esc(bot.name)}</h3></div><button class="icon-button" data-action="close-drawer">${icon('close')}</button></div><div class="drawer-body"><div class="drawer-section"><div class="agent-card-top"><span class="agent-icon">${initials(bot.name)}</span><div><strong>${esc(bot.name)}</strong><div style="margin-top:6px">${statusBadge(bot.status)}</div></div></div></div><form id="agent-detail-form" data-agent-id="${esc(bot.id)}"><div class="form-grid"><label class="field"><span>Agent name</span><input name="name" value="${esc(bot.name)}" required></label><label class="field"><span>Status</span><select name="status"><option value="active" ${bot.status==='active'?'selected':''}>Active</option><option value="training" ${bot.status==='training'?'selected':''}>Training</option><option value="inactive" ${bot.status==='inactive'?'selected':''}>Inactive</option></select></label><label class="field full"><span>Greeting message</span><textarea name="greeting" style="min-height:90px">${esc(bot.greeting || '')}</textarea></label><label class="field full"><span>System prompt</span><textarea name="system_prompt" placeholder="Define role, tone, boundaries, and business context...">${esc(bot.system_prompt || '')}</textarea></label><label class="field"><span>Language</span><select name="language"><option value="id" ${bot.language==='id'?'selected':''}>Bahasa Indonesia</option><option value="en" ${bot.language==='en'?'selected':''}>English</option></select></label><label class="field"><span>Brand color</span><input name="primary_color" type="color" value="${esc(bot.primary_color || '#8b7cff')}"></label></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px"><button type="button" class="button" data-action="test-agent" data-agent-id="${esc(bot.id)}">Open playground</button><button class="button button-primary" type="submit">Save changes</button></div></form></div>`;
+}
+
+export function toast(message, type = "") {
+  const root = document.getElementById("toast-region"); const node = document.createElement("div");
+  node.className = `toast ${type}`; node.textContent = message; root.appendChild(node); setTimeout(() => node.remove(), 4200);
+}

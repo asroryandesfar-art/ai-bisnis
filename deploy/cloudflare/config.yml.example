@@ -1,0 +1,11 @@
+# Copy to ~/.cloudflared/config.yml and replace placeholders.
+tunnel: <TUNNEL-UUID>
+credentials-file: <HOME>/.cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: app.botnesia.id
+    service: http://127.0.0.1:8000
+    originRequest:
+      connectTimeout: 10s
+      noHappyEyeballs: false
+  - service: http_status:404

@@ -11,17 +11,32 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ENUM TYPES
 -- ============================================================
 
-CREATE TYPE plan_tier      AS ENUM ('starter', 'growth', 'scale');
-CREATE TYPE bot_status     AS ENUM ('active', 'inactive', 'training');
-CREATE TYPE msg_role       AS ENUM ('user', 'assistant', 'system');
-CREATE TYPE doc_status     AS ENUM ('pending', 'processing', 'ready', 'failed');
-CREATE TYPE billing_status AS ENUM ('active', 'past_due', 'canceled', 'trialing');
+DO $$ BEGIN
+    CREATE TYPE plan_tier AS ENUM ('starter', 'growth', 'scale');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE bot_status AS ENUM ('active', 'inactive', 'training');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE msg_role AS ENUM ('user', 'assistant', 'system');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE doc_status AS ENUM ('pending', 'processing', 'ready', 'failed');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE billing_status AS ENUM ('active', 'past_due', 'canceled', 'trialing');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ============================================================
 -- ORGANIZATIONS (unit billing utama — satu perusahaan klien)
 -- ============================================================
 
-CREATE TABLE organizations (
+CREATE TABLE IF NOT EXISTS organizations (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name           TEXT        NOT NULL,
     slug           TEXT        NOT NULL UNIQUE,   -- untuk subdomain/URL
@@ -35,13 +50,13 @@ CREATE TABLE organizations (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_orgs_slug ON organizations(slug);
+CREATE INDEX IF NOT EXISTS idx_orgs_slug ON organizations(slug);
 
 -- ============================================================
 -- USERS (anggota tim dalam organisasi)
 -- ============================================================
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id          UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     email           TEXT        NOT NULL UNIQUE,
@@ -53,14 +68,14 @@ CREATE TABLE users (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_org  ON users(org_id);
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_org  ON users(org_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- ============================================================
 -- BOTS (setiap chatbot yang dibuat oleh klien)
 -- ============================================================
 
-CREATE TABLE bots (
+CREATE TABLE IF NOT EXISTS bots (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id         UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name           TEXT        NOT NULL,
@@ -80,13 +95,13 @@ CREATE TABLE bots (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bots_org ON bots(org_id);
+CREATE INDEX IF NOT EXISTS idx_bots_org ON bots(org_id);
 
 -- ============================================================
 -- DOCUMENTS (file yang di-upload untuk RAG knowledge base)
 -- ============================================================
 
-CREATE TABLE documents (
+CREATE TABLE IF NOT EXISTS documents (
     id           UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id       UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     bot_id       UUID        REFERENCES bots(id) ON DELETE SET NULL,  -- NULL = shared semua bot
@@ -101,16 +116,16 @@ CREATE TABLE documents (
     processed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_docs_org   ON documents(org_id);
-CREATE INDEX idx_docs_bot   ON documents(bot_id);
-CREATE INDEX idx_docs_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_docs_org   ON documents(org_id);
+CREATE INDEX IF NOT EXISTS idx_docs_bot   ON documents(bot_id);
+CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
 
 -- ============================================================
 -- DOC CHUNKS (hasil chunking dokumen, disimpan paralel di Vector DB)
 -- Tabel ini menyimpan metadata; embedding-nya di Pinecone/pgvector
 -- ============================================================
 
-CREATE TABLE doc_chunks (
+CREATE TABLE IF NOT EXISTS doc_chunks (
     id           UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id  UUID        NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     org_id       UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -121,14 +136,14 @@ CREATE TABLE doc_chunks (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_chunks_doc ON doc_chunks(document_id);
-CREATE INDEX idx_chunks_org ON doc_chunks(org_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON doc_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_org ON doc_chunks(org_id);
 
 -- ============================================================
 -- CONVERSATIONS (satu sesi chat antara end-user & bot)
 -- ============================================================
 
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
     id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     bot_id          UUID        NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
     org_id          UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -147,16 +162,16 @@ CREATE TABLE conversations (
     ended_at        TIMESTAMPTZ
 );
 
-CREATE INDEX idx_convs_bot    ON conversations(bot_id);
-CREATE INDEX idx_convs_org    ON conversations(org_id);
-CREATE INDEX idx_convs_started ON conversations(started_at DESC);
-CREATE INDEX idx_convs_user   ON conversations(end_user_id) WHERE end_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_convs_bot    ON conversations(bot_id);
+CREATE INDEX IF NOT EXISTS idx_convs_org    ON conversations(org_id);
+CREATE INDEX IF NOT EXISTS idx_convs_started ON conversations(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_convs_user   ON conversations(end_user_id) WHERE end_user_id IS NOT NULL;
 
 -- ============================================================
 -- MESSAGES (setiap pesan dalam percakapan)
 -- ============================================================
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role            msg_role    NOT NULL,
@@ -171,14 +186,14 @@ CREATE TABLE messages (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_msgs_conv    ON messages(conversation_id);
-CREATE INDEX idx_msgs_created ON messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_msgs_conv    ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_msgs_created ON messages(created_at DESC);
 
 -- ============================================================
 -- API KEYS (untuk akses programatik — Scale tier)
 -- ============================================================
 
-CREATE TABLE api_keys (
+CREATE TABLE IF NOT EXISTS api_keys (
     id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id      UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name        TEXT        NOT NULL,   -- label: "Production Key", "Dev Key"
@@ -190,13 +205,13 @@ CREATE TABLE api_keys (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_apikeys_org ON api_keys(org_id);
+CREATE INDEX IF NOT EXISTS idx_apikeys_org ON api_keys(org_id);
 
 -- ============================================================
 -- USAGE SNAPSHOTS (rekam penggunaan bulanan untuk billing)
 -- ============================================================
 
-CREATE TABLE usage_snapshots (
+CREATE TABLE IF NOT EXISTS usage_snapshots (
     id            UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id        UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     period_start  DATE        NOT NULL,
@@ -209,13 +224,13 @@ CREATE TABLE usage_snapshots (
     UNIQUE(org_id, period_start)
 );
 
-CREATE INDEX idx_usage_org ON usage_snapshots(org_id, period_start DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_org ON usage_snapshots(org_id, period_start DESC);
 
 -- ============================================================
 -- WEBHOOK CONFIGS (untuk notifikasi ke sistem klien)
 -- ============================================================
 
-CREATE TABLE webhook_configs (
+CREATE TABLE IF NOT EXISTS webhook_configs (
     id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id      UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     url         TEXT        NOT NULL,
@@ -234,9 +249,11 @@ RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_orgs_updated ON organizations;
 CREATE TRIGGER trg_orgs_updated BEFORE UPDATE ON organizations
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_bots_updated ON bots;
 CREATE TRIGGER trg_bots_updated BEFORE UPDATE ON bots
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
@@ -245,7 +262,7 @@ CREATE TRIGGER trg_bots_updated BEFORE UPDATE ON bots
 -- ============================================================
 
 -- Stats per bot bulan ini
-CREATE VIEW bot_stats_current_month AS
+CREATE OR REPLACE VIEW bot_stats_current_month AS
 SELECT
     b.id              AS bot_id,
     b.org_id,
@@ -262,7 +279,7 @@ LEFT JOIN messages m ON m.conversation_id = c.id
 GROUP BY b.id, b.org_id, b.name;
 
 -- Top pertanyaan yang sering masuk (untuk analytics)
-CREATE VIEW top_user_messages AS
+CREATE OR REPLACE VIEW top_user_messages AS
 SELECT
     c.org_id,
     c.bot_id,

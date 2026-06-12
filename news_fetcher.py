@@ -18,6 +18,7 @@ class NewsItem:
     source: str
     published: str | None = None
     summary: str | None = None
+    source_url: str | None = None
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -61,8 +62,20 @@ def _parse_rss(xml_text: str, source: str) -> list[NewsItem]:
         link = (it.findtext("link") or "").strip()
         pub = (it.findtext("pubDate") or "").strip() or None
         desc = _strip_html((it.findtext("description") or "").strip()) or None
+        source_el = it.find("source")
+        publisher = _strip_html(((source_el.text if source_el is not None else "") or "").strip()) or source
+        publisher_url = ((source_el.get("url") if source_el is not None else "") or "").strip() or None
         if title and link:
-            items.append(NewsItem(title=title, link=link, source=source, published=pub, summary=desc))
+            items.append(
+                NewsItem(
+                    title=title,
+                    link=link,
+                    source=publisher,
+                    published=pub,
+                    summary=desc,
+                    source_url=publisher_url,
+                )
+            )
     if items:
         return items
 
@@ -139,9 +152,27 @@ async def fetch_source_url(url: str, timeout_s: float = 8.0) -> list[NewsItem]:
     return []
 
 
+_QUERY_FILLER = {
+    "berita", "news", "terbaru", "terkini", "hari", "ini", "update",
+    "headline", "artikel", "ringkas", "rangkum", "ringkasan", "summary",
+    "tolong", "kasih", "berikan", "cari", "carikan", "tentang", "mengenai",
+    "dan", "yang", "untuk", "dengan", "solusi", "solusinya", "saya", "aku",
+}
+
+
+def _is_query_term(word: str) -> bool:
+    return (len(word) >= 3 or word in {"ai"}) and word not in _QUERY_FILLER
+
+
 def _tok(text: str) -> set[str]:
     words = re.findall(r"[a-zA-Z0-9_]+", (text or "").lower())
-    return {w for w in words if len(w) >= 3}
+    return {w for w in words if _is_query_term(w)}
+
+
+def _search_phrase(text: str) -> str:
+    words = re.findall(r"[a-zA-Z0-9_]+", (text or "").lower())
+    useful = [w for w in words if _is_query_term(w)]
+    return " ".join(useful) or (text or "").strip()
 
 
 def _pub_dt(pub: str | None) -> datetime | None:
@@ -163,7 +194,8 @@ async def search_news(query: str, limit: int = 6, *, rss_urls: list[str] | None 
     """
     q_raw = (query or "").strip()
     q = _tok(q_raw)
-    q_enc = urllib.parse.quote_plus(q_raw) if q_raw else ""
+    search_phrase = _search_phrase(q_raw)
+    q_enc = urllib.parse.quote_plus(search_phrase) if search_phrase else ""
 
     feeds: list[tuple[str, str]] = [
         (
@@ -229,9 +261,14 @@ async def search_news(query: str, limit: int = 6, *, rss_urls: list[str] | None 
         for it in items:
             title_tokens = _tok(it.title)
             summary_tokens = _tok(it.summary or "")
+            matched_tokens = title_tokens | summary_tokens
             score = len(title_tokens & q) * 3 + len(summary_tokens & q)
             is_custom = it.link in custom_links
-            if q and score <= 0 and not is_custom and not has_url_in_query:
+            # Istilah inti pendek seperti "AI" wajib benar-benar muncul; tanpa ini
+            # artikel bisnis umum mudah lolos hanya karena cocok pada kata "bisnis".
+            if "ai" in q and "ai" not in matched_tokens and not has_url_in_query:
+                continue
+            if q and score <= 0 and not has_url_in_query:
                 continue
             # Prefer custom publisher URLs/feeds if scores are tied.
             custom_boost = 2 if is_custom else (1 if it.source.startswith("Source") and not it.source.startswith("Google News") else 0)
@@ -449,8 +486,12 @@ async def build_news_context(
 
     if not include_bodies:
         for idx, it in enumerate(items, 1):
-            pub = f" ({it.published})" if it.published else ""
-            lines.append(f"- Berita {idx}{pub}: {it.title}")
+            pub = f" | Terbit: {it.published}" if it.published else ""
+            lines.append(f"- Berita {idx}: {it.title}")
+            lines.append(f"  Media/feed: {it.source}{pub}")
+            lines.append(f"  URL sumber: {it.source_url or it.link}")
+            if it.summary:
+                lines.append(f"  Ringkasan RSS: {it.summary}")
         return "\n".join(lines).strip()
 
     sem = asyncio.Semaphore(max(1, int(max_concurrency or 3)))
@@ -469,8 +510,12 @@ async def build_news_context(
 
     fetched = await asyncio.gather(*[_one(it) for it in items])
     for idx, (it, final_url, body) in enumerate(fetched, 1):
-        pub = f" ({it.published})" if it.published else ""
-        lines.append(f"- Berita {idx}{pub}: {it.title}")
+        pub = f" | Terbit: {it.published}" if it.published else ""
+        resolved_url = final_url or it.link
+        source_url = it.source_url if "news.google.com/" in resolved_url and it.source_url else resolved_url
+        lines.append(f"- Berita {idx}: {it.title}")
+        lines.append(f"  Media/feed: {it.source}{pub}")
+        lines.append(f"  URL sumber: {source_url}")
         if body:
             lines.append(f"  Teks artikel (ringkas): {body}")
             quotes = extract_key_quotes(body, query, max_quotes=5)

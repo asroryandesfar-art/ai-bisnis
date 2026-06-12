@@ -26,12 +26,15 @@ def _pick_port(host: str, preferred: int, fallbacks: list[int]) -> int:
 
 if __name__ == "__main__":
     import sys
-    if sys.argv[1] == 'restart':
-        print('Restarting server...')
-        # perintah restart server
-    elif sys.argv[1] == 'stop':
-        print('Stopping server...')
-        # perintah stop server
+    command = sys.argv[1].strip().lower() if len(sys.argv) > 1 else "start"
+    if command not in {"start", "restart", "stop"}:
+        print("Usage: python run_server.py [start|restart|stop]", flush=True)
+        raise SystemExit(2)
+    if command == "stop":
+        print("Perintah stop belum dikelola oleh runner ini. Hentikan proses uvicorn yang aktif.", flush=True)
+        raise SystemExit(0)
+    if command == "restart":
+        print("Restart diminta. Pastikan proses BotNesia lama sudah dihentikan.", flush=True)
     # Simple runner: tidak pakai --reload (lebih stabil di Windows tertentu)
     host = "127.0.0.1"
     preferred_port = 8000
