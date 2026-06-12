@@ -25,7 +25,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","conversations","analytics","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","analytics","knowledge","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -99,6 +99,18 @@ async function renderDashboard() {
 
 async function renderAgents() {
   setPage(`${pageHeader("AI Agent Center","Manage every AI persona, prompt, channel assignment, and lifecycle state.",`<button class="button button-primary" data-action="create-agent">${icon('plus',14)} New agent</button>`)}${state.bots.length?`<div class="grid grid-3">${state.bots.map(agentCard).join('')}</div>`:emptyState("No AI agents yet","Deploy an agent and define its role, system prompt, greeting, and operating language.",`<button class="button button-primary" data-action="create-agent">Deploy first agent</button>`)}`);
+}
+
+async function renderChat() {
+  if (!state.bots.length) {
+    setPage(`${pageHeader("AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude.")}${emptyState("Belum ada AI agent","Deploy agent dulu untuk mulai mengobrol.",`<button class="button button-primary" data-action="create-agent">Deploy agent</button>`)}`);
+    return;
+  }
+  const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
+  state.selectedBotId = bot.id;
+  const options = state.bots.map((item) => `<option value="${esc(item.id)}" ${item.id===bot.id?"selected":""}>${esc(item.name)}</option>`).join("");
+  const body = `<div class="card chat-page"><div class="card-head"><div><h3>${esc(bot.name)}</h3><span class="subtle" style="font-size:9px">Ngobrol bebas dengan agent ini, lengkap dengan suara dan mikrofon - seperti ChatGPT atau Claude.</span></div><div style="display:flex;gap:8px;align-items:center"><select class="select" data-chat-page-bot>${options}</select><button class="button" data-action="new-chat" title="Mulai obrolan baru">${icon('plus',14)} Chat baru</button></div></div><div id="playground-messages" class="messages chat-page-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="chat-page-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice">${icon("mic",17)}</button><textarea name="message" placeholder="Tulis pesan untuk agent..." required></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} Kirim</button></form><div class="voice-status" data-voice-status>Mic ready · AI replies will be read aloud</div></div></div>`;
+  setPage(`${pageHeader("AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude.")}${body}`);
 }
 
 async function loadConversationData(botId = state.selectedBotId) {
@@ -452,7 +464,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,conversations:renderConversations,analytics:renderAnalytics,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,analytics:renderAnalytics,knowledge:renderKnowledge,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -505,7 +517,7 @@ async function sendPlayground(form) {
   const input = form.elements.message;
   const text = input?.value.trim();
   const botId = form.dataset.botId;
-  const container = form.closest(".dashboard-chat, .modal") || document;
+  const container = form.closest(".dashboard-chat, .chat-page, .modal") || document;
   const messages = container.querySelector("#playground-messages");
   const submitButton = form.querySelector('button[type="submit"]');
   if (!text || !botId || !messages) return;
@@ -572,8 +584,9 @@ document.addEventListener("click", async (event) => {
   const disconnectIntegration=event.target.closest("[data-disconnect-integration]"); if(disconnectIntegration && confirm("Disconnect this integration?")){ try{ await api.deleteIntegration(disconnectIntegration.dataset.disconnectIntegration); toast("Integration disconnected.","success"); await renderSettings(); }catch(error){toast(error.message,"error");} }
   if(action==="send-chat") { event.preventDefault(); await sendPlayground(event.target.closest("form")); }
   if(action==="toggle-recording") await toggleRecording(event.target.closest('[data-action="toggle-recording"]'));
+  if(action==="new-chat") { state.chatSession = null; await renderChat(); }
   if(action==="toggle-speech") {
-    const container = event.target.closest(".dashboard-chat, .modal") || document;
+    const container = event.target.closest(".dashboard-chat, .chat-page, .modal") || document;
     state.speakReplies = !state.speakReplies;
     if (!state.speakReplies) await stopSpeaking(container);
     voiceStatus(container, state.speakReplies ? "Suara aktif - jawaban AI akan dibaca sampai akhir" : "Suara dimatikan");
@@ -607,6 +620,7 @@ document.addEventListener("submit", async (event) => {
 
 document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-dashboard-chat-bot]")){ state.selectedBotId=event.target.value; state.chatSession=null; await renderDashboard(); }
+  if(event.target.matches("[data-chat-page-bot]")){ state.selectedBotId=event.target.value; state.chatSession=null; await renderChat(); }
   if(event.target.matches("[data-conversation-bot]")){ state.selectedBotId=event.target.value; state.selectedConversationId=null; state.messages=[]; await renderConversations(); }
   if(event.target.matches("[data-analytics-bot]")){ state.selectedBotId=event.target.value; await renderAnalytics(); }
   if(event.target.matches("[data-analytics-days]")) await renderAnalytics(event.target.value);
