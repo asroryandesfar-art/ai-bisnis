@@ -544,7 +544,7 @@ document.addEventListener("click", async (event) => {
   const routeTarget=event.target.closest("[data-route]");
   if(routeTarget){ location.hash=routeTarget.dataset.route; return; }
   const agentTarget=event.target.closest("[data-agent-id]");
-  if(agentTarget){ showAgent(agentTarget.dataset.agentId); return; }
+  if(agentTarget && !agentTarget.closest("#detail-drawer")){ showAgent(agentTarget.dataset.agentId); return; }
   const conversation=event.target.closest("[data-conversation-id]"); if(conversation){ await openConversation(conversation.dataset.conversationId); return; }
   const action=event.target.closest("[data-action]")?.dataset.action;
   if(action==="toggle-sidebar"){ el("#sidebar").classList.toggle("open"); el("#mobile-scrim").classList.toggle("open"); }

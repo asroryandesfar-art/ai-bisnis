@@ -5,7 +5,7 @@ Koordinator utama: routing, orkestrasi paralel, agregasi hasil.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from base import AgentResult
@@ -14,6 +14,12 @@ from escalation import EscalationAgent
 from analytics  import AnalyticsAgent
 from trainer    import TrainerAgent
 from memory_agent import MemoryAgent
+from intent_classifier import IntentClassifier, heuristic_complexity
+from planner_agent import PlannerAgent, DEFAULT_PLAN
+from reasoning_agent import ReasoningAgent
+from verification_agent import VerificationAgent
+
+MAX_RETRIES = 2
 
 # Agen Intelligence Platform — berbagi knowledge lewat shared store (Postgres),
 # lihat intelligence/ARCHITECTURE.md §3.3
@@ -68,6 +74,16 @@ class SupervisorResult:
     total_latency_ms:  int
     errors:            list[str]
 
+    # Adaptive reasoning pipeline (mode "pro")
+    reasoning_mode_used: str = "standard"   # "standard" | "pro"
+    confidence_score:    float | None = None  # 0-100
+    verification_passed: bool | None = None
+    retry_count:         int = 0
+    plan:                dict | None = None
+    specialist_results:  dict = field(default_factory=dict)
+    verification_issues: list[str] = field(default_factory=list)
+    suggest_pro_mode:    bool = False
+
 
 class SupervisorAgent:
     """
@@ -101,6 +117,12 @@ class SupervisorAgent:
         self.faq_agent       = FAQAgent(**kwargs)
         self.sales_agent     = SalesAgent(**kwargs)
         self.knowledge_agent = KnowledgeAgent(**kwargs)
+
+        # Adaptive reasoning pipeline
+        self.intent_classifier = IntentClassifier(**kwargs)
+        self.planner_agent     = PlannerAgent(**kwargs)
+        self.reasoning_agent   = ReasoningAgent(**kwargs)
+        self.verification_agent = VerificationAgent(**kwargs)
 
     async def process(self, context: dict) -> SupervisorResult:
         """
@@ -166,20 +188,123 @@ class SupervisorAgent:
                 ),
             }
 
-        # ── STEP 2: CS membuat jawaban dengan intelligence context ─
-        cs_result = await self.cs_agent.safe_run(ctx)
-        if not cs_result.success:
-            errors.append(f"cs_agent: {cs_result.error}")
+        # ── STEP 1.5: Klasifikasi kompleksitas (hanya jika reasoning_mode pro) ─
+        reasoning_mode = context.get("reasoning_mode", "standard")
+        classification = {"complexity": "simple", "source": "skipped"}
+        if reasoning_mode == "pro":
+            classification = await self.intent_classifier.classify(
+                context.get("user_message", "")
+            )
 
-        cs_out = cs_result.output
-        cs_answer = cs_out.get("answer") or self.cs_agent._clarify_response(
-            context.get("user_message", "")
-        )
-        cs_confidence = cs_out.get("confidence", 0.5)
+        reasoning_mode_used = "standard"
+        plan: dict | None = None
+        specialist_outputs: dict = {}
+        confidence_score: float | None = None
+        verification_passed: bool | None = None
+        verification_issues: list[str] = []
+        retry_count = 0
+        extra_agent_results: dict[str, AgentResult] = {}
+
+        if reasoning_mode == "pro" and classification.get("complexity") == "complex":
+            reasoning_mode_used = "pro"
+
+            # ── STEP A: Planner menentukan lensa analisis yang relevan ─
+            plan_result = await self.planner_agent.safe_run(ctx)
+            if not plan_result.success:
+                errors.append(f"planner_agent: {plan_result.error}")
+            plan = plan_result.output or dict(DEFAULT_PLAN)
+            extra_agent_results["planner_agent"] = plan_result
+            ctx["_plan"] = plan
+
+            # ── STEP B: Jalankan lensa analisis (paralel; risk belakangan) ─
+            agents_to_invoke = plan.get("agents_to_invoke", [])
+            lenses = [l for l in agents_to_invoke if l != "risk"]
+            if lenses:
+                lens_results = await asyncio.gather(
+                    *(self.reasoning_agent.run_lens(l, ctx) for l in lenses)
+                )
+                for lens, result in zip(lenses, lens_results):
+                    specialist_outputs[lens] = result.output
+                    extra_agent_results[f"reasoning_agent:{lens}"] = result
+
+            if "risk" in agents_to_invoke:
+                cross_context = "\n\n".join(
+                    f"{l}: {out.get('conclusion', '')}"
+                    for l, out in specialist_outputs.items()
+                    if out.get("conclusion")
+                )
+                risk_result = await self.reasoning_agent.run_lens(
+                    "risk", ctx, cross_context=cross_context
+                )
+                specialist_outputs["risk"] = risk_result.output
+                extra_agent_results["reasoning_agent:risk"] = risk_result
+
+            # ── STEP C: Sintesis jawaban akhir dari hasil tim spesialis ─
+            cs_synth = await self.cs_agent.synthesize(ctx, specialist_outputs)
+            cs_answer = cs_synth.get("answer") or self.cs_agent._clarify_response(
+                context.get("user_message", "")
+            )
+            confidence_score = cs_synth.get("confidence_score", 50)
+            cs_topics = cs_synth.get("topics", [])
+            cs_followup = cs_synth.get("suggested_followup")
+
+            # ── STEP D: Verifikasi jawaban + retry terbatas ─
+            verify_out: dict = {}
+            while True:
+                verify_out = await self.verification_agent.verify(ctx, cs_answer, specialist_outputs)
+                if verify_out.get("_llm_unavailable"):
+                    verification_passed = True  # don't retry-storm during an outage
+                else:
+                    verification_passed = (
+                        bool(verify_out.get("verified", True))
+                        and verify_out.get("confidence_score", 100) >= 80
+                    )
+                verification_issues = verify_out.get("issues", [])
+                confidence_score = round(
+                    (confidence_score + verify_out.get("confidence_score", confidence_score)) / 2
+                )
+                if verification_passed or retry_count >= MAX_RETRIES:
+                    break
+                retry_count += 1
+                ctx["_verification_feedback"] = (
+                    f"Jawaban sebelumnya memiliki masalah: {'; '.join(verification_issues)}. "
+                    "Perbaiki jawaban."
+                )
+                cs_synth = await self.cs_agent.synthesize(ctx, specialist_outputs)
+                cs_answer = cs_synth.get("answer") or cs_answer
+                confidence_score = cs_synth.get("confidence_score", confidence_score)
+                cs_topics = cs_synth.get("topics", cs_topics)
+                cs_followup = cs_synth.get("suggested_followup", cs_followup)
+
+            extra_agent_results["verification_agent"] = AgentResult(
+                agent="verification_agent", success=True, output=verify_out, latency_ms=0
+            )
+            cs_confidence = confidence_score / 100.0
+            cs_result = AgentResult(agent="cs_agent", success=True, output=cs_synth, latency_ms=0)
+        else:
+            # ── STEP 2: CS membuat jawaban dengan intelligence context (jalur cepat) ─
+            cs_result = await self.cs_agent.safe_run(ctx)
+            if not cs_result.success:
+                errors.append(f"cs_agent: {cs_result.error}")
+
+            cs_out = cs_result.output
+            cs_answer = cs_out.get("answer") or self.cs_agent._clarify_response(
+                context.get("user_message", "")
+            )
+            cs_confidence = cs_out.get("confidence")
+            if cs_confidence is None:
+                cs_confidence = 0.8 if faq_out.get("matched") else 0.6
+                if cs_out.get("_retried"):
+                    cs_confidence -= 0.15
+            cs_topics = cs_out.get("topics", [])
+            cs_followup = cs_out.get("suggested_followup")
+
         enriched = {
             **ctx,
             "bot_response": cs_answer,
             "cs_confidence": cs_confidence,
+            "specialist_results": specialist_outputs,
+            "plan": plan,
         }
 
         # ── STEP 3: Evaluasi jawaban secara paralel ───────────────
@@ -206,13 +331,21 @@ class SupervisorAgent:
 
         total_ms = int((time.monotonic() - t_start) * 1000)
 
+        # Bot Standard yang kena pertanyaan kompleks: kasih tahu user bahwa
+        # mode Pro tersedia untuk analisis lebih mendalam (cek heuristik gratis).
+        suggest_pro_mode = (
+            reasoning_mode_used == "standard"
+            and reasoning_mode != "pro"
+            and heuristic_complexity(context.get("user_message", "")) == "complex"
+        )
+
         # ── STEP 4: Agregasi ─────────────────────────────────────
         return SupervisorResult(
             # CS
             final_answer       = cs_answer,
             confidence         = cs_confidence,
-            topics             = cs_out.get("topics", []),
-            suggested_followup = cs_out.get("suggested_followup"),
+            topics             = cs_topics,
+            suggested_followup = cs_followup,
 
             # Escalation
             should_escalate    = esc_out.get("should_escalate", False),
@@ -264,7 +397,18 @@ class SupervisorAgent:
                 "faq_agent":        faq_result,
                 "sales_agent":      sales_result,
                 "knowledge_agent":  kg_result,
+                **extra_agent_results,
             },
             total_latency_ms = total_ms,
             errors           = errors,
+
+            # Adaptive reasoning pipeline
+            reasoning_mode_used = reasoning_mode_used,
+            confidence_score    = confidence_score,
+            verification_passed = verification_passed,
+            retry_count         = retry_count,
+            plan                = plan,
+            specialist_results  = specialist_outputs,
+            verification_issues = verification_issues,
+            suggest_pro_mode    = suggest_pro_mode,
         )

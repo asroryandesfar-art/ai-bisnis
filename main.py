@@ -786,6 +786,7 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_meta_wa_message_dedup_created ON meta_wa_message_dedup(created_at);",
+        "ALTER TABLE bots ADD COLUMN IF NOT EXISTS reasoning_mode TEXT NOT NULL DEFAULT 'standard';",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -871,6 +872,7 @@ class BotUpdateReq(BaseModel):
     system_prompt: str | None = None
     language:      str | None = None
     status:        str | None = None
+    reasoning_mode: str | None = None
 
 class ChatReq(BaseModel):
     message:    str = Field(max_length=2000)
@@ -2337,7 +2339,7 @@ async def list_bots(
 ):
     rows = await pool.fetch(
         """SELECT id, name, status, primary_color, greeting, language,
-                  system_prompt, temperature, total_convs, total_msgs, created_at
+                  system_prompt, temperature, reasoning_mode, total_convs, total_msgs, created_at
            FROM bots WHERE org_id=$1 ORDER BY created_at DESC""",
         user["org_id"],
     )
@@ -2426,6 +2428,8 @@ async def update_bot(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "status" in updates and updates["status"] not in {"active", "training", "inactive"}:
         raise HTTPException(400, "Status tidak valid")
+    if "reasoning_mode" in updates and updates["reasoning_mode"] not in {"standard", "pro"}:
+        raise HTTPException(400, "Reasoning mode tidak valid")
     if not updates:
         return {"message": "Tidak ada perubahan"}
 
@@ -2712,7 +2716,7 @@ async def chat(
     """
     # 1. Load bot config
     bot = await pool.fetchrow(
-        """SELECT b.id, b.org_id, b.system_prompt, b.language, b.temperature,
+        """SELECT b.id, b.org_id, b.system_prompt, b.language, b.temperature, b.reasoning_mode,
                   o.plan, o.billing_status, o.conv_limit
            FROM bots b
            JOIN organizations o ON o.id = b.org_id
@@ -2876,6 +2880,19 @@ async def chat(
         except Exception:
             pass
 
+    # 7.5 Self-knowledge BotNesia: paket/usage/channel tenant + performa bisnis
+    # (query DB ringan, tanpa LLM — selalu tersedia untuk semua mode/bot).
+    try:
+        from botnesia_knowledge import build_self_knowledge_context, build_business_context
+        self_knowledge_context, business_context = await asyncio.gather(
+            build_self_knowledge_context(pool, str(bot["org_id"]), bot_id, dict(bot)),
+            build_business_context(pool, str(bot["org_id"]), bot_id),
+        )
+    except Exception:
+        self_knowledge_context, business_context = "", ""
+    if self_knowledge_context:
+        system = system + "\n\n" + self_knowledge_context
+
     # 8. Panggil AI (Multi-Agent pipeline buatan kamu)
     t_start = time.monotonic()
     agent_meta: dict | None = None
@@ -2891,14 +2908,27 @@ async def chat(
             "knowledge_base_context": system,
             "resolved": False,
             "metadata": body.user_meta or {},
+            "reasoning_mode": bot["reasoning_mode"],
+            "self_knowledge_context": self_knowledge_context,
+            "business_context": business_context,
         }
         result = await supervisor.process(intelligence_context)
         answer = result.final_answer
-        if market_answer:
+        # Shortcut data pasar mentah hanya untuk jalur cepat (standard). Mode Pro
+        # sudah menganalisis data pasar via reasoning lens & sintesis jawaban —
+        # jangan timpa dengan kutipan harga mentah.
+        use_market_shortcut = bool(market_answer) and result.reasoning_mode_used != "pro"
+        if use_market_shortcut:
             answer = market_answer
+        if result.suggest_pro_mode:
+            answer = (
+                answer.rstrip()
+                + "\n\nUntuk analisis lebih mendalam (alasan, konteks, dan kesimpulan) atas "
+                  "pertanyaan seperti ini, aktifkan **Reasoning Mode: Pro** di pengaturan bot ini."
+            )
         provider = "groq"
         model = cfg.groq_model
-        model_used = "system:market-data" if market_answer else f"multi-agent:cloud:{provider}:{model}"
+        model_used = "system:market-data" if use_market_shortcut else f"multi-agent:cloud:{provider}:{model}"
         input_tokens = 0
         output_tokens = 0
         latency_ms = result.total_latency_ms
@@ -2912,6 +2942,7 @@ async def chat(
             "escalation_message": result.escalation_message,
             "recommended_team": result.recommended_team,
             "errors": result.errors,
+            "reasoning_mode_used": result.reasoning_mode_used,
         }
 
         if result.should_escalate:
