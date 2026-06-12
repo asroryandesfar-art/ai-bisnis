@@ -329,7 +329,7 @@ function cleanSpeechText(text) {
     .trim();
 }
 
-function splitSpeechText(text, maxLength = 420) {
+function splitSpeechText(text, maxLength = 180) {
   const sentences = cleanSpeechText(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
   const chunks = [];
   let current = "";
@@ -395,7 +395,7 @@ async function playSpeechBlob(blob, runId) {
 
 async function prepareSpeech(text, container = document) {
   if (!state.speakReplies) return null;
-  const chunks = splitSpeechText(text, 700);
+  const chunks = splitSpeechText(text);
   if (!chunks.length) return null;
   voiceStatus(container, "Menyinkronkan tulisan dan suara...");
   const firstBlob = await api.synthesizeSpeech(chunks[0]);
@@ -404,7 +404,7 @@ async function prepareSpeech(text, container = document) {
 
 async function speak(text, container = document, prepared = null) {
   if (!state.speakReplies) return;
-  const chunks = prepared?.chunks || splitSpeechText(text, 700);
+  const chunks = prepared?.chunks || splitSpeechText(text);
   if (!chunks.length) return;
 
   const runId = ++state.speechRunId;
@@ -418,6 +418,10 @@ async function speak(text, container = document, prepared = null) {
     const blob = await audioJobs[index];
     if (runId !== state.speechRunId) break;
     await playSpeechBlob(blob, runId);
+    // Beri jeda singkat antar kalimat agar terdengar seperti orang berhenti sejenak di titik/koma.
+    if (runId === state.speechRunId && index < audioJobs.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 260));
+    }
   }
   if (runId === state.speechRunId) voiceStatus(container, "Selesai membaca sampai akhir");
 }
