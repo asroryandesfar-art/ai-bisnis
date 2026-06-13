@@ -873,15 +873,90 @@ async function renderChannels() {
 
 async function renderSettings() {
   loadingPage("Platform Settings","Configure channels, security posture, and workspace connectivity.");
-  const [channelResult, integrationResult] = await Promise.all([settle("channels",api.channels()),settle("integrations",api.integrations())]);
+  const [channelResult, integrationResult, waEmbeddedResult] = await Promise.all([
+    settle("channels",api.channels()),
+    settle("integrations",api.integrations()),
+    state.selectedBotId ? settle("whatsappEmbedded",api.whatsappEmbeddedStatus(state.selectedBotId)) : Promise.resolve({ok:false}),
+  ]);
   state.channels = channelResult.ok ? channelResult.data.channels || [] : [];
   state.integrations = integrationResult.ok ? integrationResult.data : {};
+  state.whatsappEmbedded = waEmbeddedResult.ok ? waEmbeddedResult.data : {};
   const channelRows = state.channels.map((channel) => `<tr><td><span class="activity-symbol">${initials(channel.channel_type)}</span></td><td><span class="table-title">${esc(channel.display_name)}</span><div class="subtle" style="font-size:9px">${esc(channel.channel_type)}</div></td><td>${statusBadge(channel.is_active?'active':'inactive')}</td><td>${relativeTime(channel.last_sync_at||channel.connected_at)}</td><td><button class="button button-danger" data-disconnect-channel="${esc(channel.id)}">Disconnect</button></td></tr>`).join("");
   const integrationCards = `<div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Meta WhatsApp</h3><span class="subtle" style="font-size:9px">Cloud API and inbound bot mapping</span></div>${statusBadge(state.integrations?.meta?.connected?'active':'inactive',state.integrations?.meta?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">Phone ID: ${esc(state.integrations?.meta?.wa_phone_number_id||'Not configured')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="configure-meta">Configure Meta</button>${state.integrations?.meta?.connected?'<button class="button" data-action="test-meta">Send test</button><button class="button button-danger" data-disconnect-integration="meta">Disconnect</button>':''}</div></div></div><div class="card"><div class="card-head"><div><h3>Gmail</h3><span class="subtle" style="font-size:9px">OAuth inbox processing</span></div>${statusBadge(state.integrations?.gmail?.connected?'active':'inactive',state.integrations?.gmail?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">${esc(state.integrations?.gmail?.email||'No Gmail account connected')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="gmail-start">${state.integrations?.gmail?.connected?'Reconnect Gmail':'Connect Gmail'}</button>${state.integrations?.gmail?.connected?'<button class="button" data-action="gmail-map">Map to agent</button><button class="button" data-action="gmail-poll">Poll now</button><button class="button button-danger" data-disconnect-integration="gmail">Disconnect</button>':''}</div></div></div></div>`;
+  const wa = state.whatsappEmbedded || {};
+  const waStatusVariant = wa.connected ? 'active' : (wa.connection_status==='error' ? 'error' : 'inactive');
+  const waStatusLabel = wa.connected ? 'Connected' : (wa.connection_status==='error' ? 'Setup error' : 'Not connected');
+  const waEmbeddedCard = state.selectedBotId ? `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>WhatsApp (Embedded Signup)</h3><span class="subtle" style="font-size:9px">Connect via Meta — login, pick a number, done. No token copy-paste.</span></div>${statusBadge(waStatusVariant,waStatusLabel)}</div><div class="card-body"><p class="subtle">Agent: ${esc(state.bots.find(b=>b.id===state.selectedBotId)?.name||state.selectedBotId)}</p><p class="subtle">Phone number ID: ${esc(wa.phone_number_id||'Not connected')}</p><p class="subtle">WABA ID: ${esc(wa.waba_id||'-')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="connect-whatsapp-embedded">${wa.connected?'Reconnect WhatsApp':'Connect WhatsApp'}</button>${wa.connected?'<button class="button button-danger" data-action="disconnect-whatsapp-embedded">Disconnect</button>':''}</div></div></div>` : '';
   const systemStatus = `<div class="grid grid-2"><div class="card"><div class="card-head"><h3>System status</h3></div><div class="card-body"><div class="setting-row"><div><strong>FastAPI backend</strong><p class="subtle">Application and REST APIs</p></div>${statusBadge(state.health?.db?'active':'error',state.health?.db?'Connected':'Unavailable')}</div><div class="setting-row"><div><strong>PostgreSQL</strong><p class="subtle">Tenant and business data</p></div>${statusBadge(state.health?.schema?'active':'error',state.health?.schema?'Schema ready':'Schema issue')}</div><div class="setting-row"><div><strong>AI provider</strong><p class="subtle">${esc(state.health?.ai?.model||'Not configured')}</p></div>${statusBadge(state.health?.ai?.configured?'active':'error',state.health?.ai?.configured?'Ready':'Not configured')}</div></div></div><div class="card"><div class="card-head"><h3>Workspace identity</h3></div><div class="card-body"><div class="form-grid"><label class="field full"><span>Organization</span><input value="${esc(state.org?.name||'')}" readonly></label><label class="field"><span>Tenant slug</span><input value="${esc(state.org?.slug||'')}" readonly></label><label class="field"><span>Application URL</span><input value="${esc(location.origin)}" readonly></label></div></div></div></div>`;
   const channelTable = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Connected channels</h3><span class="subtle" style="font-size:9px">Website and Telegram channels, plus managed integrations below</span></div><span class="status-badge active">${state.channels.filter(c=>c.is_active).length} active</span></div>${channelRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Channel</th><th>Status</th><th>Last sync</th><th></th></tr></thead><tbody>${channelRows}</tbody></table></div>`:emptyState("No platform channels","Connect a website or Telegram channel to an AI agent.")}</div>`;
   const sessionCard = `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Session & security</h3></div><div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div><strong>Current authenticated session</strong><p class="subtle" style="margin:5px 0 0;font-size:10px">JWT authentication and RBAC permissions are enforced by FastAPI.</p></div><button class="button button-danger" data-action="logout">Sign out</button></div></div>`;
-  setPage(`${pageHeader("Platform Settings","Manage deployment connectivity, integrations, and workspace security.",`<button class="button" data-action="connect-channel">Connect channel</button><button class="button" data-action="security-scan">Run security scan</button>`)}${systemStatus}${channelTable}${integrationCards}${sessionCard}`);
+  setPage(`${pageHeader("Platform Settings","Manage deployment connectivity, integrations, and workspace security.",`<button class="button" data-action="connect-channel">Connect channel</button><button class="button" data-action="security-scan">Run security scan</button>`)}${systemStatus}${channelTable}${integrationCards}${waEmbeddedCard}${sessionCard}`);
+}
+
+// ─── WhatsApp Embedded Signup (Meta) ────────────────────────────
+
+function loadFacebookSdk(appId, version) {
+  return new Promise((resolve, reject) => {
+    if (window.FB) { window.FB.init({ appId, version, xfbml: false }); return resolve(); }
+    window.fbAsyncInit = () => { window.FB.init({ appId, version, xfbml: false }); resolve(); };
+    const script = document.createElement("script");
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true;
+    script.onerror = () => reject(new Error("Failed to load Facebook SDK."));
+    document.body.appendChild(script);
+  });
+}
+
+function waitForEmbeddedSignupMessage() {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { window.removeEventListener("message", handler); reject(new Error("Timed out waiting for WhatsApp signup data.")); }, 120000);
+    function handler(event) {
+      if (!String(event.origin || "").includes("facebook.com")) return;
+      let payload = event.data;
+      try { payload = typeof payload === "string" ? JSON.parse(payload) : payload; } catch (_e) { return; }
+      if (payload?.type === "WA_EMBEDDED_SIGNUP" && payload?.event === "FINISH") {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handler);
+        resolve(payload.data || {});
+      }
+    }
+    window.addEventListener("message", handler);
+  });
+}
+
+async function connectWhatsAppEmbedded() {
+  const botId = state.selectedBotId;
+  if (!botId) return toast("Create an AI agent first.", "error");
+  try {
+    const config = await api.whatsappEmbeddedConnect(botId);
+    await loadFacebookSdk(config.app_id, config.graph_api_version);
+    const fbResponse = await new Promise((resolve) => {
+      window.FB.login((response) => resolve(response), {
+        config_id: config.config_id,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: { setup: {}, sessionInfoVersion: "3" },
+      });
+    });
+    if (!fbResponse?.authResponse?.code) return toast("WhatsApp connection was cancelled.", "error");
+    const signupData = await waitForEmbeddedSignupMessage();
+    await api.whatsappEmbeddedCallback({
+      state: config.state,
+      code: fbResponse.authResponse.code,
+      waba_id: signupData.waba_id,
+      phone_number_id: signupData.phone_number_id,
+      business_id: signupData.business_id,
+    });
+    toast("WhatsApp connected successfully.", "success");
+    await renderSettings();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function disconnectWhatsAppEmbedded() {
+  const botId = state.selectedBotId;
+  if (!botId || !confirm("Disconnect WhatsApp for this agent?")) return;
+  try { await api.whatsappEmbeddedDisconnect(botId); toast("WhatsApp disconnected.", "success"); await renderSettings(); }
+  catch (error) { toast(error.message, "error"); }
 }
 
 function settingRowStyles() { if (!document.getElementById('dynamic-setting-style')) { const style=document.createElement('style'); style.id='dynamic-setting-style'; style.textContent='.setting-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}.setting-row:last-child{border-bottom:0}.setting-row p{margin:4px 0 0;font-size:10px}'; document.head.appendChild(style); } }
@@ -1294,6 +1369,8 @@ document.addEventListener("click", async (event) => {
   if(action==="gmail-start") await startGmail();
   if(action==="gmail-map") await mapGmail();
   if(action==="gmail-poll") await pollGmail();
+  if(action==="connect-whatsapp-embedded") await connectWhatsAppEmbedded();
+  if(action==="disconnect-whatsapp-embedded") await disconnectWhatsAppEmbedded();
   const disconnectIntegration=event.target.closest("[data-disconnect-integration]"); if(disconnectIntegration && confirm("Disconnect this integration?")){ try{ await api.deleteIntegration(disconnectIntegration.dataset.disconnectIntegration); toast("Integration disconnected.","success"); await renderSettings(); }catch(error){toast(error.message,"error");} }
   if(action==="send-chat") { event.preventDefault(); await sendPlayground(event.target.closest("form")); }
   if(action==="toggle-recording") await toggleRecording(event.target.closest('[data-action="toggle-recording"]'));

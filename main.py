@@ -83,7 +83,18 @@ from integrations_store import (
     db_pop_oauth_state,
     db_set_meta_phone_mapping,
     db_get_meta_phone_mapping,
+    db_clear_meta_phone_mapping,
+    db_set_whatsapp_account,
+    db_get_whatsapp_account,
+    db_get_whatsapp_accounts,
+    db_clear_whatsapp_account,
     decrypt_dict,
+)
+from whatsapp_embedded_signup import (
+    exchange_code_for_token as wa_exchange_code_for_token,
+    register_phone_number as wa_register_phone_number,
+    subscribe_app_to_waba as wa_subscribe_app_to_waba,
+    unsubscribe_app_from_waba as wa_unsubscribe_app_from_waba,
 )
 from media_gen import (
     ReplicateRateLimitError,
@@ -138,9 +149,13 @@ class Settings(BaseSettings):
     gmail_poll_max_messages: int = 5
     gmail_poll_mark_read: bool = True
     meta_verify_token:    str = ""
-    meta_app_secret:      str = ""  # opsional (untuk signature verify)
+    meta_app_secret:      str = ""  # opsional (untuk signature verify, dan client_secret OAuth)
     meta_webhook_default_bot_id: str = ""  # optional fallback
     meta_api_version:     str = "v19.0"
+    # WhatsApp Embedded Signup (Meta App Dashboard > WhatsApp > Embedded Signup)
+    meta_app_id:          str = ""  # App ID (client_id untuk FB.login() & tukar code)
+    meta_embedded_signup_config_id: str = ""  # Configuration ID Embedded Signup
+    meta_register_pin:    str = "112233"  # PIN two-step verification saat register nomor
     news_enabled:         bool = True
     news_max_items:       int = 6
     news_timeout_seconds: float = 8.0
@@ -1140,6 +1155,21 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow ON workflow_executions(workflow_id, started_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_workflow_executions_org ON workflow_executions(org_id, started_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_workflow_execution_steps_execution ON workflow_execution_steps(execution_id, started_at);",
+        """
+        CREATE TABLE IF NOT EXISTS whatsapp_embedded_accounts (
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+            waba_id TEXT,
+            phone_number_id TEXT,
+            business_id TEXT,
+            access_token_enc TEXT NOT NULL DEFAULT '',
+            token_expires_at TIMESTAMPTZ,
+            connection_status TEXT NOT NULL DEFAULT 'disconnected',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (org_id, bot_id)
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_whatsapp_embedded_accounts_phone ON whatsapp_embedded_accounts(phone_number_id);",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -1742,6 +1772,243 @@ async def meta_send_template(
         if r.status_code >= 400:
             raise HTTPException(400, f"Meta template send gagal: {r.text[:800]}")
         return {"status": "ok", "response": r.json()}
+
+
+# ─── ROUTE: WHATSAPP EMBEDDED SIGNUP ────────────────────────────
+#
+# "Connect WhatsApp" tanpa copy-paste token: Dashboard -> Connect WhatsApp
+# -> Meta Embedded Signup (FB JS SDK popup, config dari GET /connect) ->
+# frontend menerima `code` + waba_id + phone_number_id + business_id ->
+# POST /callback -> backend menukar code, register nomor, subscribe webhook
+# WABA, lalu simpan kredensial TERENKRIPSI per tenant (org_id + bot_id) di
+# tabel whatsapp_embedded_accounts. Tidak ada token global — setiap baris
+# terikat ke (org_id, bot_id) dan semua query di-scope dengan org_id dari
+# get_current_user (tenant isolation).
+#
+# Referensi (cek dokumentasi resmi untuk parameter terbaru):
+# https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview
+# https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation/
+
+def _whatsapp_account_public(acc: dict) -> dict:
+    """Bentuk aman untuk response — tidak pernah menyertakan access token mentah."""
+    return {
+        "tenant_id": acc["tenant_id"],
+        "bot_id": acc["bot_id"],
+        "waba_id": acc.get("waba_id"),
+        "phone_number_id": acc.get("phone_number_id"),
+        "business_id": acc.get("business_id"),
+        "connection_status": acc.get("connection_status"),
+        "token_expires_at": acc.get("token_expires_at"),
+        "connected": acc.get("connection_status") == "connected",
+        "has_access_token": bool(acc.get("customer_access_token")),
+    }
+
+
+@app.get("/integrations/whatsapp/connect")
+async def whatsapp_embedded_connect(
+    bot_id: str,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    """Mulai flow Meta WhatsApp Embedded Signup untuk satu agent (bot).
+
+    Embedded Signup berbasis FB JS SDK (popup), bukan redirect — jadi
+    endpoint ini mengembalikan konfigurasi yang dibutuhkan frontend untuk
+    memanggil FB.init() + FB.login({config_id, response_type:'code',
+    override_default_response_type:true, ...}), bukan `auth_url`.
+    """
+    if not cfg.meta_app_id or not cfg.meta_embedded_signup_config_id:
+        raise HTTPException(400, "META_APP_ID / META_EMBEDDED_SIGNUP_CONFIG_ID belum diisi di .env")
+
+    bot = await pool.fetchrow(
+        "SELECT id FROM bots WHERE id=$1 AND org_id=$2",
+        bot_id, user["org_id"],
+    )
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
+
+    state = secrets.token_urlsafe(24)
+    # `redirect_uri` direuse untuk membawa bot_id ke /callback — Embedded
+    # Signup adalah popup flow (tidak ada redirect URI sungguhan).
+    await db_set_oauth_state(
+        pool,
+        provider="whatsapp_embedded",
+        state=state,
+        org_id=str(user["org_id"]),
+        redirect_uri=str(bot_id),
+    )
+
+    return {
+        "app_id": cfg.meta_app_id,
+        "config_id": cfg.meta_embedded_signup_config_id,
+        "graph_api_version": cfg.meta_api_version,
+        "state": state,
+        "bot_id": str(bot_id),
+    }
+
+
+class WhatsAppEmbeddedCallbackReq(BaseModel):
+    state: str
+    code: str
+    waba_id: str
+    phone_number_id: str
+    business_id: str | None = None
+
+
+@app.post("/integrations/whatsapp/callback")
+async def whatsapp_embedded_callback(
+    body: WhatsAppEmbeddedCallbackReq,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    """Selesaikan Embedded Signup: tukar code -> register nomor -> subscribe
+    webhook WABA -> simpan kredensial terenkripsi per tenant (org_id+bot_id)."""
+    org_id, bot_id = await db_pop_oauth_state(pool, provider="whatsapp_embedded", state=body.state)
+    if not org_id or not bot_id:
+        raise HTTPException(400, "State tidak valid/sudah expired")
+    if org_id != str(user["org_id"]):
+        raise HTTPException(403, "State ini bukan milik tenant Anda")
+
+    bot = await pool.fetchrow("SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, org_id)
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
+
+    if not cfg.meta_app_id or not cfg.meta_app_secret:
+        raise HTTPException(400, "META_APP_ID / META_APP_SECRET belum diisi di .env")
+
+    api_ver = cfg.meta_api_version
+
+    token_res = await wa_exchange_code_for_token(
+        app_id=cfg.meta_app_id, app_secret=cfg.meta_app_secret, code=body.code, api_version=api_ver,
+    )
+    if not token_res.get("success"):
+        await db_set_whatsapp_account(
+            pool, org_id=org_id, bot_id=bot_id,
+            waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
+            customer_access_token="", token_expires_at=None, connection_status="error",
+            secret_key=cfg.secret_key,
+        )
+        raise HTTPException(400, f"Tukar code dengan Meta gagal: {token_res.get('error')}")
+
+    token_data = token_res.get("data") or {}
+    access_token = token_data.get("access_token", "")
+    expires_in = token_data.get("expires_in")
+    token_expires_at = None
+    if expires_in:
+        try:
+            token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+        except (TypeError, ValueError):
+            token_expires_at = None
+
+    reg_res = await wa_register_phone_number(
+        phone_number_id=body.phone_number_id, access_token=access_token,
+        pin=cfg.meta_register_pin, api_version=api_ver,
+    )
+    sub_res = await wa_subscribe_app_to_waba(
+        waba_id=body.waba_id, access_token=access_token, api_version=api_ver,
+    )
+
+    if reg_res.get("success") and sub_res.get("success"):
+        connection_status = "connected"
+        error_detail = None
+    else:
+        connection_status = "error"
+        error_detail = reg_res.get("error") or sub_res.get("error")
+
+    # Simpan apa pun hasilnya — supaya /status bisa menunjukkan connection_status
+    # ("connected" atau "error") tanpa kehilangan waba_id/phone_number_id yang
+    # sudah dipilih user di popup Embedded Signup.
+    await db_set_whatsapp_account(
+        pool, org_id=org_id, bot_id=bot_id,
+        waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
+        customer_access_token=access_token, token_expires_at=token_expires_at,
+        connection_status=connection_status, secret_key=cfg.secret_key,
+    )
+
+    if connection_status != "connected":
+        raise HTTPException(400, f"WhatsApp terautentikasi tapi setup gagal: {error_detail}")
+
+    # Routing inbound webhook -> org/bot yang benar.
+    await db_set_meta_phone_mapping(
+        pool, phone_number_id=body.phone_number_id, org_id=org_id, bot_id=bot_id,
+    )
+
+    return {
+        "message": "WhatsApp berhasil terhubung",
+        "tenant_id": org_id,
+        "bot_id": bot_id,
+        "waba_id": body.waba_id,
+        "phone_number_id": body.phone_number_id,
+        "business_id": body.business_id,
+        "connection_status": connection_status,
+        "token_expires_at": token_expires_at.isoformat() if token_expires_at else None,
+    }
+
+
+@app.get("/integrations/whatsapp/status")
+async def whatsapp_embedded_status(
+    bot_id: str | None = None,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    org_id = str(user["org_id"])
+    if bot_id:
+        bot = await pool.fetchrow("SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, org_id)
+        if not bot:
+            raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
+        acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=bot_id, secret_key=cfg.secret_key)
+        if not acc:
+            return {
+                "tenant_id": org_id, "bot_id": str(bot_id),
+                "connected": False, "connection_status": "disconnected",
+            }
+        return _whatsapp_account_public(acc)
+
+    accounts = await db_get_whatsapp_accounts(pool, org_id=org_id, secret_key=cfg.secret_key)
+    return {"accounts": [_whatsapp_account_public(a) for a in accounts]}
+
+
+class WhatsAppEmbeddedDisconnectReq(BaseModel):
+    bot_id: str
+
+
+@app.post("/integrations/whatsapp/disconnect")
+async def whatsapp_embedded_disconnect(
+    body: WhatsAppEmbeddedDisconnectReq,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+):
+    org_id = str(user["org_id"])
+    bot = await pool.fetchrow("SELECT id FROM bots WHERE id=$1 AND org_id=$2", body.bot_id, org_id)
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
+
+    acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id, secret_key=cfg.secret_key)
+    if not acc:
+        raise HTTPException(404, "WhatsApp belum terhubung untuk bot ini")
+
+    # Best-effort: lepas subscription webhook WABA di sisi Meta.
+    if acc.get("customer_access_token") and acc.get("waba_id"):
+        try:
+            await wa_unsubscribe_app_from_waba(
+                waba_id=acc["waba_id"], access_token=acc["customer_access_token"],
+                api_version=cfg.meta_api_version,
+            )
+        except Exception:
+            pass
+
+    if acc.get("phone_number_id"):
+        try:
+            await db_clear_meta_phone_mapping(pool, phone_number_id=acc["phone_number_id"])
+        except Exception:
+            pass
+
+    await db_clear_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id)
+    return {
+        "message": "WhatsApp diputuskan",
+        "tenant_id": org_id, "bot_id": body.bot_id,
+        "connection_status": "disconnected",
+    }
 
 
 # ─── ROUTE: MEDIA (Image / Video) ──────────────────────────────
