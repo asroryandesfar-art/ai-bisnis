@@ -92,6 +92,16 @@ TOOL_REGISTRY: dict[str, dict] = {
         "available": True,
         "implementation": "tool_registry.read_website",
     },
+    "groq_docs_knowledge": {
+        "category": "self_knowledge",
+        "description": (
+            "Ringkasan dokumentasi resmi Groq (chat API, model, tool use, reasoning, "
+            "errors, rate limit) + katalog model untuk rekomendasi pemilihan model "
+            "(GroqExpertAgent)."
+        ),
+        "available": True,
+        "implementation": "groq_knowledge.build_groq_context / groq_knowledge.recommend_model",
+    },
     "api_connectors": {
         "category": "external_apis",
         "description": "Konektor API bisnis eksternal generik milik tenant (mis. ERP/CRM custom).",
