@@ -441,6 +441,8 @@ CREATE TABLE IF NOT EXISTS tenant_template_installs (
 
 CREATE INDEX IF NOT EXISTS idx_installs_org ON tenant_template_installs(org_id);
 
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS version TEXT NOT NULL DEFAULT '1.0.0';
+
 CREATE OR REPLACE VIEW agent_templates AS
 SELECT
     id,
