@@ -18,6 +18,12 @@ from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
 from verification_agent import VerificationAgent
+from socratic_reasoning import SocraticReasoningEngine, format_socratic_brief
+from devil_advocate_agent import DevilAdvocateAgent, format_devil_critique
+from first_principle_agent import FirstPrincipleAgent, format_first_principle_brief
+from uncertainty_engine import UncertaintyEngine
+from identity_agent import IdentityAgent
+from reasoning_controller import ReasoningController
 from agent_observability import observe_agent, trace_request
 
 MAX_RETRIES = 2
@@ -89,6 +95,19 @@ class SupervisorResult:
     total_tokens:        int = 0
     routed_model:       str = ""
     task_complexity:    str = "simple"
+    socratic_review:    dict = field(default_factory=dict)
+    devil_advocate_review: dict = field(default_factory=dict)
+    devil_revision_applied: bool = False
+    first_principle_analysis: dict = field(default_factory=dict)
+    uncertainty_band:   str = "Medium Confidence"
+    uncertainty_score:  float = 50.0
+    uncertainty_reasons: list[str] = field(default_factory=list)
+    uncertainty_message: str = ""
+
+    # Reasoning/Truthfulness/Comparison/Self-Awareness engine
+    reasoning_brief:    dict = field(default_factory=dict)
+    meta_scores:        dict = field(default_factory=dict)
+    meta_rewrite_applied: bool = False
 
 
 class SupervisorAgent:
@@ -125,10 +144,18 @@ class SupervisorAgent:
         self.knowledge_agent = KnowledgeAgent(**kwargs)
 
         # Adaptive reasoning pipeline
+        self.socratic_engine   = SocraticReasoningEngine(**kwargs)
+        self.devil_advocate_agent = DevilAdvocateAgent(**kwargs)
+        self.first_principle_agent = FirstPrincipleAgent(**kwargs)
+        self.uncertainty_engine = UncertaintyEngine(**kwargs)
         self.intent_classifier = IntentClassifier(**kwargs)
         self.planner_agent     = PlannerAgent(**kwargs)
         self.reasoning_agent   = ReasoningAgent(**kwargs)
         self.verification_agent = VerificationAgent(**kwargs)
+
+        # Reasoning/Truthfulness/Comparison/Self-Awareness engine
+        self.identity_agent = IdentityAgent(**kwargs)
+        self.reasoning_controller = ReasoningController(identity_agent=self.identity_agent)
 
     async def process(self, context: dict) -> SupervisorResult:
         return await trace_request(context, lambda: self._process(context))
@@ -150,6 +177,28 @@ class SupervisorAgent:
 
         # ── STEP 0: Inject memory (profil user) ───────────────────
         ctx = self.memory_agent.enrich_context(context)
+
+        # ── STEP 0.25: Reasoning brief — intent, follow-up, identitas/perbandingan ─
+        reasoning_brief = self.reasoning_controller.analyze(ctx)
+        ctx["_reasoning_brief"] = reasoning_brief
+        style_guidance = reasoning_brief.get("style_guidance")
+        if style_guidance:
+            existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+            ctx = {
+                **ctx,
+                "knowledge_base_context": "\n\n".join(
+                    part for part in [existing_kb, style_guidance] if part
+                ),
+            }
+
+        # ── STEP 0.5: Socratic reflection wajib sebelum routing/jawaban ─
+        socratic_result = await self.socratic_engine.safe_run(ctx)
+        if not socratic_result.success:
+            errors.append(f"socratic_reasoning_engine: {socratic_result.error}")
+        socratic_review = socratic_result.output or {}
+        socratic_brief = format_socratic_brief(socratic_review)
+        if socratic_brief:
+            ctx = {**ctx, "_socratic_review": socratic_review, "_socratic_brief": socratic_brief}
 
         # ── STEP 1: Intelligence read-only sebelum CS ────────────
         # FAQ, sinyal sales, dan entitas produk harus tersedia sebelum jawaban
@@ -197,6 +246,19 @@ class SupervisorAgent:
                 ),
             }
 
+        # ── STEP 1.25: Decompose dari first principles sebelum draft ──
+        first_principle_result = await self.first_principle_agent.safe_run(ctx)
+        if not first_principle_result.success:
+            errors.append(f"first_principle_agent: {first_principle_result.error}")
+        first_principle_analysis = first_principle_result.output or {}
+        first_principle_brief = format_first_principle_brief(first_principle_analysis)
+        if first_principle_brief:
+            ctx = {
+                **ctx,
+                "_first_principle_analysis": first_principle_analysis,
+                "_first_principle_brief": first_principle_brief,
+            }
+
         # ── STEP 1.5: Klasifikasi kompleksitas (hanya jika reasoning_mode pro) ─
         reasoning_mode = context.get("reasoning_mode", "standard")
         classification = {"complexity": "simple", "source": "skipped"}
@@ -214,6 +276,46 @@ class SupervisorAgent:
         verification_issues: list[str] = []
         retry_count = 0
         extra_agent_results: dict[str, AgentResult] = {}
+        devil_advocate_review: dict = {}
+        devil_revision_applied = False
+        uncertainty_review: dict = {}
+        uncertainty_band = "Medium Confidence"
+        uncertainty_score = 50.0
+        uncertainty_reasons: list[str] = []
+        uncertainty_message = ""
+        meta_scores: dict = {}
+        meta_rewrite_applied = False
+        devil_result = AgentResult(agent="devil_advocate_agent", success=True, output={}, latency_ms=0)
+
+        async def challenge_draft(answer: str) -> str:
+            nonlocal devil_advocate_review, devil_revision_applied, devil_result
+            review_context = {
+                **ctx,
+                "bot_response": answer,
+                "specialist_results": specialist_outputs,
+            }
+            devil_result = await self.devil_advocate_agent.safe_run(review_context)
+            if not devil_result.success:
+                errors.append(f"devil_advocate_agent: {devil_result.error}")
+                return answer
+            devil_advocate_review = devil_result.output or {}
+            if devil_advocate_review.get("needs_revision"):
+                ctx["_devil_advocate_feedback"] = format_devil_critique(devil_advocate_review)
+            if not devil_advocate_review.get("needs_revision"):
+                return answer
+            revised = await observe_agent(
+                "cs_agent:devil_revision", ctx,
+                lambda: self.cs_agent.revise_with_critique(
+                    ctx, answer, devil_advocate_review, specialist_outputs,
+                ),
+            )
+            revised_answer = str(revised.get("answer") or answer).strip()
+            devil_revision_applied = bool(revised.get("revised"))
+            extra_agent_results["cs_agent:devil_revision"] = AgentResult(
+                agent="cs_agent:devil_revision", success=True,
+                output={"revised": devil_revision_applied}, latency_ms=0,
+            )
+            return revised_answer
 
         if reasoning_mode == "pro" and classification.get("complexity") == "complex":
             reasoning_mode_used = "pro"
@@ -261,30 +363,40 @@ class SupervisorAgent:
             cs_topics = cs_synth.get("topics", [])
             cs_followup = cs_synth.get("suggested_followup")
 
-            # ── STEP D: Verifikasi jawaban + retry terbatas ─
+            # ── STEP D: Tantang draft sebelum verifikasi ─────────
+            cs_answer = await challenge_draft(cs_answer)
+
+            # ── STEP E: Verifikasi jawaban + retry terbatas ─
             verify_out: dict = {}
             while True:
                 verify_out = await observe_agent(
                     "verification_agent", ctx,
                     lambda: self.verification_agent.verify(ctx, cs_answer, specialist_outputs),
                 )
+                if reasoning_brief.get("is_meta"):
+                    meta_scores = self.verification_agent.score_meta_answer(
+                        context.get("user_message", ""), cs_answer, reasoning_brief
+                    )
                 if verify_out.get("_llm_unavailable"):
                     verification_passed = True  # don't retry-storm during an outage
                 else:
                     verification_passed = (
                         bool(verify_out.get("verified", True))
                         and verify_out.get("confidence_score", 100) >= 80
+                        and not meta_scores.get("needs_rewrite", False)
                     )
-                verification_issues = verify_out.get("issues", [])
+                verification_issues = verify_out.get("issues", []) + meta_scores.get("issues", [])
                 confidence_score = round(
                     (confidence_score + verify_out.get("confidence_score", confidence_score)) / 2
                 )
                 if verification_passed or retry_count >= MAX_RETRIES:
                     break
                 retry_count += 1
+                meta_rewrite_applied = meta_rewrite_applied or meta_scores.get("needs_rewrite", False)
                 ctx["_verification_feedback"] = (
                     f"Jawaban sebelumnya memiliki masalah: {'; '.join(verification_issues)}. "
-                    "Perbaiki jawaban."
+                    "Perbaiki jawaban. Pastikan jujur, tidak overclaim dibanding AI lain, "
+                    "akui keterbatasan jika relevan, dan beri kesimpulan."
                 )
                 cs_synth = await observe_agent(
                     "cs_agent:synthesis", ctx,
@@ -317,6 +429,68 @@ class SupervisorAgent:
                     cs_confidence -= 0.15
             cs_topics = cs_out.get("topics", [])
             cs_followup = cs_out.get("suggested_followup")
+
+            # ── STEP 2.5: Tantang jawaban jalur cepat ─────────────
+            cs_answer = await challenge_draft(cs_answer)
+
+            # ── STEP 2.75: Cek jawaban untuk pertanyaan meta (identitas/
+            # perbandingan dengan AI lain) — tulis ulang sekali jika terlalu
+            # promosi/tidak jujur sesuai Truthfulness & Comparison Engine ─
+            if reasoning_brief.get("is_meta"):
+                meta_scores = self.verification_agent.score_meta_answer(
+                    context.get("user_message", ""), cs_answer, reasoning_brief
+                )
+                if meta_scores.get("needs_rewrite"):
+                    ctx["_verification_feedback"] = (
+                        "Jawaban sebelumnya terlalu promosi/kurang jujur: "
+                        f"{'; '.join(meta_scores.get('issues', []))}. "
+                        "Tulis ulang sesuai Truthfulness Policy dan Comparison Engine: jujur, akui "
+                        "keterbatasan BotNesia bila relevan, jangan klaim lebih unggul dari AI lain "
+                        "tanpa kualifikasi, dan tutup dengan kesimpulan yang membantu keputusan user."
+                    )
+                    rewrite_result = await self.cs_agent.safe_run(ctx)
+                    if rewrite_result.success:
+                        rewritten = rewrite_result.output.get("answer")
+                        if rewritten:
+                            cs_answer = rewritten
+                            cs_result = rewrite_result
+                            meta_rewrite_applied = True
+                            cs_answer = await challenge_draft(cs_answer)
+                            meta_scores = self.verification_agent.score_meta_answer(
+                                context.get("user_message", ""), cs_answer, reasoning_brief
+                            )
+
+        uncertainty_context = {
+            **ctx,
+            "final_answer": cs_answer,
+            "bot_response": cs_answer,
+            "confidence_score": confidence_score,
+            "confidence": cs_confidence,
+            "verification_passed": verification_passed,
+            "verification_issues": verification_issues,
+            "socratic_review": socratic_review,
+            "devil_advocate_review": devil_advocate_review,
+            "first_principle_analysis": first_principle_analysis,
+            "meta_scores": meta_scores,
+            "retry_count": retry_count,
+        }
+        uncertainty_result = await self.uncertainty_engine.safe_run(uncertainty_context)
+        if uncertainty_result.success:
+            uncertainty_review = uncertainty_result.output or {}
+            uncertainty_band = str(uncertainty_review.get("band") or uncertainty_band)
+            uncertainty_score = float(uncertainty_review.get("score", uncertainty_score) or uncertainty_score)
+            uncertainty_reasons = list(uncertainty_review.get("reasons") or [])
+            uncertainty_message = str(uncertainty_review.get("message") or "").strip()
+            confidence_score = uncertainty_score
+            cs_confidence = uncertainty_score / 100.0
+            if uncertainty_review.get("should_prefix") and uncertainty_message:
+                cs_answer = uncertainty_message
+                cs_result = AgentResult(
+                    agent="cs_agent", success=True,
+                    output={**(cs_result.output or {}), "answer": cs_answer}, latency_ms=0,
+                )
+        else:
+            errors.append(f"uncertainty_engine: {uncertainty_result.error}")
 
         enriched = {
             **ctx,
@@ -416,6 +590,10 @@ class SupervisorAgent:
                 "faq_agent":        faq_result,
                 "sales_agent":      sales_result,
                 "knowledge_agent":  kg_result,
+                "socratic_reasoning_engine": socratic_result,
+                "devil_advocate_agent": devil_result,
+                "first_principle_agent": first_principle_result,
+                "uncertainty_engine": uncertainty_result,
                 **extra_agent_results,
             },
             total_latency_ms = total_ms,
@@ -430,4 +608,17 @@ class SupervisorAgent:
             specialist_results  = specialist_outputs,
             verification_issues = verification_issues,
             suggest_pro_mode    = suggest_pro_mode,
+            socratic_review     = socratic_review,
+            devil_advocate_review = devil_advocate_review,
+            devil_revision_applied = devil_revision_applied,
+            first_principle_analysis = first_principle_analysis,
+            uncertainty_band     = uncertainty_band,
+            uncertainty_score    = uncertainty_score,
+            uncertainty_reasons  = uncertainty_reasons,
+            uncertainty_message  = uncertainty_message,
+
+            # Reasoning/Truthfulness/Comparison/Self-Awareness engine
+            reasoning_brief     = reasoning_brief,
+            meta_scores         = meta_scores,
+            meta_rewrite_applied = meta_rewrite_applied,
         )

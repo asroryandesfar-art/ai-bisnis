@@ -46,6 +46,15 @@ async def persist_intelligence(
                 "retry_count": result.retry_count,
                 "plan": result.plan,
                 "specialist_lenses_used": list(result.specialist_results or {}),
+                "socratic_risk": (result.socratic_review or {}).get("risk_if_wrong"),
+                "socratic_needs_clarification": bool((result.socratic_review or {}).get("needs_clarification")),
+                "devil_advocate_severity": (result.devil_advocate_review or {}).get("severity"),
+                "devil_advocate_revision_applied": bool(result.devil_revision_applied),
+                "first_principle_causal_links": int((result.first_principle_analysis or {}).get("causal_links_count", 0)),
+                "first_principle_root_hypotheses": int((result.first_principle_analysis or {}).get("root_hypotheses_count", 0)),
+                "uncertainty_band": result.uncertainty_band,
+                "uncertainty_score": result.uncertainty_score,
+                "uncertainty_reasons": result.uncertainty_reasons,
             },
         )
     except Exception:

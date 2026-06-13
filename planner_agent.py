@@ -38,9 +38,13 @@ class PlannerAgent(BaseAgent):
 
     async def run(self, context: dict) -> AgentResult:
         user_message = context.get("user_message", "")
+        socratic_brief = str(context.get("_socratic_brief") or "").strip()
+        first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
         prompt = (
             f"Pertanyaan pengguna: {user_message}\n\n"
-            f"Lensa analisis yang tersedia:\n{_LENS_DESCRIPTIONS}\n\n"
+            + (f"Brief Socratic internal:\n{socratic_brief}\n\n" if socratic_brief else "")
+            + (f"Decomposition first-principles:\n{first_principle_brief}\n\n" if first_principle_brief else "")
+            + f"Lensa analisis yang tersedia:\n{_LENS_DESCRIPTIONS}\n\n"
             "Pilih lensa yang relevan untuk pertanyaan ini, tentukan strategi eksekusi, "
             "dan fokus sintesis jawaban akhir.\n\n"
             'Jawab dalam format JSON: {"agents_to_invoke": ["..."], '

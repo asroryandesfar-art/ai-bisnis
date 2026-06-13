@@ -83,7 +83,25 @@ Aturan:
             system_parts = [self.system_prompt.strip()]
             if kb_context:
                 system_parts.append("\n## Konteks knowledge base\n" + kb_context.strip())
-
+            feedback = str(context.get("_verification_feedback") or "").strip()
+            if feedback:
+                system_parts.append("\n## Catatan perbaikan dari verifikasi\n" + feedback)
+            first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
+            if first_principle_brief:
+                system_parts.append(
+                    "\n## Decomposition first-principles internal\n" + first_principle_brief
+                    + "\nBangun jawaban dari fakta dasar dan hubungan sebab-akibat. Jangan melompat ke satu "
+                      "penyebab tanpa bukti. Sajikan hipotesis sebagai hipotesis dan berikan cara mengujinya."
+                )
+            socratic_brief = str(context.get("_socratic_brief") or "").strip()
+            if socratic_brief:
+                system_parts.append(
+                    "\n## Brief Socratic internal (jangan tampilkan sebagai proses berpikir)\n"
+                    + socratic_brief
+                    + "\nGunakan brief ini untuk menandai asumsi, mengakui data yang kurang, "
+                      "mempertimbangkan alternatif, dan menghindari klaim berisiko. "
+                      "Berikan bantuan awal; bila perlu ajukan maksimal dua klarifikasi penting."
+                )
 
             system = "\n\n".join(system_parts).strip()
 
@@ -134,6 +152,42 @@ Aturan:
             latency_ms = 0,
         )
 
+    async def revise_with_critique(
+        self, context: dict, draft_answer: str, critique: dict, specialist_results: dict | None = None,
+    ) -> dict:
+        """Revise one draft using actionable adversarial findings, at most once."""
+        from devil_advocate_agent import format_devil_critique
+
+        critique_brief = format_devil_critique(critique)
+        if not critique.get("needs_revision") or not critique_brief:
+            return {"answer": draft_answer, "revised": False}
+        evidence = []
+        knowledge = str(context.get("knowledge_base_context") or "").strip()
+        if knowledge:
+            evidence.append("Knowledge/data tersedia:\n" + knowledge[:5000])
+        for name, output in (specialist_results or {}).items():
+            if isinstance(output, dict) and output.get("conclusion"):
+                evidence.append(f"{name}: {output['conclusion']}")
+        prompt = (
+            f"Pertanyaan pengguna: {context.get('user_message', '')}\n\n"
+            f"Draft jawaban: {draft_answer}\n\n"
+            f"Kritik DevilAdvocate internal:\n{critique_brief}\n\n"
+            + ("\n\n".join(evidence) if evidence else "Tidak ada bukti tambahan.")
+            + "\n\nRevisi draft menjadi jawaban yang objektif: hapus atau lunakkan klaim tanpa bukti, "
+              "jelaskan asumsi dan trade-off, akui keterbatasan, serta sebutkan bahwa alternatif dapat "
+              "lebih unggul pada kondisi tertentu bila relevan. Jangan menyebut proses internal atau DevilAdvocate. "
+              "Jangan menambah fakta baru. Balas JSON: {\"answer\": \"jawaban revisi\"}."
+        )
+        result = await self._call_llm_json(
+            [
+                {"role": "system", "content": "Kamu adalah editor jawaban konsultan yang netral, evidence-based, dan anti-marketing berlebihan. Balas HANYA JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1, max_tokens=1400, default={"answer": draft_answer},
+        )
+        revised = str(result.get("answer") or draft_answer).strip()
+        return {"answer": revised, "revised": revised != draft_answer}
+
     async def synthesize(self, context: dict, specialist_results: dict) -> dict:
         """Gabungkan hasil analisis tim spesialis (reasoning agents) jadi satu jawaban.
 
@@ -143,6 +197,8 @@ Aturan:
         user_message = context.get("user_message", "")
         kb_context = context.get("knowledge_base_context", "")
         plan = context.get("_plan") or {}
+        socratic_brief = str(context.get("_socratic_brief") or "").strip()
+        first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
 
         specialist_blocks: list[str] = []
         confidences: list[float] = []
@@ -173,6 +229,14 @@ Aturan:
         avg_confidence = round(sum(confidences) / len(confidences)) if confidences else None
 
         prompt_parts = [f"Pertanyaan pengguna: {user_message}"]
+        if first_principle_brief:
+            prompt_parts.append(
+                "## Decomposition first-principles internal\n" + first_principle_brief
+            )
+        if socratic_brief:
+            prompt_parts.append(
+                "## Brief Socratic internal (jangan uraikan proses berpikir)\n" + socratic_brief
+            )
         if kb_context:
             prompt_parts.append(f"## Konteks tambahan\n{kb_context.strip()}")
         prompt_parts.append(f"## Hasil analisis tim spesialis\n{specialist_text}")
@@ -180,6 +244,11 @@ Aturan:
             prompt_parts.append(f"Rata-rata confidence spesialis: {avg_confidence}/100")
         if plan.get("synthesis_focus"):
             prompt_parts.append(f"## Fokus sintesis\n{plan['synthesis_focus']}")
+        devil_feedback = context.get("_devil_advocate_feedback")
+        if devil_feedback:
+            prompt_parts.append(
+                f"## Kritik objektivitas internal yang tetap wajib dipatuhi\n{devil_feedback}"
+            )
         feedback = context.get("_verification_feedback")
         if feedback:
             prompt_parts.append(f"## Catatan perbaikan dari verifikasi\n{feedback}")
