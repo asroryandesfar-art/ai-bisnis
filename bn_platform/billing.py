@@ -41,7 +41,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from .config import cfg as platform_cfg
-from .security import _check_rate_limit, _BILLING_MAX_REQUESTS
+from .security import _check_rate_limit, _BILLING_MAX_REQUESTS, write_audit_log
 
 logger = logging.getLogger("bn_platform.billing")
 
@@ -404,6 +404,11 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             # Plan gratis: aktifkan langsung tanpa proses pembayaran
             sub = await activate_subscription(pool, org_id=user["org_id"], plan_key=body.plan_key,
                                                billing_cycle=body.billing_cycle)
+            await write_audit_log(
+                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                action="plan_change", resource_type="subscription", resource_id=str(sub["id"]),
+                metadata={"plan_key": body.plan_key, "billing_cycle": body.billing_cycle, "requires_payment": False},
+            )
             return {"requires_payment": False, "subscription": sub}
 
         sub = await ensure_subscription(pool, user["org_id"])
@@ -475,6 +480,11 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         sub = await cancel_subscription(pool, org_id=user["org_id"], at_period_end=body.at_period_end)
+        await write_audit_log(
+            pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+            action="plan_change", resource_type="subscription", resource_id=str(sub["id"]),
+            metadata={"at_period_end": body.at_period_end, "status": sub["status"]},
+        )
         return {"subscription": sub}
 
     @router.get("/invoices")

@@ -14,6 +14,7 @@ bn_platform/security.py — Audit Log, encryption helper, & automated security s
 
 import json
 import logging
+import os
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
@@ -155,6 +156,157 @@ async def list_audit_logs(pool: asyncpg.Pool, *, org_id: str, action: str | None
 
 
 # ============================================================
+# SESSION MANAGEMENT
+# ============================================================
+# Token JWT tetap stateless (lihat main.py create_token/get_current_user),
+# tapi setiap login membuat baris `sessions` yang menyimpan klaim `sid`
+# milik JWT tsb. get_current_user memvalidasi sesi ini (revoked_at IS NULL
+# & belum expired) supaya logout/"revoke session" benar2 mencabut akses —
+# bukan cuma menghapus token di sisi client. Token lama (tanpa klaim `sid`,
+# diterbitkan sebelum fitur ini) tetap diterima sampai expired (no `sid`
+# => skip pengecekan sesi, lihat main.py get_current_user).
+
+SUSPICIOUS_LOGIN_WINDOW_DAYS = 30
+
+
+async def create_session(pool: asyncpg.Pool, *, user_id: str, org_id: str,
+                          ip_address: str | None, user_agent: str | None,
+                          expires_at: datetime) -> dict:
+    """Buat baris sesi baru & deteksi login mencurigakan (IP baru yang belum
+    pernah dipakai user ini dalam SUSPICIOUS_LOGIN_WINDOW_DAYS terakhir).
+    Return {"id", "is_suspicious"}."""
+    is_suspicious = False
+    if ip_address:
+        prior = await pool.fetch(
+            f"""SELECT DISTINCT ip_address FROM sessions
+                WHERE user_id=$1 AND ip_address IS NOT NULL
+                  AND created_at > NOW() - INTERVAL '{SUSPICIOUS_LOGIN_WINDOW_DAYS} days'""",
+            user_id,
+        )
+        known_ips = {r["ip_address"] for r in prior}
+        if known_ips and ip_address not in known_ips:
+            is_suspicious = True
+    row = await pool.fetchrow(
+        """INSERT INTO sessions (user_id, org_id, ip_address, user_agent, is_suspicious, expires_at)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, is_suspicious""",
+        user_id, org_id, ip_address, user_agent, is_suspicious, expires_at,
+    )
+    return dict(row)
+
+
+async def touch_session(pool: asyncpg.Pool, session_id: str) -> bool:
+    """Update last_seen_at. Return False jika sesi sudah dicabut/expired/tidak ada
+    — dipanggil dari get_current_user untuk menolak token yang sesinya direvoke."""
+    row = await pool.fetchrow(
+        """UPDATE sessions SET last_seen_at=NOW()
+           WHERE id=$1 AND revoked_at IS NULL AND expires_at > NOW()
+           RETURNING id""",
+        session_id,
+    )
+    return row is not None
+
+
+async def list_sessions(pool: asyncpg.Pool, *, org_id: str, user_id: str | None = None,
+                         active_only: bool = True) -> list[dict]:
+    conditions = ["s.org_id=$1"]
+    params: list = [org_id]
+    if user_id:
+        params.append(user_id)
+        conditions.append(f"s.user_id=${len(params)}")
+    if active_only:
+        conditions.append("s.revoked_at IS NULL AND s.expires_at > NOW()")
+    where = " AND ".join(conditions)
+    rows = await pool.fetch(
+        f"""SELECT s.id, s.user_id, u.email AS user_email, s.ip_address, s.user_agent,
+                   s.is_suspicious, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at
+            FROM sessions s JOIN users u ON u.id = s.user_id
+            WHERE {where}
+            ORDER BY s.last_seen_at DESC""",
+        *params,
+    )
+    return [dict(r) for r in rows]
+
+
+async def revoke_session(pool: asyncpg.Pool, *, session_id: str, org_id: str,
+                          reason: str = "manual") -> dict | None:
+    row = await pool.fetchrow(
+        """UPDATE sessions SET revoked_at=NOW(), revoked_reason=$1
+           WHERE id=$2 AND org_id=$3 AND revoked_at IS NULL
+           RETURNING id, user_id""",
+        reason, session_id, org_id,
+    )
+    return dict(row) if row else None
+
+
+async def list_security_events(pool: asyncpg.Pool, *, org_id: str, limit: int = 20) -> list[dict]:
+    """Ringkasan kejadian keamanan utk Security Dashboard: login gagal,
+    permission denied, login mencurigakan, & riwayat security scan."""
+    rows = await pool.fetch(
+        """SELECT id, actor_email, action, resource_type, resource_id, ip_address, metadata, created_at
+           FROM audit_logs
+           WHERE org_id=$1 AND (action IN ('login_failed', 'permission_denied', 'security_scan')
+                                 OR (action='login' AND metadata->>'suspicious'='true'))
+           ORDER BY created_at DESC LIMIT $2""",
+        org_id, limit,
+    )
+    return [dict(r) for r in rows]
+
+
+# ============================================================
+# API KEY: generation, authentication, rotation, usage tracking
+# ============================================================
+
+def generate_api_key() -> tuple[str, str]:
+    """Buat raw API key baru + prefix-nya (utk display di UI)."""
+    raw = f"bn_live_{os.urandom(20).hex()}"
+    return raw, raw[:14]
+
+
+async def record_api_key_usage(pool: asyncpg.Pool, key_id: str) -> None:
+    await pool.execute(
+        "UPDATE api_keys SET last_used_at=NOW(), usage_count=usage_count+1 WHERE id=$1",
+        key_id,
+    )
+
+
+async def authenticate_api_key(pool: asyncpg.Pool, raw_key: str, *, verify_password) -> dict | None:
+    """Validasi raw API key terhadap key_hash tersimpan. Cek is_active &
+    expires_at. Jika valid, catat usage (last_used_at + usage_count) &
+    kembalikan {"id","org_id","scopes"}. None jika tidak valid/kedaluwarsa."""
+    if not raw_key or not raw_key.startswith("bn_live_"):
+        return None
+    prefix = raw_key[:14]
+    rows = await pool.fetch(
+        "SELECT id, org_id, key_hash, scopes, is_active, expires_at FROM api_keys WHERE key_prefix=$1",
+        prefix,
+    )
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        if not row["is_active"]:
+            continue
+        if row["expires_at"] and row["expires_at"] < now:
+            continue
+        if verify_password(raw_key, row["key_hash"]):
+            await record_api_key_usage(pool, row["id"])
+            return {"id": str(row["id"]), "org_id": str(row["org_id"]), "scopes": list(row["scopes"] or [])}
+    return None
+
+
+async def rotate_api_key(pool: asyncpg.Pool, *, key_id: str, org_id: str, hash_password) -> str | None:
+    """Ganti key_hash/key_prefix dengan key baru (rotasi) & reset usage_count.
+    Return raw key baru (hanya ditampilkan sekali) atau None jika key tidak ditemukan."""
+    raw_key, prefix = generate_api_key()
+    row = await pool.fetchrow(
+        """UPDATE api_keys SET key_hash=$1, key_prefix=$2, rotated_at=NOW(), usage_count=0, last_used_at=NULL
+           WHERE id=$3 AND org_id=$4 RETURNING id""",
+        hash_password(raw_key), prefix, key_id, org_id,
+    )
+    if not row:
+        return None
+    return raw_key
+
+
+# ============================================================
 # AUTOMATED SECURITY SCAN
 # ============================================================
 # Checklist ringan yang bisa dijalankan tiap malam (Celery beat) ATAU
@@ -236,6 +388,20 @@ async def run_security_scan(pool: asyncpg.Pool, *, org_id: str) -> dict:
             "resource_id": None,
         })
 
+    # 6) Login mencurigakan (IP baru) dalam 7 hari terakhir
+    suspicious = await pool.fetch(
+        """SELECT s.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id
+           WHERE s.org_id=$1 AND s.is_suspicious=TRUE AND s.created_at > NOW() - INTERVAL '7 days'""",
+        org_id,
+    )
+    for s in suspicious:
+        findings.append({
+            "severity": "medium", "category": "sessions",
+            "title": f"Login mencurigakan dari IP baru untuk akun '{s['email']}'",
+            "recommendation": "Konfirmasi ke pengguna apakah login ini sah. Jika tidak, cabut sesi tersebut & ganti password.",
+            "resource_id": str(s["id"]),
+        })
+
     score = max(0, 100 - sum({"critical": 30, "high": 15, "medium": 7, "low": 2}.get(f["severity"], 5) for f in findings))
     result = {
         "org_id": org_id, "scanned_at": datetime.now(timezone.utc).isoformat(),
@@ -252,7 +418,7 @@ async def run_security_scan(pool: asyncpg.Pool, *, org_id: str) -> dict:
 # ============================================================
 
 def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
-                           require_permission) -> APIRouter:
+                           require_permission, hash_password) -> APIRouter:
     router = APIRouter(prefix="/security", tags=["security"])
 
     @router.get("/audit-logs")
@@ -283,11 +449,26 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         rows = await pool.fetch(
-            """SELECT id, name, key_prefix, scopes, last_used_at, expires_at, is_active, created_at
+            """SELECT id, name, key_prefix, scopes, usage_count, last_used_at, rotated_at,
+                      expires_at, is_active, created_at
                FROM api_keys WHERE org_id=$1 ORDER BY created_at DESC""",
             user["org_id"],
         )
         return {"api_keys": [dict(r) for r in rows]}
+
+    @router.post("/api-keys/{key_id}/rotate")
+    async def rotate_api_key_route(
+        key_id: str,
+        user: Annotated[dict, Depends(require_permission("apikeys.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        raw_key = await rotate_api_key(pool, key_id=key_id, org_id=user["org_id"], hash_password=hash_password)
+        if not raw_key:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "API key tidak ditemukan")
+        await write_audit_log(pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                              action="update", resource_type="api_key", resource_id=key_id,
+                              metadata={"rotated": True})
+        return {"key": raw_key, "note": "Simpan key baru ini — hanya ditampilkan sekali. Key lama langsung tidak berlaku."}
 
     @router.patch("/api-keys/{key_id}/scopes")
     async def update_api_key_scopes(
@@ -323,5 +504,67 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         await write_audit_log(pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
                               action="delete", resource_type="api_key", resource_id=key_id, metadata={})
         return {"ok": True}
+
+    # ── Session management ──────────────────────────────────────
+    @router.get("/sessions")
+    async def get_sessions(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        scope: str = "me",
+    ):
+        if scope == "org":
+            await require_permission("audit.read")(user=user, pool=pool)
+            sessions = await list_sessions(pool, org_id=user["org_id"])
+        else:
+            sessions = await list_sessions(pool, org_id=user["org_id"], user_id=user["id"])
+        return {"sessions": sessions}
+
+    @router.post("/sessions/{session_id}/revoke")
+    async def revoke_session_route(
+        session_id: str,
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        target = await pool.fetchrow(
+            "SELECT user_id FROM sessions WHERE id=$1 AND org_id=$2", session_id, user["org_id"],
+        )
+        if not target:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Sesi tidak ditemukan")
+        if str(target["user_id"]) != str(user["id"]):
+            # Mencabut sesi milik anggota tim lain butuh izin team.manage
+            await require_permission("team.manage")(user=user, pool=pool)
+        result = await revoke_session(pool, session_id=session_id, org_id=user["org_id"], reason="revoked_by_user")
+        if not result:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Sesi sudah dicabut sebelumnya")
+        await write_audit_log(pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                              action="update", resource_type="session", resource_id=session_id,
+                              metadata={"revoked_user_id": str(target["user_id"]), "reason": "revoked_by_user"})
+        return {"ok": True}
+
+    # ── Security Dashboard ──────────────────────────────────────
+    @router.get("/dashboard")
+    async def security_dashboard(
+        user: Annotated[dict, Depends(require_permission("audit.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        sessions = await list_sessions(pool, org_id=user["org_id"])
+        audit_logs = await list_audit_logs(pool, org_id=user["org_id"], limit=10)
+        security_events = await list_security_events(pool, org_id=user["org_id"], limit=10)
+        api_key_rows = await pool.fetch(
+            """SELECT id, name, key_prefix, scopes, usage_count, last_used_at, rotated_at,
+                      expires_at, is_active, created_at
+               FROM api_keys WHERE org_id=$1 ORDER BY created_at DESC""",
+            user["org_id"],
+        )
+        api_keys = [dict(r) for r in api_key_rows]
+        return {
+            "active_sessions": sessions,
+            "active_sessions_count": len(sessions),
+            "suspicious_sessions_count": sum(1 for s in sessions if s["is_suspicious"]),
+            "audit_logs": audit_logs,
+            "security_events": security_events,
+            "api_keys": api_keys,
+            "active_api_keys_count": sum(1 for k in api_keys if k["is_active"]),
+        }
 
     return router

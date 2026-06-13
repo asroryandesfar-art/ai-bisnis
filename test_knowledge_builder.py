@@ -432,7 +432,7 @@ def test_update_faq_approve_publishes_to_kb():
 
     result = asyncio.run(handler(
         faq_id="faq-1", body=FaqUpdateRequest(status="approved"),
-        user={"org_id": "org-1"}, pool=pool,
+        user={"org_id": "org-1", "id": "user-1"}, pool=pool,
     ))
 
     assert result["faq"]["status"] == "approved"
@@ -457,7 +457,7 @@ def test_update_faq_reject_unpublishes_from_kb():
 
     result = asyncio.run(handler(
         faq_id="faq-1", body=FaqUpdateRequest(status="rejected"),
-        user={"org_id": "org-1"}, pool=pool,
+        user={"org_id": "org-1", "id": "user-1"}, pool=pool,
     ))
 
     assert result["faq"]["status"] == "rejected"
@@ -497,7 +497,7 @@ def test_update_sop_approve_publishes_numbered_steps():
 
     result = asyncio.run(handler(
         sop_id="sop-1", body=SopUpdateRequest(status="approved"),
-        user={"org_id": "org-1"}, pool=pool,
+        user={"org_id": "org-1", "id": "user-1"}, pool=pool,
     ))
 
     assert result["sop"]["status"] == "approved"

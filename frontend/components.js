@@ -12,6 +12,7 @@ const paths = {
   "kb-builder":'<path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="4"/>',
   "workflow-builder":'<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="12" r="2.5"/><circle cx="5" cy="18" r="2.5"/><path d="M7.5 6h5a3 3 0 0 1 3 3v0M7.5 18h5a3 3 0 0 0 3-3v0M16.5 9v6"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
+  security:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
   billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1z"/>',
   plus:'<path d="M12 5v14M5 12h14"/>', search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="m6 6 12 12M18 6 6 18"/>', bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>', arrow:'<path d="m9 18 6-6-6-6"/>', refresh:'<path d="M20 6v5h-5M4 18v-5h5"/><path d="M18 9a7 7 0 0 0-12-2L4 11M6 15a7 7 0 0 0 12 2l2-4"/>', upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/>', send:'<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>', speaker:'<path d="M11 5 6 9H2v6h4l5 4zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>', more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
@@ -101,7 +102,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 const navGroups = [
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
   ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
-  ["SYSTEM", [["settings","Settings"]]],
+  ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
 
 export function sidebar({ route, org, user, counts = {} }) {
@@ -122,6 +123,7 @@ const routeMeta = {
   "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
   "workflow-builder":["Workflow Builder","Rancang automasi AI Agent ala n8n/Zapier — trigger, condition, agent, action, dan notification"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
+  security:["Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management"],
   billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],
 };
 export function topbar({ route, health }) {

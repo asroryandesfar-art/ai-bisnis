@@ -12,6 +12,8 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .security import write_audit_log
+
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
 GetCurrentUser = Callable[..., Awaitable[dict]]
 RunPipeline = Callable[[str], Awaitable[None]]
@@ -282,6 +284,13 @@ def build_knowledge_builder_router(
                     )
                     row["chunk_id"] = None
 
+        if new_status != faq["status"]:
+            await write_audit_log(
+                pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                action="update", resource_type="knowledge_faq", resource_id=faq_id,
+                metadata={"old_status": faq["status"], "new_status": new_status},
+            )
+
         return {"faq": row}
 
     @router.get("/bots/{bot_id}/sops")
@@ -362,6 +371,13 @@ def build_knowledge_builder_router(
                         "UPDATE kb_generated_sops SET chunk_id=NULL WHERE id=$1", sop_id
                     )
                     row["chunk_id"] = None
+
+        if new_status != sop["status"]:
+            await write_audit_log(
+                pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                action="update", resource_type="knowledge_sop", resource_id=sop_id,
+                metadata={"old_status": sop["status"], "new_status": new_status},
+            )
 
         return {"sop": row}
 

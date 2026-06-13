@@ -172,6 +172,9 @@ _platform_check_limit = None   # (pool, org_id, dimension) → (bool, dict)
 _platform_enqueue_handoff = None  # (pool, org_id, conv_id, reason, priority) → dict|None
 _platform_evaluate_handoff = None  # deterministic trigger evaluation
 _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, action, ...) → None
+_platform_create_session = None  # (pool, user_id, org_id, ip_address, user_agent, expires_at) → {"id","is_suspicious"}
+_platform_touch_session = None   # (pool, session_id) → bool (False jika revoked/expired)
+_platform_revoke_session = None  # (pool, session_id, org_id, reason) → dict|None
 
 # Multi-agent supervisor singleton (cloud-only)
 _supervisor_cloud: SupervisorAgent | None = None
@@ -1161,12 +1164,12 @@ def is_supported_password_hash(hashed: str) -> bool:
     except UnknownHashError:
         return False
 
-def create_token(user_id: str, org_id: str) -> str:
+def create_token(user_id: str, org_id: str, session_id: str | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=cfg.jwt_expire_hours)
-    return jwt.encode(
-        {"sub": user_id, "org": org_id, "exp": expire},
-        cfg.secret_key, algorithm=cfg.jwt_algorithm,
-    )
+    payload = {"sub": user_id, "org": org_id, "exp": expire}
+    if session_id:
+        payload["sid"] = session_id
+    return jwt.encode(payload, cfg.secret_key, algorithm=cfg.jwt_algorithm)
 
 async def get_current_user(
     creds: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
@@ -1179,13 +1182,29 @@ async def get_current_user(
     except JWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token tidak valid")
 
+    # Token dengan klaim `sid` (sesi tercatat di tabel sessions) — tolak jika
+    # sesi sudah di-revoke (logout / "revoke session" dari security dashboard)
+    # atau sudah lewat expires_at. Token lama tanpa `sid` tidak punya sesi
+    # tercatat dan tetap berlaku sampai JWT-nya sendiri expired.
+    session_id = payload.get("sid")
+    if session_id and _platform_touch_session:
+        try:
+            if not await _platform_touch_session(pool, session_id):
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesi sudah berakhir, silakan login kembali")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     row = await pool.fetchrow(
         "SELECT id, org_id, email, role FROM users WHERE id=$1 AND is_active=TRUE",
         user_id,
     )
     if not row:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User tidak ditemukan")
-    return dict(row)
+    user = dict(row)
+    user["session_id"] = session_id
+    return user
 
 
 # ─── PYDANTIC MODELS ──────────────────────────────────────────
@@ -1225,8 +1244,41 @@ class ChatReq(BaseModel):
 
 # ─── ROUTE: AUTH ──────────────────────────────────────────────
 
+async def _start_session(pool, *, user_id: str, org_id: str, email: str,
+                          request: Request, action: str = "login") -> str | None:
+    """Catat sesi baru (tabel `sessions`, deteksi login mencurigakan) +
+    audit log `action`. Return session_id (utk klaim `sid` JWT) atau None
+    jika bn_platform.security belum termuat."""
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    session_id: str | None = None
+    is_suspicious = False
+    if _platform_create_session:
+        try:
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=cfg.jwt_expire_hours)
+            sess = await _platform_create_session(
+                pool, user_id=user_id, org_id=org_id,
+                ip_address=ip_address, user_agent=user_agent, expires_at=expires_at,
+            )
+            session_id = str(sess["id"])
+            is_suspicious = bool(sess["is_suspicious"])
+        except Exception:
+            pass
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=org_id, actor_user_id=user_id, actor_email=email,
+                action=action, resource_type="user", resource_id=user_id,
+                ip_address=ip_address, user_agent=user_agent,
+                metadata={"suspicious": is_suspicious},
+            )
+        except Exception:
+            pass
+    return session_id
+
+
 @app.post("/auth/register", status_code=201)
-async def register(body: RegisterReq, pool=Depends(get_pool)):
+async def register(body: RegisterReq, request: Request, pool=Depends(get_pool)):
     """Daftar organisasi baru + user owner pertama."""
     try:
         if not await ensure_schema(pool):
@@ -1274,12 +1326,28 @@ async def register(body: RegisterReq, pool=Depends(get_pool)):
             detail=f"Register gagal: {e}",
         )
 
-    token = create_token(user_id, org_id)
+    session_id = await _start_session(pool, user_id=user_id, org_id=org_id, email=email, request=request)
+    token = create_token(user_id, org_id, session_id)
     return {"token": token, "org_id": org_id, "trial_ends": trial_end.isoformat()}
 
 
 @app.post("/auth/login")
-async def login(body: LoginReq, pool=Depends(get_pool)):
+async def login(body: LoginReq, request: Request, pool=Depends(get_pool)):
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    async def _log_failed(org_id: str | None, user_id: str | None, email: str, reason: str) -> None:
+        if not _platform_write_audit:
+            return
+        try:
+            await _platform_write_audit(
+                pool, org_id=org_id, actor_user_id=user_id, actor_email=email,
+                action="login_failed", resource_type="user", resource_id=user_id,
+                ip_address=ip_address, user_agent=user_agent, metadata={"reason": reason},
+            )
+        except Exception:
+            pass
+
     try:
         if not await ensure_schema(pool):
             raise HTTPException(
@@ -1292,6 +1360,7 @@ async def login(body: LoginReq, pool=Depends(get_pool)):
             email,
         )
         if not row:
+            await _log_failed(None, None, email, "not_found")
             raise HTTPException(401, "Email atau password salah")
 
         if not is_supported_password_hash(row["hashed_password"]):
@@ -1301,6 +1370,7 @@ async def login(body: LoginReq, pool=Depends(get_pool)):
             )
 
         if not verify_password(body.password, row["hashed_password"]):
+            await _log_failed(str(row["org_id"]), str(row["id"]), email, "bad_password")
             raise HTTPException(401, "Email atau password salah")
         if not row["is_active"]:
             raise HTTPException(403, "Akun dinonaktifkan")
@@ -1308,7 +1378,10 @@ async def login(body: LoginReq, pool=Depends(get_pool)):
         await pool.execute(
             "UPDATE users SET last_login_at=NOW() WHERE id=$1", row["id"]
         )
-        return {"token": create_token(str(row["id"]), str(row["org_id"]))}
+        session_id = await _start_session(
+            pool, user_id=str(row["id"]), org_id=str(row["org_id"]), email=email, request=request,
+        )
+        return {"token": create_token(str(row["id"]), str(row["org_id"]), session_id)}
     except HTTPException:
         raise
     except Exception as e:
@@ -1316,6 +1389,28 @@ async def login(body: LoginReq, pool=Depends(get_pool)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login gagal: {e}",
         )
+
+
+@app.post("/auth/logout")
+async def logout(
+    user: Annotated[dict, Depends(get_current_user)],
+    pool=Depends(get_pool),
+):
+    session_id = user.get("session_id")
+    if session_id and _platform_revoke_session:
+        try:
+            await _platform_revoke_session(pool, session_id=session_id, org_id=str(user["org_id"]), reason="logout")
+        except Exception:
+            pass
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=str(user["org_id"]), actor_user_id=str(user["id"]), actor_email=user.get("email"),
+                action="logout", resource_type="user", resource_id=str(user["id"]), metadata={},
+            )
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 # ─── ROUTE: ORGANIZATION / SUBSCRIPTION ────────────────────────
@@ -2838,6 +2933,17 @@ async def upload_document(
 
     # Proses saat ini synchronous, jadi status sudah final (ready/failed)
     row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
+
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                action="create", resource_type="document", resource_id=doc_id,
+                metadata={"bot_id": bot_id, "filename": file.filename, "status": row["status"]},
+            )
+        except Exception:
+            pass
+
     return {"doc_id": doc_id, "status": row["status"], "error_msg": row["error_msg"]}
 
 
@@ -3350,6 +3456,16 @@ async def delete_document(
         async with conn.transaction():
             await conn.execute("DELETE FROM doc_chunks WHERE document_id=$1", doc_id)
             await conn.execute("DELETE FROM documents WHERE id=$1", doc_id)
+
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                action="delete", resource_type="document", resource_id=doc_id,
+                metadata={"bot_id": bot_id},
+            )
+        except Exception:
+            pass
 
     return {"message": "Dokumen dihapus"}
 
@@ -4334,17 +4450,36 @@ async def create_api_key(
 
     raw_key = f"bn_live_{os.urandom(20).hex()}"
     prefix  = raw_key[:14]
+    key_id  = str(uuid.uuid4())
+
+    expires_at = None
+    expires_in_days = body.get("expires_in_days")
+    if expires_in_days is not None:
+        try:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, int(expires_in_days)))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "expires_in_days harus berupa angka")
 
     await pool.execute(
-        """INSERT INTO api_keys (id, org_id, name, key_hash, key_prefix)
-           VALUES ($1,$2,$3,$4,$5)""",
-        str(uuid.uuid4()), user["org_id"],
+        """INSERT INTO api_keys (id, org_id, name, key_hash, key_prefix, expires_at)
+           VALUES ($1,$2,$3,$4,$5,$6)""",
+        key_id, user["org_id"],
         body.get("name", "API Key"),
-        hash_password(raw_key), prefix,
+        hash_password(raw_key), prefix, expires_at,
     )
+    if _platform_write_audit:
+        try:
+            await _platform_write_audit(
+                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                action="create", resource_type="api_key", resource_id=key_id,
+                metadata={"name": body.get("name", "API Key"), "expires_at": expires_at.isoformat() if expires_at else None},
+            )
+        except Exception:
+            pass
 
     return {
         "key":  raw_key,
+        "key_id": key_id,
         "note": "Simpan key ini — hanya ditampilkan sekali.",
     }
 
@@ -4394,7 +4529,13 @@ try:
     from bn_platform.lead_engine import build_lead_router
     from bn_platform.marketplace import build_marketplace_router
     from bn_platform.revenue_intel import build_revenue_router
-    from bn_platform.security import build_security_router, write_audit_log as _platform_audit_log_fn
+    from bn_platform.security import (
+        build_security_router,
+        write_audit_log as _platform_audit_log_fn,
+        create_session as _platform_create_session_fn,
+        touch_session as _platform_touch_session_fn,
+        revoke_session as _platform_revoke_session_fn,
+    )
     from bn_platform.observability import instrument_app, record_db_pool_stats
     from bn_platform.ai_observability import build_ai_observability_router
     from bn_platform.cost_intelligence import build_cost_intelligence_router
@@ -4408,6 +4549,9 @@ try:
     _platform_enqueue_handoff = enqueue_handoff
     _platform_evaluate_handoff = evaluate_handoff_trigger
     _platform_write_audit = _platform_audit_log_fn
+    _platform_create_session = _platform_create_session_fn
+    _platform_touch_session = _platform_touch_session_fn
+    _platform_revoke_session = _platform_revoke_session_fn
 
     # ── 1. Prometheus middleware + GET /metrics ──────────────────
     instrument_app(app)
@@ -4496,6 +4640,7 @@ try:
         build_security_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
+            hash_password=hash_password,
         ),
         prefix="/api",
     )

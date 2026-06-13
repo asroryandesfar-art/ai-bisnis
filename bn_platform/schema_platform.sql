@@ -768,3 +768,32 @@ CREATE INDEX IF NOT EXISTS idx_workflows_trigger ON workflows(org_id, trigger_ty
 CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow ON workflow_executions(workflow_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workflow_executions_org ON workflow_executions(org_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workflow_execution_steps_execution ON workflow_execution_steps(execution_id, started_at);
+
+
+-- ============================================================
+-- ENTERPRISE SECURITY PLATFORM
+-- Session management (active sessions, revoke, suspicious login)
+-- + API key rotation/expiration/usage tracking.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    ip_address    TEXT,
+    user_agent    TEXT,
+    is_suspicious BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at    TIMESTAMPTZ NOT NULL,
+    revoked_at    TIMESTAMPTZ,
+    revoked_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_org  ON sessions(org_id, revoked_at);
+
+-- Rotasi & usage tracking untuk API key (POST /api-keys, /api/security/api-keys)
+ALTER TABLE api_keys
+    ADD COLUMN IF NOT EXISTS usage_count BIGINT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS rotated_at  TIMESTAMPTZ;
