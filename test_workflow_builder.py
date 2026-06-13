@@ -431,7 +431,7 @@ def test_create_get_update_workflow_roundtrip():
     updated = asyncio.run(update_handler(
         workflow_id=created["id"],
         body=WorkflowUpdateRequest(name="Renamed", nodes=[{"id": "trg", "category": "trigger", "type": "manual_trigger"}]),
-        user={"org_id": "org-1"}, pool=pool,
+        user={"org_id": "org-1", "id": "user-1"}, pool=pool,
     ))
     assert updated["name"] == "Renamed"
     assert updated["nodes"][0]["id"] == "trg"
@@ -464,11 +464,11 @@ def test_publish_and_unpublish_workflow():
     router = _build_router(pool)
 
     publish_handler = _route(router, "/workflows/{workflow_id}/publish", "POST")
-    published = asyncio.run(publish_handler(workflow_id="wf-1", user={"org_id": "org-1"}, pool=pool))
+    published = asyncio.run(publish_handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert published["status"] == "published"
 
     unpublish_handler = _route(router, "/workflows/{workflow_id}/unpublish", "POST")
-    unpublished = asyncio.run(unpublish_handler(workflow_id="wf-1", user={"org_id": "org-1"}, pool=pool))
+    unpublished = asyncio.run(unpublish_handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert unpublished["status"] == "draft"
 
 
@@ -481,7 +481,7 @@ def test_delete_workflow():
     pool = RouterFakePool(workflow=workflow)
     router = _build_router(pool)
     handler = _route(router, "/workflows/{workflow_id}", "DELETE")
-    result = asyncio.run(handler(workflow_id="wf-1", user={"org_id": "org-1"}, pool=pool))
+    result = asyncio.run(handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert result == {"deleted": True}
     assert any("DELETE FROM workflows" in c[1] for c in pool.calls if c[0] == "execute")
 

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from workflow_engine import NODE_CATALOG, run_workflow
+from .security import write_audit_log
 
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
 GetCurrentUser = Callable[..., Awaitable[dict]]
@@ -120,6 +121,11 @@ def build_workflow_builder_router(
             workflow_id, org_id, bot_id, body.name, body.description, body.trigger_type,
             json.dumps(body.nodes), json.dumps(body.edges), user.get("id"),
         )
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="create", resource_type="workflow", resource_id=workflow_id,
+            metadata={"name": body.name, "trigger_type": body.trigger_type, "bot_id": bot_id},
+        )
         return _row_with_jsonb(dict(row), ["nodes", "edges"])
 
     @router.get("/workflows/{workflow_id}")
@@ -153,6 +159,11 @@ def build_workflow_builder_router(
                WHERE id=$6 RETURNING *""",
             name, description, trigger_type, json.dumps(nodes), json.dumps(edges), workflow_id,
         )
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="update", resource_type="workflow", resource_id=workflow_id,
+            metadata={"name": name, "trigger_type": trigger_type},
+        )
         return _row_with_jsonb(dict(row), ["nodes", "edges"])
 
     @router.post("/workflows/{workflow_id}/publish")
@@ -171,6 +182,11 @@ def build_workflow_builder_router(
                WHERE id=$1 RETURNING *""",
             workflow_id,
         )
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="update", resource_type="workflow", resource_id=workflow_id,
+            metadata={"name": wf["name"], "status": "published"},
+        )
         return _row_with_jsonb(dict(row), ["nodes", "edges"])
 
     @router.post("/workflows/{workflow_id}/unpublish")
@@ -180,10 +196,15 @@ def build_workflow_builder_router(
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        await _get_workflow(pool, workflow_id, org_id)
+        wf = await _get_workflow(pool, workflow_id, org_id)
         row = await pool.fetchrow(
             "UPDATE workflows SET status='draft', updated_at=NOW() WHERE id=$1 RETURNING *",
             workflow_id,
+        )
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="update", resource_type="workflow", resource_id=workflow_id,
+            metadata={"name": wf["name"], "status": "draft"},
         )
         return _row_with_jsonb(dict(row), ["nodes", "edges"])
 
@@ -194,8 +215,13 @@ def build_workflow_builder_router(
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        await _get_workflow(pool, workflow_id, org_id)
+        wf = await _get_workflow(pool, workflow_id, org_id)
         await pool.execute("DELETE FROM workflows WHERE id=$1", workflow_id)
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="delete", resource_type="workflow", resource_id=workflow_id,
+            metadata={"name": wf["name"]},
+        )
         return {"deleted": True}
 
     @router.post("/workflows/{workflow_id}/test")

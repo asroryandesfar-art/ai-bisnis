@@ -184,6 +184,13 @@ export const api = {
   updateFeedbackQueue: (id, status, resolution_note = null) => request(`/api/feedback-learning/queue/${id}`, { method: "PATCH", body: { status, resolution_note } }),
   auditLogs: (params = {}) => request(`/api/security/audit-logs${encodeQuery(params)}`),
   securityScan: () => request("/api/security/scan", { method: "POST" }),
+  securityDashboard: () => request("/api/security/dashboard"),
+  securitySessions: (scope = "me") => request(`/api/security/sessions${encodeQuery({ scope })}`),
+  revokeSecuritySession: (id) => request(`/api/security/sessions/${id}/revoke`, { method: "POST" }),
+  securityApiKeys: () => request("/api/security/api-keys"),
+  createApiKey: (body) => request("/api-keys", { method: "POST", body }),
+  rotateApiKey: (id) => request(`/api/security/api-keys/${id}/rotate`, { method: "POST" }),
+  revokeApiKey: (id) => request(`/api/security/api-keys/${id}`, { method: "DELETE" }),
 };
 
 export async function settle(label, promise) {

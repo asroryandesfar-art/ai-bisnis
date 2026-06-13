@@ -10,7 +10,7 @@ const state = {
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
-  kbOverview: null, kbFaqs: [], kbSops: [],
+  kbOverview: null, kbFaqs: [], kbSops: [], security: null, securityScan: null,
   wfNodeCatalog: null, wfWorkflows: [], wfWorkflow: null, wfExecutions: [], wfExecution: null,
   wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
@@ -28,7 +28,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -701,6 +701,51 @@ async function renderBilling() {
   setPage(`${pageHeader("Billing & Usage","Plans and limits are read directly from the BotNesia subscription system.",`<span class="status-badge active">${esc(currentKey)} · ${esc(state.subscription?.subscription?.status||state.org?.billing_status||'active')}</span>`)}<div class="grid grid-3">${planCards||emptyState("Plans unavailable","Run the platform schema migration to provision subscription plans.")}</div><div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><h3>Current usage</h3></div><div class="card-body">${usageRows||emptyState("Usage unavailable","No usage dimensions returned.")}</div></div><div class="card"><div class="card-head"><h3>Recent invoices</h3></div>${invoiceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${invoiceRows}</tbody></table></div>`:emptyState("No invoices","Paid and open invoices will appear here.")}</div></div>`);
 }
 
+async function renderSecurity() {
+  loadingPage("Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management.");
+  const dashResult = await settle("security", api.securityDashboard());
+  if (!dashResult.ok) { setPage(`${pageHeader("Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management.")}${errorState(dashResult.error.message)}`); return; }
+  state.security = dashResult.data;
+  const sec = state.security;
+
+  const sessionRows = (sec.active_sessions||[]).map((session) => `<tr><td><span class="table-title">${esc(session.user_email)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(session.user_agent||'—')}</div></td><td class="mono">${esc(session.ip_address||'—')}</td><td>${session.is_suspicious?statusBadge('error','Suspicious'):statusBadge('active','Normal')}</td><td>${relativeTime(session.last_seen_at)}</td><td>${formatDate(session.expires_at)}</td><td><button class="button button-danger" data-revoke-session="${esc(session.id)}">Revoke</button></td></tr>`).join("");
+
+  const auditRows = (sec.audit_logs||[]).map((log) => `<tr><td>${formatDate(log.created_at,{hour:'2-digit',minute:'2-digit'})}</td><td>${esc(log.actor_email||'system')}</td><td><span class="status-badge ready">${esc(log.action)}</span></td><td>${esc(log.resource_type)}${log.resource_id?` <span class="subtle mono" style="font-size:9px">${esc(String(log.resource_id).slice(0,8))}</span>`:''}</td><td class="mono">${esc(log.ip_address||'—')}</td></tr>`).join("");
+
+  const eventRows = (sec.security_events||[]).map((event) => `<tr><td>${formatDate(event.created_at,{hour:'2-digit',minute:'2-digit'})}</td><td>${esc(event.actor_email||'system')}</td><td><span class="status-badge error">${esc(event.action)}</span></td><td class="mono">${esc(event.ip_address||'—')}</td></tr>`).join("");
+
+  const apiKeyRows = (sec.api_keys||[]).map((key) => `<tr><td><span class="table-title">${esc(key.name)}</span><div class="subtle mono" style="font-size:9px;margin-top:3px">${esc(key.key_prefix)}...</div></td><td>${(key.scopes||[]).map((scope)=>`<span class="status-badge ready" style="margin-right:4px">${esc(scope)}</span>`).join('')||'—'}</td><td>${formatNumber(key.usage_count)}</td><td>${relativeTime(key.last_used_at)}</td><td>${key.expires_at?formatDate(key.expires_at):'Never'}</td><td>${statusBadge(key.is_active?'active':'inactive',key.is_active?'Active':'Revoked')}</td><td style="display:flex;gap:6px;flex-wrap:wrap">${key.is_active?`<button class="button" data-rotate-api-key="${esc(key.id)}">Rotate</button><button class="button button-danger" data-revoke-api-key="${esc(key.id)}">Revoke</button>`:'—'}</td></tr>`).join("");
+
+  const scan = state.securityScan;
+  const scoreCard = metricCard("Security Score", scan?`${scan.score}/100`:'—', scan?`${scan.findings_count} findings (last scan)`:'Run a scan to compute', "security");
+  const findingsCard = scan?.findings?.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Latest scan findings</h3></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Recommendation</th></tr></thead><tbody>${scan.findings.map((finding)=>`<tr><td>${statusBadge(finding.severity==='critical'||finding.severity==='high'?'error':finding.severity==='medium'?'pending':'active',finding.severity)}</td><td>${esc(finding.category)}</td><td>${esc(finding.title)}</td><td class="subtle" style="font-size:10px">${esc(finding.recommendation)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+
+  setPage(`${pageHeader("Security Dashboard","Enterprise security posture: RBAC, audit trail, sessions, suspicious logins, and API keys.",`<button class="button button-primary" data-action="security-scan">${icon('refresh',14)} Run security scan</button><button class="button" data-action="create-api-key">${icon('plus',14)} New API key</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">${scoreCard}${metricCard("Active sessions",formatNumber(sec.active_sessions_count),"Across your workspace","team")}${metricCard("Suspicious logins",formatNumber(sec.suspicious_sessions_count),"New IP detected (30 days)","security")}${metricCard("Active API keys",formatNumber(sec.active_api_keys_count),`${formatNumber((sec.api_keys||[]).length)} total`,"settings")}</div>
+  ${findingsCard}
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Active sessions</h3><span class="subtle mono" style="font-size:9px">SESSION MANAGEMENT</span></div>${sessionRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>User</th><th>IP address</th><th>Status</th><th>Last seen</th><th>Expires</th><th></th></tr></thead><tbody>${sessionRows}</tbody></table></div>`:emptyState("No active sessions","Sessions appear here after users log in.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>API keys</h3><span class="subtle mono" style="font-size:9px">ROTATION & USAGE TRACKING</span></div>${apiKeyRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Key</th><th>Scopes</th><th>Usage</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>${apiKeyRows}</tbody></table></div>`:emptyState("No API keys","Create an API key to access BotNesia programmatically.")}</div>
+  <div class="grid grid-2"><div class="card"><div class="card-head"><h3>Security events</h3><span class="subtle mono" style="font-size:9px">LOGIN FAILURES & ALERTS</span></div>${eventRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>IP</th></tr></thead><tbody>${eventRows}</tbody></table></div>`:emptyState("No security events","Failed logins, permission denials, and suspicious logins appear here.")}</div><div class="card"><div class="card-head"><h3>Audit log</h3><span class="subtle mono" style="font-size:9px">RECENT ACTIVITY</span></div>${auditRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead><tbody>${auditRows}</tbody></table></div>`:emptyState("No audit log entries","All login, billing, and configuration changes are tracked here.")}</div></div>`);
+}
+
+function showCreateApiKey() {
+  el("#modal-root").innerHTML = modal({title:"Create API key",body:`<form id="create-api-key-form"><div class="form-grid"><label class="field full"><span>Name</span><input name="name" required placeholder="e.g. Integration server"></label><label class="field"><span>Expires in (days)</span><input name="expires_in_days" type="number" min="1" placeholder="Never"></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-create-api-key">Create key</button>`});
+}
+
+async function submitCreateApiKey() {
+  const form = el("#create-api-key-form"); if(!form || !form.reportValidity()) return;
+  const data = Object.fromEntries(new FormData(form));
+  const body = {name: data.name};
+  if (data.expires_in_days) body.expires_in_days = Number(data.expires_in_days);
+  const button = el("[data-action=submit-create-api-key]"); button.disabled = true;
+  try {
+    const result = await api.createApiKey(body);
+    el("#modal-root").innerHTML = modal({title:"API key created",body:`<p class="subtle" style="font-size:11px">Simpan key ini sekarang — hanya ditampilkan sekali.</p><div class="form-grid"><label class="field full"><span>API key</span><input value="${esc(result.key)}" readonly onclick="this.select()"></label></div>`,footer:`<button class="button button-primary" data-action="close-modal">Done</button>`});
+    toast("API key created.","success");
+    await renderSecurity();
+  } catch(error) { toast(error.message,"error"); button.disabled = false; }
+}
+
 async function renderSettings() {
   loadingPage("Platform Settings","Configure channels, security posture, and workspace connectivity.");
   const [channelResult, integrationResult] = await Promise.all([settle("channels",api.channels()),settle("integrations",api.integrations())]);
@@ -953,7 +998,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1143,7 +1188,14 @@ document.addEventListener("click", async (event) => {
     if (!state.speakReplies) await stopSpeaking(container);
     voiceStatus(container, state.speakReplies ? "Suara aktif - jawaban AI akan dibaca sampai akhir" : "Suara dimatikan");
   }
-  if(action==="security-scan") { try{ const result=await api.securityScan(); toast(`Security scan completed: ${result.findings?.length||0} findings.`,"success"); }catch(error){ toast(error.message,"error"); } }
+  if(action==="security-scan") { try{ const result=await api.securityScan(); state.securityScan=result; toast(`Security scan completed: ${result.findings?.length||0} findings.`,"success"); if(state.route==="security") await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  if(action==="create-api-key") showCreateApiKey();
+  if(action==="submit-create-api-key") await submitCreateApiKey();
+  const revokeSession=event.target.closest("[data-revoke-session]"); if(revokeSession && confirm("Revoke this session? The user will be signed out.")){ try{ await api.revokeSecuritySession(revokeSession.dataset.revokeSession); toast("Session revoked.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  const rotateApiKey=event.target.closest("[data-rotate-api-key]"); if(rotateApiKey && confirm("Rotate this API key? The old key will stop working immediately.")){
+    try{ const result=await api.rotateApiKey(rotateApiKey.dataset.rotateApiKey); el("#modal-root").innerHTML=modal({title:"API key rotated",body:`<p class="subtle" style="font-size:11px">Simpan key baru ini sekarang — hanya ditampilkan sekali. Key lama sudah tidak berlaku.</p><div class="form-grid"><label class="field full"><span>New API key</span><input value="${esc(result.key)}" readonly onclick="this.select()"></label></div>`,footer:`<button class="button button-primary" data-action="close-modal">Done</button>`}); toast("API key rotated.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); }
+  }
+  const revokeApiKey=event.target.closest("[data-revoke-api-key]"); if(revokeApiKey && confirm("Revoke this API key? Any integration using it will stop working.")){ try{ await api.revokeApiKey(revokeApiKey.dataset.revokeApiKey); toast("API key revoked.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
   if(action==="invite-member") showInviteMember();
   if(action==="submit-invite-member") await submitInviteMember();
   const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); await renderSettings(); }catch(error){toast(error.message,"error");} }
