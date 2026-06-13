@@ -116,6 +116,10 @@ def _output_summary(value: Any) -> dict:
         "reasoning_summary", "conclusion", "limitations", "suggested_next_action",
         "verified", "issues", "complexity", "source", "matched", "has_objection",
         "should_escalate", "urgency", "intent", "skipped", "reason",
+        "risk_if_wrong", "needs_clarification", "severity",
+        "needs_revision", "overstatement_risk", "revised",
+        "causal_links_count", "root_hypotheses_count",
+        "uncertainty_band", "uncertainty_score", "uncertainty_reasons",
     )
     return {key: output[key] for key in allowed if key in output}
 

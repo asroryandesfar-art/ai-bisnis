@@ -224,7 +224,10 @@ def test_supervisor_pro_mode_simple_query_skips_pipeline(monkeypatch):
 
     assert result.reasoning_mode_used == "standard"
     assert result.plan is None
-    assert call_count["json"] == 0
+    assert call_count["json"] == 3
+    assert "socratic_reasoning_engine" in result.agent_results
+    assert "first_principle_agent" in result.agent_results
+    assert "devil_advocate_agent" in result.agent_results
 
 
 def test_verification_flags_shallow_answer(monkeypatch):
@@ -292,7 +295,9 @@ def test_supervisor_pro_mode_retry_loop_stops_at_max_retries(monkeypatch):
     assert result.verification_passed is False
     assert synth_calls["n"] == MAX_RETRIES + 1
     assert verify_calls["n"] == MAX_RETRIES + 1
-    assert result.final_answer == f"Jawaban versi {MAX_RETRIES + 1}."
+    assert result.uncertainty_band == "Low Confidence"
+    assert result.final_answer.startswith("Saya belum cukup yakin.")
+    assert f"Jawaban versi {MAX_RETRIES + 1}." in result.final_answer
 
 
 def test_supervisor_pro_mode_retry_loop_stops_when_verified(monkeypatch):
@@ -389,7 +394,8 @@ def test_persist_intelligence_includes_reasoning_metrics(monkeypatch):
         kg_product_mentions=[], agent_results={}, total_latency_ms=100, errors=[],
         reasoning_mode_used="pro", confidence_score=72, verification_passed=True, retry_count=1,
         plan={"agents_to_invoke": ["market_technical"]}, specialist_results={"market_technical": {}},
-        verification_issues=[],
+        verification_issues=[], uncertainty_band="Low Confidence", uncertainty_score=41,
+        uncertainty_reasons=["verifikasi belum lolos"], uncertainty_message="Saya belum cukup yakin.",
     )
 
     captured = {}
@@ -410,3 +416,6 @@ def test_persist_intelligence_includes_reasoning_metrics(monkeypatch):
     assert extra["retry_count"] == 1
     assert extra["plan"] == {"agents_to_invoke": ["market_technical"]}
     assert extra["specialist_lenses_used"] == ["market_technical"]
+    assert extra["uncertainty_band"] == "Low Confidence"
+    assert extra["uncertainty_score"] == 41
+    assert extra["uncertainty_reasons"] == ["verifikasi belum lolos"]
