@@ -15,7 +15,7 @@ PENTING: engine ini HANYA mendeteksi & merekomendasikan. Tidak pernah
 mengubah prompt, knowledge, workflow, atau konfigurasi agent secara
 otomatis — admin yang memutuskan via endpoint PATCH status.
 """
-from __future__ import annotations
+# from __future__ import annotations  # dihapus: menyebabkan Depends(closure_var) gagal di-resolve oleh FastAPI get_type_hints()
 
 import json
 from typing import Annotated, Awaitable, Callable
@@ -141,7 +141,7 @@ async def analyze_agent_weaknesses(pool: asyncpg.Pool, *, org_id: str, days: int
     rows = await pool.fetch(
         """SELECT ca.bot_id, b.name AS bot_name,
                   COUNT(*)::int AS conversations,
-                  ROUND(AVG(ca.quality_score), 2) AS avg_quality_score,
+                  ROUND(AVG(ca.quality_score)::numeric, 2) AS avg_quality_score,
                   ROUND(AVG((ca.raw_metrics->>'confidence_score')::numeric), 1) AS avg_confidence,
                   COUNT(*) FILTER (WHERE ca.raw_metrics->>'verification_passed'='false')::int AS failed_verifications,
                   COUNT(*) FILTER (WHERE ca.outcome IN ('unresolved','abandoned','escalated'))::int AS bad_outcomes
