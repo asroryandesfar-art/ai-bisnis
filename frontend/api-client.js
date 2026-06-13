@@ -127,6 +127,18 @@ export const api = {
   kbUpdateSop: (sopId, body) => request(`/api/knowledge-builder/sops/${sopId}`, { method: "PATCH", body }),
   kbQuality: (botId) => request(`/api/knowledge-builder/bots/${botId}/quality`),
 
+  wfNodeCatalog: () => request("/api/workflow-builder/node-catalog"),
+  wfList: (botId) => request(`/api/workflow-builder/bots/${botId}/workflows`),
+  wfCreate: (botId, body) => request(`/api/workflow-builder/bots/${botId}/workflows`, { method: "POST", body }),
+  wfGet: (workflowId) => request(`/api/workflow-builder/workflows/${workflowId}`),
+  wfUpdate: (workflowId, body) => request(`/api/workflow-builder/workflows/${workflowId}`, { method: "PATCH", body }),
+  wfDelete: (workflowId) => request(`/api/workflow-builder/workflows/${workflowId}`, { method: "DELETE" }),
+  wfPublish: (workflowId) => request(`/api/workflow-builder/workflows/${workflowId}/publish`, { method: "POST" }),
+  wfUnpublish: (workflowId) => request(`/api/workflow-builder/workflows/${workflowId}/unpublish`, { method: "POST" }),
+  wfTest: (workflowId, payload = {}) => request(`/api/workflow-builder/workflows/${workflowId}/test`, { method: "POST", body: { payload } }),
+  wfExecutions: (workflowId) => request(`/api/workflow-builder/workflows/${workflowId}/executions`),
+  wfExecution: (executionId) => request(`/api/workflow-builder/executions/${executionId}`),
+
   team: () => request("/api/rbac/team"),
   rbacMe: () => request("/api/rbac/me"),
   roles: () => request("/api/rbac/roles"),

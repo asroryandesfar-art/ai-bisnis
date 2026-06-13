@@ -130,8 +130,12 @@ async def _signal_counts(pool: asyncpg.Pool, *, bot_id: str, end_user_id: str) -
 
 
 async def recompute_leads(pool: asyncpg.Pool, *, org_id: str, bot_id: str | None = None,
-                          limit: int = 500) -> dict:
-    """Hitung ulang skor untuk semua customer_profiles tenant ini & simpan snapshot baru."""
+                          limit: int = 500, on_new_lead=None) -> dict:
+    """Hitung ulang skor untuk semua customer_profiles tenant ini & simpan snapshot baru.
+
+    `on_new_lead` (opsional): callback async `(*, org_id, bot_id, end_user_id, category,
+    score, end_user) -> None` dipanggil saat kategori lead seorang pelanggan BERUBAH
+    menjadi 'warm'/'hot' (mis. untuk memicu workflow trigger "New Lead")."""
     if bot_id:
         profiles = await pool.fetch(
             """SELECT * FROM customer_profiles WHERE org_id=$1 AND bot_id=$2
@@ -159,6 +163,16 @@ async def recompute_leads(pool: asyncpg.Pool, *, org_id: str, bot_id: str | None
             category=category, breakdown=breakdown, pre_purchase_count=pre_purchase_count,
             objection_count=objection_count, total_purchases=p["total_purchases"],
         )
+
+        prev_category = None
+        if on_new_lead is not None and category in ("warm", "hot"):
+            prev_category = await pool.fetchval(
+                """SELECT category FROM lead_scores
+                   WHERE org_id=$1 AND bot_id=$2 AND end_user_id=$3
+                   ORDER BY computed_at DESC LIMIT 1""",
+                org_id, p["bot_id"], p["end_user_id"],
+            )
+
         await pool.execute(
             """INSERT INTO lead_scores (org_id, bot_id, end_user_id, score, category,
                                         signals, recommended_action)
@@ -168,6 +182,15 @@ async def recompute_leads(pool: asyncpg.Pool, *, org_id: str, bot_id: str | None
             recommendation,
         )
         counts[category] += 1
+
+        if on_new_lead is not None and category in ("warm", "hot") and category != prev_category:
+            try:
+                await on_new_lead(
+                    org_id=org_id, bot_id=str(p["bot_id"]), end_user_id=p["end_user_id"],
+                    category=category, score=score, end_user=dict(p),
+                )
+            except Exception:
+                logger.exception("on_new_lead callback gagal (end_user=%s)", p["end_user_id"])
 
     return {"processed": len(profiles), "by_category": counts}
 
@@ -227,7 +250,7 @@ async def lead_funnel_summary(pool: asyncpg.Pool, *, org_id: str) -> dict:
 # ROUTER
 # ============================================================
 
-def build_lead_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, require_permission) -> APIRouter:
+def build_lead_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, require_permission, on_new_lead=None) -> APIRouter:
     router = APIRouter(prefix="/leads", tags=["leads"])
 
     @router.get("")
@@ -255,6 +278,6 @@ def build_lead_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, re
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
         bot_id: str | None = None,
     ):
-        return await recompute_leads(pool, org_id=user["org_id"], bot_id=bot_id)
+        return await recompute_leads(pool, org_id=user["org_id"], bot_id=bot_id, on_new_lead=on_new_lead)
 
     return router

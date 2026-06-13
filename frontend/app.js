@@ -11,6 +11,8 @@ const state = {
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
   kbOverview: null, kbFaqs: [], kbSops: [],
+  wfNodeCatalog: null, wfWorkflows: [], wfWorkflow: null, wfExecutions: [], wfExecution: null,
+  wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
 };
@@ -26,7 +28,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","team","billing","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -346,6 +348,315 @@ async function renderKnowledgeBuilder() {
   <div class="card"><div class="card-head"><h3>Missing topics</h3></div><div class="card-body" style="padding:16px">${missingTopics}</div></div>`);
 }
 
+const WF_CATEGORY_META = {
+  trigger: { label: "Trigger" }, condition: { label: "Condition" }, agent: { label: "Agent" },
+  action: { label: "Action" }, notification: { label: "Notification" },
+};
+
+function workflowBuilderStyles() {
+  if (document.getElementById('dynamic-workflow-style')) return;
+  const style = document.createElement('style'); style.id = 'dynamic-workflow-style';
+  style.textContent = `
+.wf-editor{display:grid;grid-template-columns:200px 1fr 280px;gap:16px;align-items:start}
+.wf-palette{padding:14px}
+.wf-palette-group{margin-bottom:14px}
+.wf-palette-title{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
+.wf-palette-item{display:block;width:100%;text-align:left;padding:7px 10px;margin-bottom:5px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:11px;cursor:pointer}
+.wf-palette-item:hover{border-color:var(--brand)}
+.wf-canvas-wrap{padding:0;overflow:auto;max-height:560px}
+.wf-canvas{position:relative;min-width:900px;min-height:520px;background-image:radial-gradient(circle,var(--line) 1px,transparent 1px);background-size:20px 20px}
+.wf-canvas-hint{position:absolute;top:16px;left:16px;color:var(--text-3);font-size:11px}
+.wf-edges{position:absolute;top:0;left:0;pointer-events:none;z-index:1}
+.wf-edges .wf-edge-del{pointer-events:auto}
+.wf-node{position:absolute;width:180px;min-height:64px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;z-index:2;box-shadow:var(--shadow)}
+.wf-node.selected{border-color:var(--brand)}
+.wf-node-head{display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:grab;font-size:11px}
+.wf-node-head strong{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-node-tag{font-size:8px;font-weight:700;letter-spacing:.06em;color:var(--text-3);background:var(--surface-3);border-radius:6px;padding:2px 5px}
+.wf-node-del{background:none;border:0;color:var(--text-3);cursor:pointer;padding:0;display:flex}
+.wf-node-del:hover{color:var(--red)}
+.wf-dot{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--surface-3);border:2px solid var(--brand);cursor:crosshair;z-index:3;font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-2)}
+.wf-dot-in{left:-7px;top:24px}
+.wf-dot-out{right:-7px;top:24px}
+.wf-dot-true{right:-7px;top:14px;border-color:var(--green)}
+.wf-dot-false{right:-7px;top:46px;border-color:var(--red)}
+.wf-inspector{padding:14px;min-height:200px}
+.active-row{background:var(--surface-2)}
+@media(max-width:1100px){.wf-editor{grid-template-columns:1fr}.wf-canvas-wrap{max-height:420px}}`;
+  document.head.appendChild(style);
+}
+
+function workflowCategoryShort(cat) {
+  return { trigger: "TRG", condition: "IF", agent: "AGT", action: "ACT", notification: "NTF" }[cat] || String(cat).slice(0, 3).toUpperCase();
+}
+
+function workflowNodeCard(node, catalog, selected) {
+  const def = (catalog[node.category] || {})[node.type] || {};
+  const label = def.label || node.type;
+  const pos = node.position || { x: 40, y: 40 };
+  const isCondition = node.category === "condition";
+  const showInDot = node.category !== "trigger";
+  const outDots = isCondition
+    ? `<span class="wf-dot wf-dot-out wf-dot-true" data-wf-out="${esc(node.id)}" data-wf-handle="true" title="Jika true">T</span><span class="wf-dot wf-dot-out wf-dot-false" data-wf-out="${esc(node.id)}" data-wf-handle="false" title="Jika false">F</span>`
+    : `<span class="wf-dot wf-dot-out" data-wf-out="${esc(node.id)}" data-wf-handle="" title="Output"></span>`;
+  return `<div class="wf-node wf-node-${esc(node.category)} ${selected ? "selected" : ""}" data-wf-node="${esc(node.id)}" style="left:${pos.x}px;top:${pos.y}px">
+    <div class="wf-node-head" data-wf-drag="${esc(node.id)}">
+      <span class="wf-node-tag">${workflowCategoryShort(node.category)}</span>
+      <strong>${esc(label)}</strong>
+      <button class="wf-node-del" data-wf-delete-node="${esc(node.id)}" title="Hapus node">${icon("close", 12)}</button>
+    </div>
+    ${showInDot ? `<span class="wf-dot wf-dot-in" data-wf-in="${esc(node.id)}" title="Input"></span>` : ""}
+    ${outDots}
+  </div>`;
+}
+
+function workflowInspector(node, catalog) {
+  const def = (catalog[node.category] || {})[node.type] || {};
+  const fields = def.config_fields || [];
+  const cfg = node.config || {};
+  const fieldHtml = fields.map((field) => {
+    const value = cfg[field.key] ?? field.default ?? "";
+    if (field.type === "textarea") return `<label class="field full"><span>${esc(field.label)}</span><textarea data-wf-config-field="${esc(field.key)}">${esc(value)}</textarea></label>`;
+    if (field.type === "select") return `<label class="field full"><span>${esc(field.label)}</span><select class="select" data-wf-config-field="${esc(field.key)}">${(field.options || []).map((opt) => `<option value="${esc(opt.value)}" ${String(value) === String(opt.value) ? "selected" : ""}>${esc(opt.label)}</option>`).join("")}</select></label>`;
+    return `<label class="field full"><span>${esc(field.label)}</span><input data-wf-config-field="${esc(field.key)}" type="${field.type === "number" ? "number" : "text"}" value="${esc(value)}" ${field.type === "number" ? 'step="0.01"' : ""}></label>`;
+  }).join("");
+  return `<div class="card-head"><h3>${esc(def.label || node.type)}</h3><span class="subtle" style="font-size:9px">${esc(WF_CATEGORY_META[node.category]?.label || node.category)}</span></div>
+  <form id="wf-node-config-form" data-wf-node-id="${esc(node.id)}" class="form-grid">${fieldHtml || '<p class="subtle">Node ini tidak memerlukan konfigurasi.</p>'}</form>`;
+}
+
+function workflowExecutionDetail(execData) {
+  const ex = execData.execution; const steps = execData.steps || [];
+  const rows = steps.map((s) => `<tr><td>${esc(s.node_type)}</td><td>${esc(s.category)}</td><td>${statusBadge(s.status, s.status)}</td><td>${s.attempt}</td><td>${s.duration_ms ?? "—"} ms</td><td>${s.error ? esc(s.error) : "—"}</td></tr>`).join("");
+  return `<div style="margin-bottom:10px"><strong>Execution ${esc(String(ex.id).slice(0, 8))}</strong> ${statusBadge(ex.status, ex.status)} ${ex.error ? `<span class="subtle" style="color:var(--red)">${esc(ex.error)}</span>` : ""}</div>
+  ${rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Node</th><th>Category</th><th>Status</th><th>Attempt</th><th>Duration</th><th>Error</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="subtle">Tidak ada step.</p>'}`;
+}
+
+function updateWorkflowEdgeLines() {
+  const canvas = el("#wf-canvas"); const svg = el("#wf-edges-svg");
+  if (!canvas || !svg || !state.wfWorkflow) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const width = Math.max(canvas.scrollWidth, canvas.clientWidth);
+  const height = Math.max(canvas.scrollHeight, canvas.clientHeight);
+  svg.setAttribute("width", width); svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const parts = [`<defs><marker id="wf-arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--brand)"/></marker></defs>`];
+  for (const edge of (state.wfWorkflow.edges || [])) {
+    const handle = edge.source_handle || "";
+    const srcDot = canvas.querySelector(`[data-wf-out="${edge.source}"][data-wf-handle="${handle}"]`);
+    const tgtDot = canvas.querySelector(`[data-wf-in="${edge.target}"]`);
+    if (!srcDot || !tgtDot) continue;
+    const s = srcDot.getBoundingClientRect(); const t = tgtDot.getBoundingClientRect();
+    const x1 = s.left + s.width / 2 - canvasRect.left + canvas.scrollLeft;
+    const y1 = s.top + s.height / 2 - canvasRect.top + canvas.scrollTop;
+    const x2 = t.left + t.width / 2 - canvasRect.left + canvas.scrollLeft;
+    const y2 = t.top + t.height / 2 - canvasRect.top + canvas.scrollTop;
+    const mx = (x1 + x2) / 2;
+    const color = handle === "false" ? "var(--red)" : handle === "true" ? "var(--green)" : "var(--brand)";
+    parts.push(`<path d="M${x1},${y1} C ${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#wf-arrow)"/>`);
+    parts.push(`<g class="wf-edge-del" data-wf-delete-edge="${esc(edge.id)}"><circle cx="${mx}" cy="${(y1 + y2) / 2}" r="7" fill="var(--surface-2)" stroke="${color}"/><text x="${mx}" y="${(y1 + y2) / 2 + 3}" text-anchor="middle" font-size="10" fill="${color}">×</text></g>`);
+  }
+  svg.innerHTML = parts.join("");
+}
+
+async function renderWorkflowBuilder() {
+  loadingPage("Workflow Builder", "Rancang automasi AI Agent ala n8n/Zapier/Make.");
+  if (!state.selectedBotId) { setPage(pageHeader("Workflow Builder", "Rancang automasi AI Agent.") + emptyState("No agent available", "Create an agent before building workflows.")); return; }
+  if (!state.wfNodeCatalog) {
+    const catalogResult = await settle("wfNodeCatalog", api.wfNodeCatalog());
+    if (catalogResult.ok) state.wfNodeCatalog = catalogResult.data.categories;
+  }
+  if (state.wfWorkflow) { await renderWorkflowEditor(); return; }
+
+  const listResult = await settle("wfWorkflows", api.wfList(state.selectedBotId));
+  if (!listResult.ok) { setPage(errorState(listResult.error.message)); return; }
+  state.wfWorkflows = listResult.data.workflows || [];
+
+  const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id === state.selectedBotId ? "selected" : ""}>${esc(bot.name)}</option>`).join("");
+  const rows = state.wfWorkflows.map((wf) => `<tr>
+    <td><span class="table-title">${esc(wf.name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(wf.description || "")}</div></td>
+    <td>${esc(wf.trigger_type)}</td>
+    <td>${statusBadge(wf.status, wf.status)}</td>
+    <td>${relativeTime(wf.updated_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button" data-wf-open="${esc(wf.id)}">Edit</button>
+      ${wf.status === "published" ? `<button class="button" data-wf-unpublish="${esc(wf.id)}">Unpublish</button>` : `<button class="button button-primary" data-wf-publish="${esc(wf.id)}">Publish</button>`}
+      <button class="button button-danger" data-wf-delete="${esc(wf.id)}">Delete</button>
+    </div></td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Workflow Builder", "Rancang automasi AI Agent — Trigger, Condition, Agent, Action, dan Notification ala n8n/Zapier/Make.",
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-workflow-builder-bot>${options}</select><button class="button button-primary" data-action="wf-new">${icon("plus", 14)} New workflow</button></div>`)}
+  <div class="card">${rows
+      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Workflow</th><th>Trigger</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : emptyState("Belum ada workflow", "Buat workflow pertama untuk automasi AI Agent — Trigger → Condition → Agent → Action → Notification.")}</div>`);
+}
+
+async function renderWorkflowEditor() {
+  workflowBuilderStyles();
+  const wf = state.wfWorkflow;
+  const catalog = state.wfNodeCatalog || {};
+  const categories = Object.keys(catalog);
+  const palette = categories.map((cat) => `<div class="wf-palette-group"><div class="wf-palette-title">${esc(WF_CATEGORY_META[cat]?.label || cat)}</div>${Object.entries(catalog[cat] || {}).map(([type, def]) => `<button class="wf-palette-item" data-wf-add="${esc(cat)}:${esc(type)}" title="${esc(def.description || "")}">${esc(def.label || type)}</button>`).join("")}</div>`).join("");
+
+  const nodes = wf.nodes || [];
+  const nodeCards = nodes.map((node) => workflowNodeCard(node, catalog, node.id === state.wfSelectedNodeId)).join("");
+
+  const selectedNode = nodes.find((n) => n.id === state.wfSelectedNodeId) || null;
+  const inspector = selectedNode ? workflowInspector(selectedNode, catalog) : `<div class="card-body"><p class="subtle">Pilih node pada canvas untuk mengatur konfigurasinya. Hubungkan node dengan klik titik output (kanan), lalu klik titik input (kiri) node tujuan.</p></div>`;
+
+  const triggerOptions = Object.entries(catalog.trigger || {}).map(([type, def]) => `<option value="${esc(type)}" ${wf.trigger_type === type ? "selected" : ""}>${esc(def.label || type)}</option>`).join("");
+
+  const executions = (state.wfExecutions || []).map((ex) => `<tr class="${state.wfExecution?.execution?.id === ex.id ? "active-row" : ""}" data-wf-execution="${esc(ex.id)}" style="cursor:pointer">
+    <td>${statusBadge(ex.status, ex.status)}</td><td>${esc(ex.trigger_type)}</td><td>${ex.duration_ms ?? "—"} ms</td><td>${relativeTime(ex.started_at)}</td>
+  </tr>`).join("");
+
+  const executionDetail = state.wfExecution ? workflowExecutionDetail(state.wfExecution) : '<p class="subtle">Klik salah satu eksekusi untuk melihat detail step.</p>';
+
+  setPage(`${pageHeader("Workflow Builder", "Trigger → Condition → Agent → Action → Notification.",
+    `<button class="button" data-action="wf-back">${icon("arrow", 14)} Kembali</button>
+     <button class="button" data-action="wf-test">Test</button>
+     ${wf.status === "published" ? `<button class="button" data-action="wf-unpublish">Unpublish</button>` : `<button class="button" data-action="wf-publish">Publish</button>`}
+     <button class="button button-primary" data-action="wf-save">Save</button>`)}
+  <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+    <label class="field" style="min-width:220px"><span>Nama workflow</span><input data-wf-field="name" value="${esc(wf.name)}"></label>
+    <label class="field" style="min-width:220px"><span>Trigger</span><select class="select" data-wf-field="trigger_type">${triggerOptions}</select></label>
+    <label class="field" style="flex:1;min-width:220px"><span>Deskripsi</span><input data-wf-field="description" value="${esc(wf.description || "")}"></label>
+    <div>${statusBadge(wf.status, wf.status)}</div>
+  </div></div>
+  <div class="wf-editor">
+    <div class="card wf-palette">${palette}</div>
+    <div class="card wf-canvas-wrap"><div class="wf-canvas" id="wf-canvas">
+      <svg class="wf-edges" id="wf-edges-svg"></svg>
+      ${nodeCards || '<div class="wf-canvas-hint">Klik node pada palette kiri untuk menambahkannya ke canvas.</div>'}
+    </div></div>
+    <div class="card wf-inspector">${inspector}</div>
+  </div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><h3>Execution history</h3></div>
+    ${executions ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Status</th><th>Trigger</th><th>Duration</th><th>Started</th></tr></thead><tbody>${executions}</tbody></table></div>` : emptyState("Belum ada eksekusi", "Klik Test atau publish workflow ini agar eksekusi tercatat di sini.")}
+    <div class="card-body" id="wf-execution-detail">${executionDetail}</div>
+  </div>`);
+
+  requestAnimationFrame(updateWorkflowEdgeLines);
+}
+
+async function openWorkflow(id) {
+  try {
+    state.wfWorkflow = await api.wfGet(id);
+    state.wfSelectedNodeId = null; state.wfLinkFrom = null; state.wfExecution = null;
+    const execResult = await settle("wfExecutions", api.wfExecutions(id));
+    state.wfExecutions = execResult.ok ? execResult.data.executions || [] : [];
+    await renderWorkflowBuilder();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function backToWorkflowList() {
+  state.wfWorkflow = null; state.wfSelectedNodeId = null; state.wfLinkFrom = null; state.wfExecution = null;
+  renderWorkflowBuilder();
+}
+
+async function createWorkflowPrompt() {
+  const name = prompt("Nama workflow:", "Workflow baru"); if (!name) return;
+  try {
+    const wf = await api.wfCreate(state.selectedBotId, { name, trigger_type: "manual_trigger", nodes: [], edges: [] });
+    toast("Workflow dibuat.", "success");
+    await openWorkflow(wf.id);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function saveWorkflow() {
+  const wf = state.wfWorkflow; if (!wf) return;
+  try {
+    state.wfWorkflow = await api.wfUpdate(wf.id, { name: wf.name, description: wf.description, trigger_type: wf.trigger_type, nodes: wf.nodes, edges: wf.edges });
+    toast("Workflow disimpan.", "success");
+    await renderWorkflowBuilder();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function publishWorkflow() {
+  const wf = state.wfWorkflow; if (!wf) return;
+  try { state.wfWorkflow = await api.wfPublish(wf.id); toast("Workflow dipublikasikan.", "success"); await renderWorkflowBuilder(); }
+  catch (error) { toast(error.message, "error"); }
+}
+
+async function unpublishWorkflow() {
+  const wf = state.wfWorkflow; if (!wf) return;
+  try { state.wfWorkflow = await api.wfUnpublish(wf.id); toast("Workflow diset ke draft.", "success"); await renderWorkflowBuilder(); }
+  catch (error) { toast(error.message, "error"); }
+}
+
+async function deleteWorkflowConfirm(id) {
+  if (!confirm("Hapus workflow ini?")) return;
+  try {
+    await api.wfDelete(id); toast("Workflow dihapus.", "success");
+    if (state.wfWorkflow?.id === id) state.wfWorkflow = null;
+    await renderWorkflowBuilder();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function testWorkflowRun() {
+  const wf = state.wfWorkflow; if (!wf) return;
+  const payloadText = prompt("Payload test (JSON, opsional):", "{}");
+  if (payloadText === null) return;
+  let payload = {};
+  try { payload = payloadText.trim() ? JSON.parse(payloadText) : {}; } catch { return toast("Payload harus berupa JSON valid.", "error"); }
+  try {
+    const result = await api.wfTest(wf.id, payload);
+    toast(`Test selesai: ${result.execution.status}`, result.execution.status === "success" ? "success" : "error");
+    state.wfExecution = result;
+    const execResult = await settle("wfExecutions", api.wfExecutions(wf.id));
+    state.wfExecutions = execResult.ok ? execResult.data.executions || [] : [];
+    await renderWorkflowBuilder();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function openWorkflowExecution(executionId) {
+  try { state.wfExecution = await api.wfExecution(executionId); await renderWorkflowBuilder(); }
+  catch (error) { toast(error.message, "error"); }
+}
+
+function addWorkflowNode(category, type) {
+  const wf = state.wfWorkflow; if (!wf) return;
+  wf.nodes = wf.nodes || [];
+  const index = wf.nodes.length;
+  const node = { id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, category, type, config: {}, position: { x: 40 + (index % 4) * 220, y: 40 + Math.floor(index / 4) * 150 } };
+  wf.nodes.push(node);
+  state.wfSelectedNodeId = node.id;
+  renderWorkflowBuilder();
+}
+
+function deleteWorkflowNode(nodeId) {
+  const wf = state.wfWorkflow; if (!wf) return;
+  wf.nodes = (wf.nodes || []).filter((n) => n.id !== nodeId);
+  wf.edges = (wf.edges || []).filter((e) => e.source !== nodeId && e.target !== nodeId);
+  if (state.wfSelectedNodeId === nodeId) state.wfSelectedNodeId = null;
+  renderWorkflowBuilder();
+}
+
+function selectWorkflowNode(nodeId) {
+  state.wfSelectedNodeId = nodeId;
+  renderWorkflowBuilder();
+}
+
+function startWorkflowLink(nodeId, handle) {
+  state.wfLinkFrom = { nodeId, handle: handle || "" };
+  toast("Klik titik input (kiri) node tujuan untuk menghubungkan.");
+}
+
+function completeWorkflowLink(targetNodeId) {
+  const from = state.wfLinkFrom; state.wfLinkFrom = null;
+  if (!from || from.nodeId === targetNodeId) return;
+  const wf = state.wfWorkflow; if (!wf) return;
+  wf.edges = (wf.edges || []).filter((e) => !(e.source === from.nodeId && (e.source_handle || "") === from.handle));
+  wf.edges.push({ id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, source: from.nodeId, target: targetNodeId, source_handle: from.handle || undefined });
+  renderWorkflowBuilder();
+}
+
+function deleteWorkflowEdge(edgeId) {
+  const wf = state.wfWorkflow; if (!wf) return;
+  wf.edges = (wf.edges || []).filter((e) => e.id !== edgeId);
+  updateWorkflowEdgeLines();
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -642,7 +953,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,team:renderTeam,billing:renderBilling,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -850,7 +1161,53 @@ document.addEventListener("click", async (event) => {
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan) await checkout(plan.dataset.checkoutPlan);
+  if(action==="wf-new") await createWorkflowPrompt();
+  if(action==="wf-back") backToWorkflowList();
+  if(action==="wf-save") await saveWorkflow();
+  if(action==="wf-publish") await publishWorkflow();
+  if(action==="wf-unpublish") await unpublishWorkflow();
+  if(action==="wf-test") await testWorkflowRun();
+  const wfOpen=event.target.closest("[data-wf-open]"); if(wfOpen){ await openWorkflow(wfOpen.dataset.wfOpen); return; }
+  const wfPublish=event.target.closest("[data-wf-publish]"); if(wfPublish){ try{ await api.wfPublish(wfPublish.dataset.wfPublish); toast("Workflow dipublikasikan.","success"); await renderWorkflowBuilder(); }catch(error){ toast(error.message,"error"); } return; }
+  const wfUnpublish=event.target.closest("[data-wf-unpublish]"); if(wfUnpublish){ try{ await api.wfUnpublish(wfUnpublish.dataset.wfUnpublish); toast("Workflow diset ke draft.","success"); await renderWorkflowBuilder(); }catch(error){ toast(error.message,"error"); } return; }
+  const wfDelete=event.target.closest("[data-wf-delete]"); if(wfDelete){ await deleteWorkflowConfirm(wfDelete.dataset.wfDelete); return; }
+  const wfAdd=event.target.closest("[data-wf-add]"); if(wfAdd){ const [cat,type]=wfAdd.dataset.wfAdd.split(":"); addWorkflowNode(cat,type); return; }
+  const wfDeleteNode=event.target.closest("[data-wf-delete-node]"); if(wfDeleteNode){ event.stopPropagation(); deleteWorkflowNode(wfDeleteNode.dataset.wfDeleteNode); return; }
+  const wfOutDot=event.target.closest("[data-wf-out]"); if(wfOutDot){ event.stopPropagation(); startWorkflowLink(wfOutDot.dataset.wfOut,wfOutDot.dataset.wfHandle); return; }
+  const wfInDot=event.target.closest("[data-wf-in]"); if(wfInDot){ event.stopPropagation(); if(state.wfLinkFrom) completeWorkflowLink(wfInDot.dataset.wfIn); return; }
+  const wfDeleteEdge=event.target.closest("[data-wf-delete-edge]"); if(wfDeleteEdge){ deleteWorkflowEdge(wfDeleteEdge.dataset.wfDeleteEdge); return; }
+  const wfExecution=event.target.closest("[data-wf-execution]"); if(wfExecution){ await openWorkflowExecution(wfExecution.dataset.wfExecution); return; }
+  const wfNode=event.target.closest("[data-wf-node]"); if(wfNode){ selectWorkflowNode(wfNode.dataset.wfNode); return; }
 });
+
+document.addEventListener("mousedown", (event) => {
+  const dragHandle = event.target.closest("[data-wf-drag]");
+  if (!dragHandle || !state.wfWorkflow) return;
+  const nodeId = dragHandle.dataset.wfDrag;
+  const nodeEl = dragHandle.closest("[data-wf-node]");
+  const canvas = el("#wf-canvas");
+  if (!nodeEl || !canvas) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const nodeRect = nodeEl.getBoundingClientRect();
+  state.wfDrag = { nodeId, offsetX: event.clientX - nodeRect.left, offsetY: event.clientY - nodeRect.top, canvasRect };
+  event.preventDefault();
+});
+
+document.addEventListener("mousemove", (event) => {
+  if (!state.wfDrag || !state.wfWorkflow) return;
+  const { nodeId, offsetX, offsetY, canvasRect } = state.wfDrag;
+  const canvas = el("#wf-canvas");
+  const nodeEl = canvas?.querySelector(`[data-wf-node="${nodeId}"]`);
+  if (!canvas || !nodeEl) return;
+  const x = Math.max(0, event.clientX - canvasRect.left - offsetX + canvas.scrollLeft);
+  const y = Math.max(0, event.clientY - canvasRect.top - offsetY + canvas.scrollTop);
+  nodeEl.style.left = `${x}px`; nodeEl.style.top = `${y}px`;
+  const node = (state.wfWorkflow.nodes || []).find((n) => n.id === nodeId);
+  if (node) node.position = { x, y };
+  updateWorkflowEdgeLines();
+});
+
+document.addEventListener("mouseup", () => { state.wfDrag = null; });
 
 document.addEventListener("submit", async (event) => {
   if(event.target.id==="login-form"){
@@ -877,9 +1234,17 @@ document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-document-upload]")) await uploadDocument(event.target);
   if(event.target.matches("[data-knowledge-builder-bot]")){ state.selectedBotId=event.target.value; await renderKnowledgeBuilder(); }
   if(event.target.matches("[data-faq-import]")) await uploadFaqCsv(event.target);
+  if(event.target.matches("[data-workflow-builder-bot]")){ state.selectedBotId=event.target.value; state.wfWorkflow=null; state.wfExecution=null; await renderWorkflowBuilder(); }
+  if(event.target.matches("[data-wf-field]") && state.wfWorkflow){ state.wfWorkflow[event.target.dataset.wfField]=event.target.value; }
 });
 
 document.addEventListener("input", (event) => {
+  if(event.target.matches("[data-wf-field]") && state.wfWorkflow){ state.wfWorkflow[event.target.dataset.wfField]=event.target.value; }
+  if(event.target.matches("[data-wf-config-field]") && state.wfWorkflow){
+    const form=event.target.closest("#wf-node-config-form");
+    const node=(state.wfWorkflow.nodes||[]).find((n)=>n.id===form?.dataset.wfNodeId);
+    if(node){ node.config=node.config||{}; node.config[event.target.dataset.wfConfigField]=event.target.value; }
+  }
   if(event.target.matches("[data-conversation-search]")){
     const query=event.target.value.toLowerCase(); els(".conversation-row").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(query));
   }

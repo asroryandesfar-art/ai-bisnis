@@ -1075,6 +1075,61 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_kb_sops_document ON kb_generated_sops(document_id);",
         "CREATE INDEX IF NOT EXISTS idx_kb_quality_org ON kb_quality_reports(org_id, bot_id, created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_kb_quality_document ON kb_quality_reports(document_id, created_at DESC);",
+        # ── AI Workflow Builder ──────────────────────────────────
+        """
+        CREATE TABLE IF NOT EXISTS workflows (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','disabled')),
+            trigger_type TEXT NOT NULL DEFAULT 'manual_trigger',
+            nodes JSONB NOT NULL DEFAULT '[]'::jsonb,
+            edges JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            published_at TIMESTAMPTZ
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS workflow_executions (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+            trigger_type TEXT NOT NULL,
+            trigger_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','success','failed')),
+            error TEXT,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            duration_ms INT
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS workflow_execution_steps (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+            node_id TEXT NOT NULL,
+            node_type TEXT NOT NULL,
+            category TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','success','failed','skipped')),
+            attempt INT NOT NULL DEFAULT 1,
+            input JSONB NOT NULL DEFAULT '{}'::jsonb,
+            output JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error TEXT,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            duration_ms INT
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_workflows_org ON workflows(org_id, bot_id, status);",
+        "CREATE INDEX IF NOT EXISTS idx_workflows_trigger ON workflows(org_id, trigger_type, status);",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow ON workflow_executions(workflow_id, started_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_executions_org ON workflow_executions(org_id, started_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_execution_steps_execution ON workflow_execution_steps(execution_id, started_at);",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -3069,6 +3124,53 @@ async def _run_knowledge_builder_pipeline(doc_id: str) -> None:
             pass
 
 
+def get_workflow_agent_config() -> dict:
+    """Kredensial LLM untuk node kategori 'agent' di AI Workflow Builder."""
+    return {
+        "api_key": cfg.groq_api_key,
+        "model": cfg.groq_cheap_model or cfg.groq_model,
+        "base_url": (cfg.groq_base_url or "").strip() or None,
+        "app_url": cfg.app_url,
+    }
+
+
+async def _dispatch_workflow_trigger(
+    trigger_type: str, payload: dict, *, org_id: str, bot_id: str | None,
+) -> None:
+    """Cari & jalankan AI Workflow yang published untuk event trigger ini.
+
+    Dipanggil fire-and-forget via asyncio.create_task supaya tidak menghambat
+    response endpoint pemicu (chat/handoff/dll).
+    """
+    pool = await get_pool_safe()
+    if not pool:
+        return
+    try:
+        from workflow_engine import trigger_workflows
+        await trigger_workflows(
+            pool, org_id=org_id, bot_id=bot_id, trigger_type=trigger_type, payload=payload,
+            agent_config=get_workflow_agent_config(), enqueue_handoff_fn=_platform_enqueue_handoff,
+        )
+    except Exception:
+        logger.exception("Workflow trigger dispatch gagal (trigger=%s org=%s)", trigger_type, org_id)
+
+
+async def _on_new_lead_workflow_trigger(*, org_id: str, bot_id: str, end_user_id: str, category: str, score, end_user: dict) -> None:
+    """Callback untuk lead_engine.recompute_leads — picu workflow trigger 'new_lead'
+    saat kategori lead seorang pelanggan berubah menjadi warm/hot."""
+    payload = {
+        "end_user_id": end_user_id,
+        "bot_id": bot_id,
+        "category": category,
+        "score": float(score) if score is not None else None,
+        "customer_type": category,
+        "end_user_name": end_user.get("display_name"),
+        "end_user_email": end_user.get("email"),
+        "tags": list(end_user.get("preferred_topics") or []),
+    }
+    await _dispatch_workflow_trigger("new_lead", payload, org_id=org_id, bot_id=bot_id)
+
+
 class KnowledgeBaseUrlReq(BaseModel):
     url: str
     title: str | None = None
@@ -3348,6 +3450,7 @@ async def chat(
         if not conv:
             conv_id = None  # reset kalau tidak valid
 
+    is_new_conversation = not conv_id
     if not conv_id:
         conv_id = str(uuid.uuid4())
         user_meta = body.user_meta or {}
@@ -3359,6 +3462,15 @@ async def chat(
             user_meta.get("userId"), user_meta.get("name"),
             user_meta.get("email"), json.dumps(user_meta),
         )
+        asyncio.create_task(_dispatch_workflow_trigger(
+            "new_customer",
+            {
+                "conversation_id": conv_id, "bot_id": bot_id,
+                "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                "end_user_email": user_meta.get("email"), "customer_type": "new",
+            },
+            org_id=str(bot["org_id"]), bot_id=bot_id,
+        ))
 
     # 4. Simpan pesan user
     user_msg_id = str(uuid.uuid4())
@@ -3570,6 +3682,16 @@ async def chat(
                         pool, org_id=bot["org_id"], conversation_id=conv_id,
                         reason=handoff_reason, priority=handoff_priority,
                     )
+                    asyncio.create_task(_dispatch_workflow_trigger(
+                        "new_ticket",
+                        {
+                            "conversation_id": conv_id, "bot_id": bot_id,
+                            "reason": handoff_reason, "priority": handoff_priority,
+                            "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                            "end_user_email": user_meta.get("email"),
+                        },
+                        org_id=str(bot["org_id"]), bot_id=bot_id,
+                    ))
                 except Exception:
                     logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
     except Exception as e:
@@ -3596,6 +3718,16 @@ async def chat(
                         pool, org_id=bot["org_id"], conversation_id=conv_id,
                         reason="ai_error", priority="high",
                     )
+                    asyncio.create_task(_dispatch_workflow_trigger(
+                        "new_ticket",
+                        {
+                            "conversation_id": conv_id, "bot_id": bot_id,
+                            "reason": "ai_error", "priority": "high",
+                            "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                            "end_user_email": user_meta.get("email"),
+                        },
+                        org_id=str(bot["org_id"]), bot_id=bot_id,
+                    ))
                 except Exception:
                     logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
 
@@ -3630,6 +3762,20 @@ async def chat(
             )
         except Exception:
             logger.exception("Gagal menjadwalkan persistensi Intelligence")
+
+        asyncio.create_task(_dispatch_workflow_trigger(
+            "message_received",
+            {
+                "conversation_id": conv_id, "bot_id": bot_id,
+                "message": body.message, "answer": answer,
+                "intent": result.intent, "confidence": result.confidence,
+                "tags": result.topics,
+                "customer_type": "new" if is_new_conversation else "returning",
+                "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                "end_user_email": user_meta.get("email"),
+            },
+            org_id=str(bot["org_id"]), bot_id=bot_id,
+        ))
 
     resp = {
         "answer":      answer,
@@ -4254,6 +4400,7 @@ try:
     from bn_platform.cost_intelligence import build_cost_intelligence_router
     from bn_platform.feedback_learning import build_feedback_learning_router
     from bn_platform.knowledge_builder import build_knowledge_builder_router
+    from bn_platform.workflow_builder import build_workflow_builder_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -4329,6 +4476,7 @@ try:
         build_lead_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
+            on_new_lead=_on_new_lead_workflow_trigger,
         ),
         prefix="/api",
     )
@@ -4374,6 +4522,14 @@ try:
             get_pool=get_pool, get_current_user=get_current_user,
             run_pipeline=_run_knowledge_builder_pipeline,
             store_chunk_embeddings=_store_chunk_embeddings,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_workflow_builder_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            get_agent_config=get_workflow_agent_config,
+            enqueue_handoff_fn=_platform_enqueue_handoff,
         ),
         prefix="/api",
     )
