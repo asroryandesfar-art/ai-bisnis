@@ -3007,6 +3007,18 @@ async def _meta_route_and_reply_whatsapp(
             except Exception:
                 wa_token = ""
 
+    # Sumber utama: kredensial per-tenant terenkripsi dari Embedded Signup.
+    if bot_id and org_id and not wa_token:
+        try:
+            acc = await db_get_whatsapp_account(
+                pool, org_id=str(org_id), bot_id=str(bot_id), secret_key=cfg.secret_key,
+            )
+            if acc and acc.get("connection_status") == "connected":
+                wa_token = (acc.get("customer_access_token") or "").strip()
+        except Exception:
+            wa_token = ""
+
+    # Fallback lama: konfigurasi integrations manual (meta.wa_token).
     if bot_id and org_id and not wa_token:
         try:
             integ = await _get_integrations_auto(pool, str(org_id))
