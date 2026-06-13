@@ -24,6 +24,8 @@ from first_principle_agent import FirstPrincipleAgent, format_first_principle_br
 from uncertainty_engine import UncertaintyEngine
 from identity_agent import IdentityAgent
 from reasoning_controller import ReasoningController
+import tool_registry
+from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
 from agent_observability import observe_agent, trace_request
 
 MAX_RETRIES = 2
@@ -190,6 +192,20 @@ class SupervisorAgent:
                     part for part in [existing_kb, style_guidance] if part
                 ),
             }
+
+        # ── STEP 0.3: Website Reader — jika user mengirim URL, baca halamannya ─
+        detected_url = reasoning_brief.get("knowledge_routing", {}).get("detected_url")
+        if detected_url:
+            website_result = await tool_registry.read_website(detected_url)
+            website_context = format_website_reading(website_result)
+            if website_context:
+                existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+                ctx = {
+                    **ctx,
+                    "knowledge_base_context": "\n\n".join(
+                        part for part in [existing_kb, website_context, WEBSITE_READER_BLOCK] if part
+                    ),
+                }
 
         # ── STEP 0.5: Socratic reflection wajib sebelum routing/jawaban ─
         socratic_result = await self.socratic_engine.safe_run(ctx)
