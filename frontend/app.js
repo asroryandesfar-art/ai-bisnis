@@ -10,7 +10,7 @@ const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
-  conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
+  conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], channelAnalytics: null, integrations: null,
   kbOverview: null, kbFaqs: [], kbSops: [], security: null, securityScan: null,
   improvement: null, improvementDays: 30,
   wfNodeCatalog: null, wfWorkflows: [], wfWorkflow: null, wfExecutions: [], wfExecution: null,
@@ -31,7 +31,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -851,6 +851,26 @@ async function submitCreateApiKey() {
   } catch(error) { toast(error.message,"error"); button.disabled = false; }
 }
 
+async function renderChannels() {
+  loadingPage("Channels", "One AI system for WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat.");
+  const [statusResult, analyticsResult] = await Promise.all([settle("status",api.channelStatus()),settle("analytics",api.channelAnalytics(30))]);
+  state.channels = statusResult.ok ? statusResult.data.channels || [] : [];
+  state.channelAnalytics = analyticsResult.ok ? analyticsResult.data : {};
+  const catalog = [
+    ["whatsapp","WhatsApp","Meta Cloud API"],["telegram","Telegram","Telegram Bot API"],
+    ["instagram","Instagram","Instagram Messaging API"],["facebook","Facebook Messenger","Messenger Platform"],
+    ["website","Website Chat","Embeddable BotNesia widget"],
+  ];
+  const cards = catalog.map(([key,label,provider]) => {
+    const item = state.channels.find((row)=>row.channel_type===key && row.status!=="disconnected") || state.channels.find((row)=>row.channel_type===key);
+    const status = item?.status || "disconnected";
+    return `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">${initials(label)}</span><div><h3>${esc(label)}</h3><span class="subtle">${esc(provider)}</span></div></div>${statusBadge(status,status.charAt(0).toUpperCase()+status.slice(1))}</div><div class="card-body"><div class="channel-stat"><span>Last activity</span><strong>${relativeTime(item?.last_activity_at||item?.connected_at)}</strong></div><div class="channel-stat"><span>Message count</span><strong>${formatNumber(item?.message_count||0)}</strong></div><div class="channel-stat"><span>Connection</span><strong>${esc(item?.display_name||"Not configured")}</strong></div><div class="channel-actions">${status==="connected"?`<button class="button" data-action="refresh-channel-health">Health check</button><button class="button button-danger" data-disconnect-channel="${esc(item.id)}">Disconnect</button>`:`<button class="button button-primary" data-connect-channel-type="${key}">Connect ${esc(label)}</button>`}</div></div></article>`;
+  }).join("");
+  const a=state.channelAnalytics||{};
+  const usage=(a.channel_usage||[]).map((row)=>`<tr><td><span class="table-title">${esc(row.channel)}</span></td><td>${formatNumber(row.messages)}</td><td>${formatNumber(row.active_users)}</td></tr>`).join("");
+  setPage(`${pageHeader("Omni Channel Manager","All inbound messages use the same Supervisor, Knowledge Base, Memory, and specialist agents.",`<button class="button" data-action="refresh-channel-health">${icon('refresh',14)} Health check</button><button class="button button-primary" data-action="connect-channel">${icon('plus',14)} Connect channel</button>`)}<div class="grid grid-4"><article class="card metric-card"><div class="metric-label">Total Messages</div><div class="metric-value">${formatNumber(a.total_messages)}</div><div class="metric-meta">Last 30 days</div></article><article class="card metric-card"><div class="metric-label">Active Users</div><div class="metric-value">${formatNumber(a.active_users)}</div><div class="metric-meta">Unique channel users</div></article><article class="card metric-card"><div class="metric-label">Response Time</div><div class="metric-value">${Number(a.response_time_ms||0).toFixed(0)}ms</div><div class="metric-meta">Average channel delivery</div></article><article class="card metric-card"><div class="metric-label">Conversion Rate</div><div class="metric-value">${Number(a.conversion_rate||0).toFixed(1)}%</div><div class="metric-meta">Marked conversions</div></article></div><div class="grid channel-grid" style="margin-top:16px">${cards}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Channel Usage</h3><span class="subtle">Per-tenant message and active-user distribution</span></div></div>${usage?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Messages</th><th>Active Users</th></tr></thead><tbody>${usage}</tbody></table></div>`:emptyState("No channel traffic","Usage appears after the first inbound message.")}</div>`);
+}
+
 async function renderSettings() {
   loadingPage("Platform Settings","Configure channels, security posture, and workspace connectivity.");
   const [channelResult, integrationResult] = await Promise.all([settle("channels",api.channels()),settle("integrations",api.integrations())]);
@@ -897,15 +917,26 @@ function exportTeam() {
   const link=document.createElement("a"); link.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); link.download="botnesia-team.csv"; link.click(); URL.revokeObjectURL(link.href);
 }
 
-function showConnectChannel() {
+function showConnectChannel(preselected = "website") {
   const bots=state.bots.map((bot)=>`<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
-  el("#modal-root").innerHTML=modal({title:"Connect business channel",body:`<form id="connect-channel-form"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>Channel</span><select name="channel_type"><option value="website">Website</option><option value="telegram">Telegram</option></select></label><label class="field full"><span>Display name</span><input name="display_name" required placeholder="Main website"></label><label class="field"><span>External ID</span><input name="external_id" placeholder="Optional"></label><label class="field"><span>Telegram bot token</span><input name="credential" type="password" placeholder="Only required for Telegram"></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-connect-channel">Connect</button>`});
+  const options=[["whatsapp","WhatsApp"],["telegram","Telegram"],["instagram","Instagram"],["facebook","Facebook Messenger"],["website","Website Chat"]].map(([value,label])=>`<option value="${value}" ${value===preselected?'selected':''}>${label}</option>`).join("");
+  el("#modal-root").innerHTML=modal({title:"Connect business channel",body:`<form id="connect-channel-form"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>Channel</span><select name="channel_type">${options}</select></label><label class="field full"><span>Display name</span><input name="display_name" required placeholder="Main customer channel"></label><label class="field"><span>External ID</span><input name="external_id" placeholder="Phone ID, Page ID, account ID, or domain"></label><label class="field"><span>Access token / Telegram token</span><input name="access_token" type="password" placeholder="Leave empty for Website Chat"></label><label class="field full"><span>Allowed website domain</span><input name="domain" placeholder="https://example.com (Website Chat only)"></label><p class="subtle full">WhatsApp: external ID = phone number ID. Instagram: Instagram account ID. Facebook: Page ID. Telegram: paste bot token.</p></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-connect-channel">Connect</button>`});
 }
 
 async function submitConnectChannel() {
   const form=el("#connect-channel-form"); if(!form || !form.reportValidity())return; const data=Object.fromEntries(new FormData(form));
-  const credentials=data.credential ? (data.channel_type==="telegram"?{bot_token:data.credential}:{token:data.credential}) : {}; delete data.credential; data.credentials=credentials;
-  try { await api.connectChannel(data); el("#modal-root").innerHTML=""; toast("Channel connected.","success"); await renderSettings(); } catch(error){ toast(error.message,"error"); }
+  const token=data.access_token; delete data.access_token; const domain=data.domain; delete data.domain;
+  if(data.channel_type==="telegram") data.credentials=token?{bot_token:token}:{};
+  else if(data.channel_type==="whatsapp") data.credentials=token?{access_token:token,phone_number_id:data.external_id}:{};
+  else if(data.channel_type==="instagram") data.credentials=token?{access_token:token,instagram_account_id:data.external_id}:{};
+  else if(data.channel_type==="facebook") data.credentials=token?{access_token:token,page_id:data.external_id}:{};
+  else data.credentials={}; data.config=domain?{domain}:{};
+  try { const result=await api.connectChannel(data); el("#modal-root").innerHTML=""; toast("Channel connected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); if(data.channel_type==="website") showWidgetSnippet(result.channel); } catch(error){ toast(error.message,"error"); }
+}
+
+function showWidgetSnippet(channel) {
+  const snippet=`<script src="${location.origin}/botnesia-widget.js" data-connection-id="${channel.id}"></script>\n<div id="botnesia-chat"></div>`;
+  el("#modal-root").innerHTML=modal({title:"Website Chat ready",body:`<p class="subtle">Embed this snippet before the closing body tag.</p><label class="field"><span>Embed code</span><textarea readonly style="min-height:110px" onclick="this.select()">${esc(snippet)}</textarea></label>`,footer:`<button class="button button-primary" data-action="close-modal">Done</button>`});
 }
 
 function showMetaIntegration() {
@@ -1083,7 +1114,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1286,11 +1317,13 @@ document.addEventListener("click", async (event) => {
   const revokeApiKey=event.target.closest("[data-revoke-api-key]"); if(revokeApiKey && confirm("Revoke this API key? Any integration using it will stop working.")){ try{ await api.revokeApiKey(revokeApiKey.dataset.revokeApiKey); toast("API key revoked.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
   if(action==="invite-member") showInviteMember();
   if(action==="submit-invite-member") await submitInviteMember();
-  const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); await renderSettings(); }catch(error){toast(error.message,"error");} }
+  const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); }catch(error){toast(error.message,"error");} }
   if(action==="manage-member") showMemberRole(event.target.closest("[data-team-user]")?.dataset.teamUser);
   if(action==="submit-member-role") await submitMemberRole();
   if(action==="export-team") exportTeam();
   if(action==="connect-channel") showConnectChannel();
+  const connectType=event.target.closest("[data-connect-channel-type]"); if(connectType) showConnectChannel(connectType.dataset.connectChannelType);
+  if(action==="refresh-channel-health"){ try{ await api.channelStatus(true); toast("Channel health refreshed.","success"); if(state.route==="channels") await renderChannels(); }catch(error){toast(error.message,"error");} }
   if(action==="submit-connect-channel") await submitConnectChannel();
   const deleteDoc=event.target.closest("[data-delete-document]"); if(deleteDoc && confirm("Delete this knowledge document?")){ try{ await api.deleteDocument(state.selectedBotId,deleteDoc.dataset.deleteDocument); toast("Document deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} }
   const kbRegenerate=event.target.closest("[data-kb-regenerate]"); if(kbRegenerate){ await regenerateKb(kbRegenerate.dataset.kbRegenerate); return; }

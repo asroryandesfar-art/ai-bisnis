@@ -366,6 +366,13 @@ async def frontend_asset(asset_path: str):
         headers={"Cache-Control": "no-cache"},
     )
 
+@app.get("/botnesia-widget.js", include_in_schema=False)
+async def botnesia_widget_js():
+    widget_path = _FRONTEND_DIR / "botnesia-widget.js"
+    if not widget_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "BotNesia widget tidak ditemukan")
+    return FileResponse(widget_path, media_type="application/javascript", headers={"Cache-Control": "public, max-age=300"})
+
 @app.get("/api.js", include_in_schema=False)
 async def api_client_js():
     if not _API_JS_PATH.exists():
@@ -3509,6 +3516,8 @@ async def chat(
 
     # Rate limit (endpoint public). Key: userId/email kalau ada, fallback anonymous.
     user_meta = body.user_meta or {}
+    internal_channel = str(user_meta.get("_channel") or user_meta.get("channel") or "widget")
+    safe_user_meta = {key: value for key, value in user_meta.items() if key not in {"channel", "_channel"}}
     user_key = (
         user_meta.get("userId")
         or user_meta.get("email")
@@ -3557,24 +3566,27 @@ async def chat(
 
     # 3. Ambil atau buat conversation
     conv_id = body.session_id
+    conv = None
     if conv_id:
         conv = await pool.fetchrow(
             "SELECT id FROM conversations WHERE id=$1 AND bot_id=$2", conv_id, bot_id
         )
-        if not conv:
-            conv_id = None  # reset kalau tidak valid
+        # Connector internal memakai UUID deterministik agar seluruh pesan user
+        # dari channel yang sama tetap berada pada satu memory thread.
+        if not conv and not user_meta.get("_channel"):
+            conv_id = None
 
-    is_new_conversation = not conv_id
-    if not conv_id:
-        conv_id = str(uuid.uuid4())
+    is_new_conversation = not bool(conv)
+    if not conv:
+        conv_id = conv_id or str(uuid.uuid4())
         user_meta = body.user_meta or {}
         await pool.execute(
             """INSERT INTO conversations
-               (id, bot_id, org_id, end_user_id, end_user_name, end_user_email, end_user_meta)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)""",
+               (id, bot_id, org_id, end_user_id, end_user_name, end_user_email, end_user_meta, channel)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
             conv_id, bot_id, bot["org_id"],
-            user_meta.get("userId"), user_meta.get("name"),
-            user_meta.get("email"), json.dumps(user_meta),
+            user_meta.get("userId"), user_meta.get("name") or user_meta.get("display_name"),
+            user_meta.get("email"), json.dumps(safe_user_meta), internal_channel,
         )
         asyncio.create_task(_dispatch_workflow_trigger(
             "new_customer",
@@ -3728,7 +3740,7 @@ async def chat(
             "messages": messages_for_claude,
             "knowledge_base_context": system,
             "resolved": False,
-            "metadata": body.user_meta or {},
+            "metadata": safe_user_meta,
             "reasoning_mode": bot["reasoning_mode"],
             "self_knowledge_context": self_knowledge_context,
             "business_context": business_context,
@@ -4573,7 +4585,7 @@ try:
         if not pool:
             return "Maaf, sistem sedang tidak tersedia. Coba lagi sebentar."
         session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{channel}:{external_user_id}"))
-        user_meta = {"userId": external_user_id, "channel": channel, "display_name": display_name}
+        user_meta = {"userId": external_user_id, "name": display_name, "_channel": channel}
         req = ChatReq(message=text, session_id=session_id, user_meta=user_meta)
         try:
             resp = await chat(bot_id=bot_id, body=req, pool=pool)

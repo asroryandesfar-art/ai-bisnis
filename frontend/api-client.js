@@ -166,7 +166,9 @@ export const api = {
 
   channels: () => request("/api/channels"),
   connectChannel: (body) => request("/api/channels/connect", { method: "POST", body }),
-  disconnectChannel: (id) => request("/api/channels/" + id, { method: "DELETE" }),
+  disconnectChannel: (id) => request("/api/channels/disconnect", { method: "POST", body: { connection_id:id } }),
+  channelStatus: (refresh = false) => request(`/api/channels/status${encodeQuery({ refresh })}`),
+  channelAnalytics: (days = 30) => request(`/api/channels/analytics${encodeQuery({ days })}`),
   integrations: () => request("/integrations"),
   saveMeta: (body) => request("/integrations/meta", { method: "POST", body }),
   mapMetaBot: (waPhoneNumberId, botId) => request("/integrations/meta/map-bot", { method: "POST", body: { wa_phone_number_id: waPhoneNumberId, bot_id: botId } }),
