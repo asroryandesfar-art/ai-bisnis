@@ -636,3 +636,32 @@ CREATE INDEX IF NOT EXISTS idx_sessions_org  ON sessions(org_id, revoked_at);
 ALTER TABLE api_keys
     ADD COLUMN IF NOT EXISTS usage_count BIGINT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS rotated_at  TIMESTAMPTZ;
+
+-- ============================================================
+-- AI IMPROVEMENT ENGINE — rekomendasi hasil deteksi otomatis
+-- ============================================================
+-- AI hanya mendeteksi & merekomendasikan (knowledge gap, prompt,
+-- workflow, agent). Admin yang memutuskan via status (reviewed/applied/dismissed).
+CREATE TABLE IF NOT EXISTS ai_improvement_recommendations (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id           UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id           UUID REFERENCES bots(id) ON DELETE SET NULL,
+    category         TEXT NOT NULL CHECK (category IN ('knowledge_gap','prompt_improvement','workflow_improvement','agent_improvement')),
+    severity         TEXT NOT NULL DEFAULT 'medium' CHECK (severity IN ('low','medium','high','critical')),
+    title            TEXT NOT NULL,
+    description      TEXT NOT NULL,
+    evidence         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurrence_count INT NOT NULL DEFAULT 1,
+    status           TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','reviewed','applied','dismissed')),
+    resolution_note  TEXT,
+    reviewed_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at      TIMESTAMPTZ,
+    dedup_key        TEXT NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, dedup_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_air_org      ON ai_improvement_recommendations(org_id, status, severity);
+CREATE INDEX IF NOT EXISTS idx_air_category ON ai_improvement_recommendations(org_id, category, status);
+CREATE INDEX IF NOT EXISTS idx_air_bot      ON ai_improvement_recommendations(bot_id);

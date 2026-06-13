@@ -4542,6 +4542,7 @@ try:
     from bn_platform.feedback_learning import build_feedback_learning_router
     from bn_platform.knowledge_builder import build_knowledge_builder_router
     from bn_platform.workflow_builder import build_workflow_builder_router
+    from bn_platform.improvement_engine import build_improvement_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -4675,6 +4676,13 @@ try:
             get_pool=get_pool, get_current_user=get_current_user,
             get_agent_config=get_workflow_agent_config,
             enqueue_handoff_fn=_platform_enqueue_handoff,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_improvement_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
         ),
         prefix="/api",
     )

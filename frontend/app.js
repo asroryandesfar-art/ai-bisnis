@@ -11,6 +11,7 @@ const state = {
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
   kbOverview: null, kbFaqs: [], kbSops: [], security: null, securityScan: null,
+  improvement: null, improvementDays: 30,
   wfNodeCatalog: null, wfWorkflows: [], wfWorkflow: null, wfExecutions: [], wfExecution: null,
   wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
@@ -28,7 +29,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -134,6 +135,52 @@ async function renderFeedbackLearning() {
   const listCard = (title, rows, empty, negative = false) => `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div>${rows.length?`<div class="feedback-list">${rows.map((row)=>`<div class="feedback-list-item"><strong>${esc(row.question || 'No question recorded')}</strong><p>${esc(row.comment || row.failure_reason || row.answer || '')}</p><span class="subtle">${formatNumber(row.feedback_count || row.failure_count || row.occurrence_count || 1)} ${negative?'failures':'signals'}</span></div>`).join('')}</div>`:emptyState(empty,"Feedback will appear after users rate AI answers.")}</div>`;
   const queueRows = (queueData.queue || []).map((item) => `<tr><td><span class="table-title">${esc(item.question)}</span><div class="subtle" style="margin-top:4px">${esc(item.failure_reason || '')}</div></td><td>${statusBadge(item.action_type,item.action_type)}</td><td>${formatNumber(item.occurrence_count)}</td><td>${statusBadge(item.status,item.status)}</td><td><div style="display:flex;gap:6px">${item.status==='pending'?`<button class="button" data-learning-action="in_progress" data-learning-id="${esc(item.id)}">Start</button>`:''}${item.status!=='resolved'&&item.status!=='dismissed'?`<button class="button button-primary" data-learning-action="resolved" data-learning-id="${esc(item.id)}">Resolve</button>`:''}</div></td></tr>`).join('');
   setPage(`${pageHeader("Feedback Learning","User ratings feed a governed queue for knowledge, prompt, and workflow improvements.",`<span class="status-badge active">30-day feedback window</span>`)}<div class="grid grid-4">${metricCard("Total Feedback",formatNumber(data.total_feedback),`${formatNumber(data.helpful)} helpful`,`learning`)}${metricCard("Helpful Rate",`${Number(data.helpful_rate||0).toFixed(1)}%`,"Positive user ratings","dashboard","trend-up")}${metricCard("Not Helpful",formatNumber(data.not_helpful),"Answers requiring review","observability",data.not_helpful?'trend-down':'trend-up')}${metricCard("Learning Queue",formatNumber(data.queue?.pending),`${formatNumber(data.queue?.in_progress)} in progress`,`knowledge`)}</div><div class="grid grid-2" style="margin-top:16px">${listCard("Top Positive Feedback",data.top_positive_feedback||[],"No positive feedback")}${listCard("Top Negative Feedback",data.top_negative_feedback||[],"No negative feedback",true)}${listCard("Most Failed Questions",data.most_failed_questions||[],"No failed questions",true)}${listCard("Knowledge Gaps",data.knowledge_gaps||[],"No knowledge gaps",true)}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Learning Queue</h3><span class="subtle">Use each item to update knowledge, prompt, or workflow</span></div></div>${queueRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Failed question</th><th>Action</th><th>Signals</th><th>Status</th><th></th></tr></thead><tbody>${queueRows}</tbody></table></div>`:emptyState("Learning queue is empty","Not Helpful ratings automatically create actionable learning items.")}</div>`);
+}
+
+function improvementSeverityStatus(severity) {
+  if (severity === "critical" || severity === "high") return "error";
+  if (severity === "medium") return "pending";
+  return "ready";
+}
+
+function improvementRecStatus(status) {
+  if (status === "applied") return "resolved";
+  if (status === "dismissed") return "inactive";
+  if (status === "reviewed") return "active";
+  return "pending";
+}
+
+function improvementRecRow(rec) {
+  const actions = [
+    rec.status === "new" ? `<button class="button" data-improvement-action="reviewed" data-improvement-id="${esc(rec.id)}">Mark reviewed</button>` : "",
+    rec.status !== "applied" ? `<button class="button button-primary" data-improvement-action="applied" data-improvement-id="${esc(rec.id)}">Mark applied</button>` : "",
+    rec.status !== "dismissed" ? `<button class="button button-danger" data-improvement-action="dismissed" data-improvement-id="${esc(rec.id)}">Dismiss</button>` : "",
+  ].join("");
+  return `<tr><td><span class="status-badge ${improvementSeverityStatus(rec.severity)}">${esc(rec.severity)}</span></td><td><span class="status-badge ready">${esc(rec.category.replace(/_/g," "))}</span></td><td><span class="table-title">${esc(rec.title)}</span><div class="subtle" style="margin-top:4px;font-size:10px">${esc(rec.description)}</div>${rec.resolution_note?`<div class="subtle" style="margin-top:4px;font-size:10px">Catatan: ${esc(rec.resolution_note)}</div>`:''}</td><td>${formatNumber(rec.occurrence_count)}</td><td>${statusBadge(improvementRecStatus(rec.status),rec.status)}</td><td style="display:flex;gap:6px;flex-wrap:wrap">${actions}</td></tr>`;
+}
+
+async function renderImprovement() {
+  loadingPage("AI Improvement Center", "BotNesia evaluasi diri: deteksi masalah otomatis dan rekomendasi perbaikan untuk admin.");
+  const days = state.improvementDays || 30;
+  const result = await settle("improvement", api.improvementDashboard(days));
+  if (!result.ok) { setPage(`${pageHeader("AI Improvement Center","BotNesia evaluasi diri: deteksi masalah otomatis dan rekomendasi perbaikan untuk admin.")}${errorState(result.error.message)}`); return; }
+  state.improvement = result.data;
+  const data = state.improvement;
+  const summary = data.summary || {};
+
+  const topIssueRows = (data.top_issues || []).map((issue) => `<tr><td><span class="status-badge ready">${esc(issue.type.replace(/_/g," "))}</span></td><td class="table-title">${esc(issue.title)}</td><td>${formatNumber(issue.count)}</td></tr>`).join("");
+
+  const weaknessRows = (data.agent_weaknesses || []).map((row) => `<tr><td><span class="table-title">${esc(row.bot_name)}</span></td><td>${formatNumber(row.conversations)}</td><td>${row.avg_quality_score ?? '—'}</td><td>${row.avg_confidence ?? '—'}</td><td>${formatNumber(row.failed_verifications)}</td><td>${formatNumber(row.bad_outcomes)}</td></tr>`).join("");
+
+  const knowledgeGapRows = (data.knowledge_gaps || []).map(improvementRecRow).join("");
+  const suggestedRows = (data.suggested_improvements || []).map(improvementRecRow).join("");
+
+  setPage(`${pageHeader("AI Improvement Center","Self-evaluation: top issues, knowledge gaps, agent weaknesses, dan rekomendasi perbaikan. AI hanya mendeteksi — admin yang memutuskan.",`<button class="button button-primary" data-action="improvement-scan">${icon('refresh',14)} Run scan</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Failed Answers",formatNumber(summary.failed_answers),`${days}-day window`,"observability",summary.failed_answers?'trend-down':'trend-up')}${metricCard("Low Confidence",formatNumber(summary.low_confidence),"Pro mode confidence < 60","analytics")}${metricCard("Negative Feedback",formatNumber(summary.negative_feedback),"Not helpful ratings","learning")}${metricCard("Handoffs",formatNumber(summary.handoffs),"Escalated to human","handoffs")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Top Issues</h3><span class="subtle">Failed answers, low confidence, negative feedback, repeated questions, and handoffs</span></div>${data.last_scan_at?`<span class="subtle mono" style="font-size:9px">Last scan: ${relativeTime(data.last_scan_at)}</span>`:''}</div>${topIssueRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Type</th><th>Issue</th><th>Count</th></tr></thead><tbody>${topIssueRows}</tbody></table></div>`:emptyState("No issues detected","Run a scan to analyze recent conversations.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Weaknesses</h3><span class="subtle mono" style="font-size:9px">QUALITY & VERIFICATION ROLLUP</span></div>${weaknessRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Conversations</th><th>Avg quality</th><th>Avg confidence</th><th>Failed verifications</th><th>Bad outcomes</th></tr></thead><tbody>${weaknessRows}</tbody></table></div>`:emptyState("No data yet","Agent performance rollups appear once conversations are analyzed.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Knowledge Gaps</h3><span class="subtle mono" style="font-size:9px">RECOMMENDED CONTENT TO ADD</span></div>${knowledgeGapRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Category</th><th>Recommendation</th><th>Occurrences</th><th>Status</th><th></th></tr></thead><tbody>${knowledgeGapRows}</tbody></table></div>`:emptyState("No knowledge gaps detected","Run a scan to detect knowledge gaps from low-confidence answers and negative feedback.")}</div>
+  <div class="card"><div class="card-head"><h3>Suggested Improvements</h3><span class="subtle mono" style="font-size:9px">PROMPT, WORKFLOW & AGENT — ADMIN DECIDES</span></div>${suggestedRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Category</th><th>Recommendation</th><th>Occurrences</th><th>Status</th><th></th></tr></thead><tbody>${suggestedRows}</tbody></table></div>`:emptyState("No suggestions yet","AI tidak mengubah dirinya sendiri — jalankan scan untuk mendapatkan rekomendasi.")}</div>`);
 }
 
 async function renderHumanHandoff() {
@@ -998,7 +1045,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1189,6 +1236,9 @@ document.addEventListener("click", async (event) => {
     voiceStatus(container, state.speakReplies ? "Suara aktif - jawaban AI akan dibaca sampai akhir" : "Suara dimatikan");
   }
   if(action==="security-scan") { try{ const result=await api.securityScan(); state.securityScan=result; toast(`Security scan completed: ${result.findings?.length||0} findings.`,"success"); if(state.route==="security") await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  if(action==="improvement-scan") { try{ const result=await api.improvementScan(state.improvementDays||30); toast(`Improvement scan completed: ${result.recommendations_generated||0} rekomendasi.`,"success"); if(state.route==="improvement") await renderImprovement(); }catch(error){ toast(error.message,"error"); } }
+  const improvementAction=event.target.closest("[data-improvement-action]");
+  if(improvementAction){ const status=improvementAction.dataset.improvementAction; const note=(status==="applied"||status==="dismissed") ? (prompt("Catatan (opsional):") || null) : null; try{ await api.updateImprovementRecommendation(improvementAction.dataset.improvementId,{status,resolution_note:note}); toast("Rekomendasi diperbarui.","success"); await renderImprovement(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="create-api-key") showCreateApiKey();
   if(action==="submit-create-api-key") await submitCreateApiKey();
   const revokeSession=event.target.closest("[data-revoke-session]"); if(revokeSession && confirm("Revoke this session? The user will be signed out.")){ try{ await api.revokeSecuritySession(revokeSession.dataset.revokeSession); toast("Session revoked.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
