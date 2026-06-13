@@ -6,23 +6,36 @@ menambah latensi/biaya) yang dijalankan di awal `SupervisorAgent._process()`
 untuk setiap pesan. Tujuannya menjawab pertanyaan internal sebelum CSAgent
 menulis jawaban:
 
-1. Apa intent utama user? (umum / perbandingan / self-awareness / follow-up)
+1. Apa intent utama user? (umum / perbandingan / self-awareness / follow-up /
+   strategi bisnis)
 2. Apakah ini follow-up singkat ("kenapa?", "maksudnya?") yang harus dijawab
    dengan melanjutkan konteks sebelumnya, bukan topik baru?
 3. Apakah pertanyaan ini menyentuh identitas/posisi BotNesia (perlu Self
    Identity Engine + Comparison Engine + Truthfulness/Sales Control Policy)?
 4. Apakah ada risiko overclaim (mis. "lebih pintar dari Claude")?
+5. Apakah ini pertanyaan keputusan/strategi bisnis user (mis. "haruskah saya
+   menurunkan harga?", "kenapa bisnis saya sepi?") yang perlu Strategic
+   Thinking + Business Consultant Mode, dan jika user menyebut beberapa
+   masalah sekaligus, Prioritization?
 
 Hasilnya berupa `reasoning_brief` dict yang disimpan di
 `context["_reasoning_brief"]`, dan `style_guidance` (teks instruksi tambahan)
 yang digabungkan ke `knowledge_base_context` sehingga CSAgent (Standard & Pro)
 otomatis mengikuti Truthfulness Policy, Sales Control Policy, Comparison Engine,
-dan Self Identity Engine tanpa mengubah arsitektur pipeline.
+Self Identity Engine, Strategic Thinking, dan Business Consultant Mode tanpa
+mengubah arsitektur pipeline.
 """
 from __future__ import annotations
 
 import re
 
+from business_consultant_engine import (
+    BUSINESS_CONSULTANT_BLOCK,
+    PRIORITIZATION_BLOCK,
+    STRATEGIC_THINKING_BLOCK,
+    has_multiple_problems,
+    is_business_strategy_question,
+)
 from identity_agent import (
     CORE_POLICY_BLOCK,
     FOLLOWUP_CONTEXT_NOTE,
@@ -87,12 +100,20 @@ class ReasoningController:
             and bool(FOLLOWUP_PATTERN.match(normalized))
         )
 
+        multiple_problems = has_multiple_problems(text)
+        is_business_strategy = (not is_meta) and (
+            is_business_strategy_question(lower) or multiple_problems
+        )
+        needs_prioritization = is_business_strategy and multiple_problems
+
         if is_comparison:
             intent_type = "comparison"
         elif is_self_awareness:
             intent_type = "self_awareness"
         elif is_followup:
             intent_type = "followup"
+        elif is_business_strategy:
+            intent_type = "business_strategy"
         else:
             intent_type = "general"
 
@@ -107,6 +128,11 @@ class ReasoningController:
             blocks.append(self.identity_agent.comparison_format())
         if is_followup:
             blocks.append(FOLLOWUP_CONTEXT_NOTE)
+        if is_business_strategy:
+            blocks.append(STRATEGIC_THINKING_BLOCK)
+            blocks.append(BUSINESS_CONSULTANT_BLOCK)
+            if needs_prioritization:
+                blocks.append(PRIORITIZATION_BLOCK)
 
         return {
             "intent_type": intent_type,
@@ -114,6 +140,8 @@ class ReasoningController:
             "is_comparison": is_comparison,
             "is_self_awareness": is_self_awareness,
             "is_followup": is_followup,
+            "is_business_strategy": is_business_strategy,
+            "needs_prioritization": needs_prioritization,
             "needs_honesty_emphasis": needs_honesty_emphasis,
             "overclaim_risk": overclaim_risk,
             "style_guidance": "\n\n".join(blocks),
