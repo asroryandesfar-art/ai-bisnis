@@ -33,7 +33,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-    CREATE TYPE channel_type_t AS ENUM ('whatsapp', 'telegram', 'website', 'instagram', 'email', 'gmail');
+    CREATE TYPE channel_type_t AS ENUM ('whatsapp', 'telegram', 'website', 'instagram', 'facebook', 'email', 'gmail');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -284,6 +284,88 @@ SELECT
     hq.status     AS handoff_status
 FROM conversations c
 LEFT JOIN human_queue hq ON hq.conversation_id = c.id;
+
+-- Canonical Omni Channel Phase 1 schema. organizations.id remains the tenant identity,
+-- while these tables expose the explicit tenant_id contract used by ChannelManager.
+ALTER TYPE channel_type_t ADD VALUE IF NOT EXISTS 'facebook';
+
+CREATE TABLE IF NOT EXISTS channels (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id    UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    channel_type channel_type_t NOT NULL,
+    display_name TEXT NOT NULL,
+    is_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, channel_type)
+);
+CREATE INDEX IF NOT EXISTS idx_channels_tenant ON channels(tenant_id);
+
+CREATE TABLE IF NOT EXISTS channel_connections (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id            UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    channel_id           UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    legacy_account_id    UUID REFERENCES channel_accounts(id) ON DELETE SET NULL,
+    bot_id               UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    external_id          TEXT NOT NULL DEFAULT '',
+    display_name         TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('connected','disconnected','pending','error')),
+    credentials          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    config               JSONB NOT NULL DEFAULT '{}'::jsonb,
+    connected_at         TIMESTAMPTZ,
+    disconnected_at      TIMESTAMPTZ,
+    last_activity_at     TIMESTAMPTZ,
+    last_health_check_at TIMESTAMPTZ,
+    error_message        TEXT,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, channel_id, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_connections_tenant ON channel_connections(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_channel_connections_bot ON channel_connections(tenant_id, bot_id);
+
+CREATE TABLE IF NOT EXISTS channel_messages (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id           UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    connection_id       UUID NOT NULL REFERENCES channel_connections(id) ON DELETE CASCADE,
+    conversation_id     UUID REFERENCES conversations(id) ON DELETE SET NULL,
+    external_message_id TEXT,
+    direction           TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
+    user_id             TEXT NOT NULL,
+    username            TEXT,
+    message             TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'received',
+    response_time_ms    INT,
+    metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_external ON channel_messages(connection_id, external_message_id, direction) WHERE external_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_channel_messages_tenant_time ON channel_messages(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_messages_user ON channel_messages(tenant_id, user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS channel_events (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    connection_id UUID REFERENCES channel_connections(id) ON DELETE CASCADE,
+    event_type    TEXT NOT NULL,
+    payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    occurred_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_channel_events_tenant ON channel_events(tenant_id, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS channel_logs (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    connection_id UUID REFERENCES channel_connections(id) ON DELETE CASCADE,
+    level         TEXT NOT NULL DEFAULT 'info',
+    action        TEXT NOT NULL,
+    message       TEXT NOT NULL,
+    context       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_channel_logs_tenant ON channel_logs(tenant_id, created_at DESC);
 
 -- ============================================================
 -- 5. AUDIT LOG

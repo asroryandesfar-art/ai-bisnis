@@ -2,6 +2,7 @@ const paths = {
   founder:'<path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/><path d="m3 7 6-4 6 5 7-6"/>',
   dashboard:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
   agents:'<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M8 3 6 1M16 3l2-2"/>',
+  channels:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="7" cy="6" r="2"/><circle cx="17" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>',
   chat:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>',
   analytics:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
   observability:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
@@ -104,7 +105,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 const navGroups = [
   ["FOUNDER", [["founder","Founder OS"]]],
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
 
@@ -120,6 +121,7 @@ const routeMeta = {
   chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
   conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
   observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
+  channels:["Channels","Connect and monitor WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat"],
   costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
   marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
   handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],

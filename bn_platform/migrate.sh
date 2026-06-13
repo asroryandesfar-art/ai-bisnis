@@ -34,7 +34,8 @@ RESULT=$(psql "$DATABASE_URL" -tAc "
     AND table_name IN (
       'roles','permissions','role_permissions','user_roles',
       'plans','subscriptions','invoices','payment_history',
-      'human_queue','channel_accounts',
+      'human_queue','channel_accounts','channels','channel_connections',
+      'channel_messages','channel_events','channel_logs',
       'audit_logs','lead_scores',
       'marketplace_templates','tenant_template_installs',
       'revenue_snapshots','ai_answer_quality'
@@ -42,7 +43,7 @@ RESULT=$(psql "$DATABASE_URL" -tAc "
 
 echo "   Tabel ditemukan: $RESULT"
 
-EXPECTED=16
+EXPECTED=21
 FOUND=$(echo "$RESULT" | tr ',' '\n' | wc -l | tr -d ' ')
 if [ "$FOUND" -lt "$EXPECTED" ]; then
   echo "⚠  Peringatan: hanya $FOUND dari $EXPECTED tabel yang ditemukan — periksa error di atas."
