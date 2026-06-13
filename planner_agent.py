@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from base import AgentResult, BaseAgent
 
-AVAILABLE_LENSES = ["market_technical", "news", "sentiment", "risk", "self_knowledge", "business"]
+AVAILABLE_LENSES = [
+    "market_technical", "news", "sentiment", "risk", "self_knowledge", "business", "groq_expert",
+]
 
 DEFAULT_PLAN = {
     "agents_to_invoke": ["market_technical"],
@@ -24,7 +26,9 @@ _LENS_DESCRIPTIONS = (
     "- self_knowledge: pertanyaan tentang BotNesia sendiri — paket/pricing, billing, "
     "usage limit, channel, fitur dashboard, integrasi, atau konfigurasi AI Agent ini\n"
     "- business: pertanyaan tentang performa bisnis/toko tenant — penjualan, pelanggan, "
-    "kelemahan bisnis, cara meningkatkan penjualan, berdasarkan data percakapan historis"
+    "kelemahan bisnis, cara meningkatkan penjualan, berdasarkan data percakapan historis\n"
+    "- groq_expert: pertanyaan teknis tentang Groq API/model LLM Groq — debugging "
+    "error/rate limit, pemilihan & optimasi model (kecepatan/biaya/akurasi/reasoning/coding)"
 )
 
 

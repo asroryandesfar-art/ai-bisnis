@@ -19,6 +19,7 @@ from finance_fetcher import (
     looks_like_market_price_query,
 )
 from news_fetcher import build_news_context
+from groq_expert_agent import GroqExpertAgent
 
 LENS_SYSTEM_PROMPTS = {
     "market_technical": (
@@ -139,6 +140,15 @@ class ReasoningAgent(BaseAgent):
                 "Diagnosis kondisi bisnis tenant berdasarkan data di atas dan berikan "
                 "rekomendasi tindakan konkret yang bisa langsung dilakukan."
                 + _OUTPUT_INSTRUCTION
+            )
+        elif lens == "groq_expert":
+            groq_result = await GroqExpertAgent().run(context)
+            output = dict(groq_result.output)
+            if output.get("skipped"):
+                return self._skip(lens, output.get("reason", "skipped"))
+            output["lens"] = lens
+            return AgentResult(
+                agent=f"reasoning_agent:{lens}", success=True, output=output, latency_ms=0,
             )
         else:
             return self._skip(lens, "unknown_lens")

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import re
 
+import groq_knowledge as gk
+
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
@@ -70,6 +72,9 @@ def select_knowledge_sources(text: str, history: list | None = None) -> dict:
 
     if any(hint in lower for hint in _FINANCE_HINTS):
         reasons["web_search:financial"] = "pertanyaan tampak menyangkut harga pasar/finansial"
+
+    if gk.looks_like_groq_question(text or ""):
+        reasons["self_knowledge:groq_docs"] = "pertanyaan tampak menyangkut Groq API atau model LLM Groq"
 
     if detected_url:
         reasons["web_search:website_reader"] = "pengguna menyertakan URL untuk dibaca"

@@ -25,6 +25,7 @@ from uncertainty_engine import UncertaintyEngine
 from identity_agent import IdentityAgent
 from reasoning_controller import ReasoningController
 import tool_registry
+import groq_knowledge
 from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
 from agent_observability import observe_agent, trace_request
 
@@ -193,19 +194,29 @@ class SupervisorAgent:
                 ),
             }
 
-        # ── STEP 0.3: Website Reader — jika user mengirim URL, baca halamannya ─
+        # ── STEP 0.3: Website Reader & Groq docs — sumber pengetahuan tambahan ─
+        extra_context_parts: list[str] = []
         detected_url = reasoning_brief.get("knowledge_routing", {}).get("detected_url")
         if detected_url:
             website_result = await tool_registry.read_website(detected_url)
             website_context = format_website_reading(website_result)
             if website_context:
-                existing_kb = (ctx.get("knowledge_base_context") or "").strip()
-                ctx = {
-                    **ctx,
-                    "knowledge_base_context": "\n\n".join(
-                        part for part in [existing_kb, website_context, WEBSITE_READER_BLOCK] if part
-                    ),
-                }
+                extra_context_parts.append(website_context)
+                extra_context_parts.append(WEBSITE_READER_BLOCK)
+
+        groq_context = groq_knowledge.build_groq_context(ctx.get("user_message") or "")
+        if groq_context:
+            extra_context_parts.append(groq_context)
+            extra_context_parts.append(groq_knowledge.GROQ_EXPERT_BLOCK)
+
+        if extra_context_parts:
+            existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+            ctx = {
+                **ctx,
+                "knowledge_base_context": "\n\n".join(
+                    part for part in [existing_kb, *extra_context_parts] if part
+                ),
+            }
 
         # ── STEP 0.5: Socratic reflection wajib sebelum routing/jawaban ─
         socratic_result = await self.socratic_engine.safe_run(ctx)
