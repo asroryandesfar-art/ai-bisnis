@@ -629,3 +629,111 @@ def test_two_tenants_have_fully_isolated_whatsapp_credentials(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(main.whatsapp_embedded_status(bot_id="bot-2", user=_user("org-1"), pool=pool))
     assert exc.value.status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────
+# 6) Inbound webhook auto-reply — _meta_route_and_reply_whatsapp harus
+#    pakai token per-tenant dari Embedded Signup (whatsapp_embedded_accounts),
+#    bukan config integrations lama yang tidak pernah diisi tenant baru.
+# ─────────────────────────────────────────────────────────────────
+
+class _FakeChatClient:
+    def __init__(self, response, captured):
+        self._response = response
+        self._captured = captured
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        self._captured.append((url, json, headers))
+        return self._response
+
+
+def test_route_and_reply_uses_embedded_signup_token(monkeypatch):
+    pool = FakePool(bots={"bot-1": "org-1"})
+    pool.phone_map["pn-123"] = {"org_id": "org-1", "bot_id": "bot-1"}
+    asyncio.run(istore.db_set_whatsapp_account(
+        pool, org_id="org-1", bot_id="bot-1",
+        waba_id="waba-1", phone_number_id="pn-123", business_id="biz-1",
+        customer_access_token="embedded-token", token_expires_at=None,
+        connection_status="connected", secret_key=main.cfg.secret_key,
+    ))
+
+    async def fake_chat(bot_id, body, pool):
+        assert bot_id == "bot-1"
+        return {"answer": "Halo dari bot!"}
+
+    monkeypatch.setattr(main, "chat", fake_chat)
+
+    captured = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda timeout=None: _FakeChatClient(_FakeResponse(200, {}), captured))
+
+    asyncio.run(main._meta_route_and_reply_whatsapp(
+        pool=pool, phone_number_id="pn-123", from_number="6281234567890", text="Halo",
+    ))
+
+    assert len(captured) == 1
+    url, body, headers = captured[0]
+    assert url == "https://graph.facebook.com/v19.0/pn-123/messages"
+    assert headers["Authorization"] == "Bearer embedded-token"
+    assert body["to"] == "6281234567890"
+    assert body["text"]["body"] == "Halo dari bot!"
+
+
+def test_route_and_reply_falls_back_to_legacy_token_when_not_connected(monkeypatch):
+    pool = FakePool(bots={"bot-1": "org-1"})
+    pool.phone_map["pn-123"] = {"org_id": "org-1", "bot_id": "bot-1"}
+    # Tidak ada baris whatsapp_embedded_accounts -> fallback ke integrations lama.
+
+    async def fake_chat(bot_id, body, pool):
+        return {"answer": "Balasan via token lama"}
+
+    async def fake_integrations_auto(pool, org_id):
+        return {"meta": {"wa_token": "legacy-token"}}
+
+    monkeypatch.setattr(main, "chat", fake_chat)
+    monkeypatch.setattr(main, "_get_integrations_auto", fake_integrations_auto)
+
+    captured = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda timeout=None: _FakeChatClient(_FakeResponse(200, {}), captured))
+
+    asyncio.run(main._meta_route_and_reply_whatsapp(
+        pool=pool, phone_number_id="pn-123", from_number="6281234567890", text="Halo",
+    ))
+
+    assert len(captured) == 1
+    _, _, headers = captured[0]
+    assert headers["Authorization"] == "Bearer legacy-token"
+
+
+def test_route_and_reply_skips_send_without_any_token(monkeypatch):
+    pool = FakePool(bots={"bot-1": "org-1"})
+    pool.phone_map["pn-123"] = {"org_id": "org-1", "bot_id": "bot-1"}
+    # Tidak ada akun Embedded Signup maupun config lama -> tidak ada token.
+
+    async def fake_integrations_auto(pool, org_id):
+        return {}
+
+    chat_called = False
+
+    async def fake_chat(bot_id, body, pool):
+        nonlocal chat_called
+        chat_called = True
+        return {"answer": "tidak boleh terkirim"}
+
+    monkeypatch.setattr(main, "chat", fake_chat)
+    monkeypatch.setattr(main, "_get_integrations_auto", fake_integrations_auto)
+
+    captured = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda timeout=None: _FakeChatClient(_FakeResponse(200, {}), captured))
+
+    asyncio.run(main._meta_route_and_reply_whatsapp(
+        pool=pool, phone_number_id="pn-123", from_number="6281234567890", text="Halo",
+    ))
+
+    assert not chat_called
+    assert captured == []
