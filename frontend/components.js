@@ -8,6 +8,7 @@ const paths = {
   marketplace:'<path d="M3 7h18l-1.5 12h-15z"/><path d="M7 7a5 5 0 0 1 10 0"/>',
   handoffs:'<path d="M4 4h16v12H7l-3 3z"/><path d="M8 8h8M8 12h5"/>',
   learning:'<path d="M12 3a5 5 0 0 0-3 9v3h6v-3a5 5 0 0 0-3-9z"/><path d="M9 19h6M10 22h4"/>',
+  improvement:'<path d="M3 17l6-6 4 4 8-8"/><path d="M17 3h4v4"/>',
   knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
   "kb-builder":'<path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="4"/>',
   "workflow-builder":'<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="12" r="2.5"/><circle cx="5" cy="18" r="2.5"/><path d="M7.5 6h5a3 3 0 0 1 3 3v0M7.5 18h5a3 3 0 0 0 3-3v0M16.5 9v6"/>',
@@ -100,7 +101,7 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
+  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
   ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
@@ -119,6 +120,7 @@ const routeMeta = {
   marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
   handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],
   learning:["Feedback Learning","User feedback, failed questions, knowledge gaps, and improvement queue"],
+  improvement:["AI Improvement Center","Self-evaluation: top issues, knowledge gaps, agent weaknesses, and AI-suggested improvements for admin review"],
   knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"],
   "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
   "workflow-builder":["Workflow Builder","Rancang automasi AI Agent ala n8n/Zapier — trigger, condition, agent, action, dan notification"],
