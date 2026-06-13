@@ -250,3 +250,110 @@ async def db_get_meta_phone_mapping(
     if not row:
         return None, None
     return str(row["org_id"]), str(row["bot_id"])
+
+
+async def db_clear_meta_phone_mapping(pool: asyncpg.Pool, *, phone_number_id: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM meta_wa_phone_map WHERE phone_number_id=$1",
+            phone_number_id,
+        )
+
+
+# ─── WhatsApp Embedded Signup — kredensial per tenant (org_id + bot_id) ────
+#
+# `customer_access_token` disimpan terenkripsi (Fernet, key dari SECRET_KEY,
+# sama seperti `org_integrations`). Field lain (waba_id, phone_number_id,
+# business_id, connection_status, token_expires_at) disimpan plaintext agar
+# bisa di-query langsung (status endpoint, routing webhook) tanpa dekripsi.
+
+
+def _whatsapp_row_to_dict(row: Any, secret_key: str) -> dict[str, Any]:
+    decrypted = decrypt_dict(secret_key, row["access_token_enc"] or "")
+    expires_at = row["token_expires_at"]
+    return {
+        "tenant_id": str(row["org_id"]),
+        "org_id": str(row["org_id"]),
+        "bot_id": str(row["bot_id"]),
+        "waba_id": row["waba_id"],
+        "phone_number_id": row["phone_number_id"],
+        "business_id": row["business_id"],
+        "customer_access_token": decrypted.get("customer_access_token", ""),
+        "token_expires_at": expires_at.isoformat() if expires_at else None,
+        "connection_status": row["connection_status"],
+    }
+
+
+async def db_set_whatsapp_account(
+    pool: asyncpg.Pool,
+    *,
+    org_id: str,
+    bot_id: str,
+    waba_id: str,
+    phone_number_id: str,
+    business_id: str,
+    customer_access_token: str,
+    token_expires_at: Any,
+    connection_status: str,
+    secret_key: str,
+) -> None:
+    access_token_enc = encrypt_dict(secret_key, {"customer_access_token": customer_access_token or ""})
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO whatsapp_embedded_accounts(
+                org_id, bot_id, waba_id, phone_number_id, business_id,
+                access_token_enc, token_expires_at, connection_status, updated_at
+            )
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            ON CONFLICT (org_id, bot_id) DO UPDATE SET
+                waba_id=EXCLUDED.waba_id,
+                phone_number_id=EXCLUDED.phone_number_id,
+                business_id=EXCLUDED.business_id,
+                access_token_enc=EXCLUDED.access_token_enc,
+                token_expires_at=EXCLUDED.token_expires_at,
+                connection_status=EXCLUDED.connection_status,
+                updated_at=NOW()
+            """,
+            org_id, bot_id, waba_id, phone_number_id, business_id,
+            access_token_enc, token_expires_at, connection_status,
+        )
+
+
+async def db_get_whatsapp_account(
+    pool: asyncpg.Pool,
+    *,
+    org_id: str,
+    bot_id: str,
+    secret_key: str,
+) -> dict[str, Any] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM whatsapp_embedded_accounts WHERE org_id=$1 AND bot_id=$2",
+            org_id, bot_id,
+        )
+    if not row:
+        return None
+    return _whatsapp_row_to_dict(row, secret_key)
+
+
+async def db_get_whatsapp_accounts(
+    pool: asyncpg.Pool,
+    *,
+    org_id: str,
+    secret_key: str,
+) -> list[dict[str, Any]]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM whatsapp_embedded_accounts WHERE org_id=$1 ORDER BY updated_at DESC",
+            org_id,
+        )
+    return [_whatsapp_row_to_dict(r, secret_key) for r in rows]
+
+
+async def db_clear_whatsapp_account(pool: asyncpg.Pool, *, org_id: str, bot_id: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM whatsapp_embedded_accounts WHERE org_id=$1 AND bot_id=$2",
+            org_id, bot_id,
+        )
