@@ -1893,11 +1893,9 @@ async def synthesize_audio(
     body: SpeakAudioReq,
     user=Depends(get_current_user),
 ):
-    text = body.text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{2,}", ". ", text)
-    text = re.sub(r"\n", " ", text)
-    text = re.sub(r"\s+([,.;:!?])", r"\1", text).strip()
+    from tts_engine import normalize_tts_text
+
+    text = normalize_tts_text(body.text)
     if not text:
         raise HTTPException(400, "Teks suara kosong.")
 
@@ -1911,7 +1909,7 @@ async def synthesize_audio(
         communicator = edge_tts.Communicate(
             text,
             voice="id-ID-GadisNeural",
-            rate="+4%",
+            rate="+7%",
             volume="+6%",
             pitch="-1Hz",
             boundary="SentenceBoundary",
@@ -1927,7 +1925,7 @@ async def synthesize_audio(
             headers={
                 "Cache-Control": "no-store",
                 "X-TTS-Voice": "id-ID-GadisNeural",
-                "X-TTS-Rate": "+4%",
+                "X-TTS-Rate": "+7%",
             },
         )
     except HTTPException:

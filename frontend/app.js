@@ -4,6 +4,7 @@ import {
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
 } from "/ui/components.js";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null,
@@ -16,6 +17,7 @@ const state = {
   wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
+  speechContext: null, speechSources: new Set(),
 };
 
 const el = (selector) => document.querySelector(selector);
@@ -899,58 +901,6 @@ function showAgent(id) {
 
 function closeDrawer() { const drawer=el("#detail-drawer"); drawer.classList.remove("open"); drawer.setAttribute("aria-hidden","true"); }
 
-function cleanSpeechText(text) {
-  const ordinals = ["", "Pertama", "Kedua", "Ketiga", "Keempat", "Kelima", "Keenam", "Ketujuh", "Kedelapan", "Kesembilan", "Kesepuluh"];
-  return String(text || "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/https?:\/\/\S+/g, " tautan ")
-    .replace(/^\s*#{1,6}\s+/gm, "")
-    .replace(/^\s*(\d{1,2})[.)]\s+/gm, (_, value) => `${ordinals[Number(value)] || `Nomor ${value}`}, `)
-    .replace(/^\s*[-*•]\s+/gm, "Berikutnya, ")
-    .replace(/[;]+/g, ",")
-    .replace(/[:]+(?=\s)/g, ",")
-    .replace(/[!?]{2,}/g, (value) => value[0])
-    .replace(/\.{3,}/g, ".")
-    .replace(/[*_`#>|~]/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\s*\n{2,}\s*/g, ". ")
-    .replace(/\s*\n\s*/g, ", ")
-    .replace(/\s+([,.;!?])/g, "$1")
-    .replace(/([.!?])(?=[A-Za-zÀ-ÿ])/g, "$1 ")
-    .replace(/,{2,}/g, ",")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function splitSpeechText(text, maxLength = 180) {
-  const sentences = cleanSpeechText(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
-  const chunks = [];
-  let current = "";
-  for (const sentence of sentences) {
-    const part = sentence.trim();
-    if (!part) continue;
-    if (current && current.length + part.length + 1 > maxLength) {
-      chunks.push(current);
-      current = "";
-    }
-    if (part.length <= maxLength) {
-      current = current ? `${current} ${part}` : part;
-      continue;
-    }
-    const words = part.split(/\s+/);
-    for (const word of words) {
-      if (current && current.length + word.length + 1 > maxLength) {
-        chunks.push(current);
-        current = word;
-      } else {
-        current = current ? `${current} ${word}` : word;
-      }
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
 function voiceStatus(container, message) {
   const status = container?.querySelector?.("[data-voice-status]");
   if (status) status.textContent = message;
@@ -959,6 +909,10 @@ function voiceStatus(container, message) {
 async function stopSpeaking(container = document) {
   state.speechRunId += 1;
   window.speechSynthesis?.cancel();
+  for (const source of state.speechSources) {
+    try { source.stop(); } catch {}
+  }
+  state.speechSources.clear();
   if (state.speechAudio) {
     state.speechAudio.pause();
     state.speechAudio.src = "";
@@ -968,54 +922,82 @@ async function stopSpeaking(container = document) {
   voiceStatus(container, "Suara dihentikan");
 }
 
-async function playSpeechBlob(blob, runId) {
-  const url = URL.createObjectURL(blob);
-  try {
-    await new Promise((resolve, reject) => {
-      const audio = new Audio(url);
-      state.speechAudio = audio;
-      audio.preload = "auto";
-      audio.onended = resolve;
-      audio.onerror = () => reject(new Error("Audio neural gagal diputar."));
-      if (runId !== state.speechRunId) return resolve();
-      audio.play().catch(reject);
-    });
-  } finally {
-    if (state.speechAudio?.src === url) state.speechAudio = null;
-    URL.revokeObjectURL(url);
-  }
+async function speechContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) throw new Error("Browser tidak mendukung audio buffering.");
+  if (!state.speechContext) state.speechContext = new AudioContext({ latencyHint: "interactive" });
+  if (state.speechContext.state === "suspended") await state.speechContext.resume();
+  return state.speechContext;
+}
+
+async function decodeSpeechBlob(blob) {
+  const context = await speechContext();
+  return context.decodeAudioData(await blob.arrayBuffer());
+}
+
+function scheduleSpeechBuffer(buffer, runId, startAt) {
+  const context = state.speechContext;
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.destination);
+  state.speechSources.add(source);
+  const ended = new Promise((resolve) => {
+    source.onended = () => {
+      state.speechSources.delete(source);
+      resolve();
+    };
+  });
+  if (runId === state.speechRunId) source.start(startAt);
+  return { ended, endAt: startAt + buffer.duration };
 }
 
 async function prepareSpeech(text, container = document) {
   if (!state.speakReplies) return null;
-  const chunks = splitSpeechText(text);
+  const chunks = bufferSpeechSentences(text);
   if (!chunks.length) return null;
   voiceStatus(container, "Menyinkronkan tulisan dan suara...");
-  const firstBlob = await api.synthesizeSpeech(chunks[0]);
-  return { chunks, firstBlob };
+  const prefetchedBuffers = chunks.slice(0, 2).map((chunk) => api.synthesizeSpeech(chunk).then(decodeSpeechBlob));
+  const firstBuffer = await prefetchedBuffers[0];
+  return { chunks, firstBuffer, prefetchedBuffers };
 }
 
 async function speak(text, container = document, prepared = null) {
   if (!state.speakReplies) return;
-  const chunks = prepared?.chunks || splitSpeechText(text);
+  const chunks = prepared?.chunks || bufferSpeechSentences(text);
   if (!chunks.length) return;
 
   const runId = ++state.speechRunId;
   window.speechSynthesis?.cancel();
   if (state.speechAudio) state.speechAudio.pause();
-  const audioJobs = chunks.map((chunk, index) => index === 0 && prepared?.firstBlob
-    ? Promise.resolve(prepared.firstBlob)
-    : api.synthesizeSpeech(chunk));
-  for (let index = 0; index < audioJobs.length && runId === state.speechRunId; index += 1) {
-    voiceStatus(container, `Gadis Neural membaca ${index + 1}/${chunks.length}...`);
-    const blob = await audioJobs[index];
-    if (runId !== state.speechRunId) break;
-    await playSpeechBlob(blob, runId);
-    // Beri jeda singkat antar kalimat agar terdengar seperti orang berhenti sejenak di titik/koma.
-    if (runId === state.speechRunId && index < audioJobs.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 260));
+  const context = await speechContext();
+  const audioJobs = new Array(chunks.length);
+  const ensureAudioJob = (index) => {
+    if (index >= chunks.length) return null;
+    if (!audioJobs[index]) {
+      audioJobs[index] = prepared?.prefetchedBuffers?.[index]
+        || (index === 0 && prepared?.firstBuffer
+          ? Promise.resolve(prepared.firstBuffer)
+          : api.synthesizeSpeech(chunks[index]).then(decodeSpeechBlob));
     }
+    return audioJobs[index];
+  };
+
+  let nextStartAt = context.currentTime + 0.03;
+  let finalEnded = Promise.resolve();
+  ensureAudioJob(0);
+  ensureAudioJob(1);
+  for (let index = 0; index < chunks.length && runId === state.speechRunId; index += 1) {
+    voiceStatus(container, `Gadis Neural membaca ${index + 1}/${chunks.length}...`);
+    const buffer = await ensureAudioJob(index);
+    if (runId !== state.speechRunId) break;
+    const startAt = Math.max(nextStartAt, context.currentTime + 0.015);
+    const scheduled = scheduleSpeechBuffer(buffer, runId, startAt);
+    finalEnded = scheduled.ended;
+    nextStartAt = scheduled.endAt + (segmentPauseMs(chunks[index]) / 1000);
+    ensureAudioJob(index + 1);
+    ensureAudioJob(index + 2);
   }
+  await finalEnded;
   if (runId === state.speechRunId) voiceStatus(container, "Selesai membaca sampai akhir");
 }
 
