@@ -71,6 +71,8 @@ export const api = {
   org: () => request("/org"),
   updateLegacyPlan: (plan) => request("/org/plan", { method: "PATCH", body: { plan } }),
   dashboardOverview: () => request("/api/dashboard/overview"),
+  founderAccess: () => request("/api/founder/access"),
+  founderOverview: () => request("/api/founder/overview"),
 
   bots: () => request("/bots"),
   createBot: (body) => request("/bots", { method: "POST", body }),

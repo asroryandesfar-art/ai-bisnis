@@ -4527,6 +4527,7 @@ try:
     from bn_platform.lead_engine import build_lead_router
     from bn_platform.marketplace import build_marketplace_router
     from bn_platform.revenue_intel import build_revenue_router
+    from bn_platform.founder_os import build_founder_router
     from bn_platform.security import (
         build_security_router,
         write_audit_log as _platform_audit_log_fn,
@@ -4633,6 +4634,10 @@ try:
     )
     app.include_router(
         build_revenue_router(get_pool=get_pool, get_current_user=get_current_user),
+        prefix="/api",
+    )
+    app.include_router(
+        build_founder_router(get_pool=get_pool, get_current_user=get_current_user),
         prefix="/api",
     )
     app.include_router(

@@ -42,6 +42,7 @@ class PlatformSettings(BaseSettings):
     # Operator-only Revenue Intelligence
     platform_admin_emails: str = ""
     monthly_marketing_spend_idr: int = 0
+    founder_usd_to_idr: int = 16000
     local_billing_enabled: bool = False
 
     # ── Observability (/metrics scrape oleh Prometheus) ──

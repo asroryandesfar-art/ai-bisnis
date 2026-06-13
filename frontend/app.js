@@ -7,7 +7,7 @@ import {
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js";
 
 const state = {
-  route: "dashboard", health: null, org: null, user: null, bots: [], overview: null,
+  route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
   conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], integrations: null,
@@ -31,7 +31,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -40,7 +40,7 @@ function closeMobileNav() { el("#sidebar").classList.remove("open"); el("#mobile
 
 function renderChrome() {
   const counts = { agents: state.bots.length, conversations: state.inboxSummary?.by_state?.unread ?? 0, team: state.team.length };
-  el("#sidebar").innerHTML = sidebar({ route:state.route, org:state.org, user:state.user, counts });
+  el("#sidebar").innerHTML = sidebar({ route:state.route, org:state.org, user:state.user, counts, founderAccess:state.founderAccess });
   el("#topbar").innerHTML = topbar({ route:state.route, health:state.health });
 }
 
@@ -50,11 +50,14 @@ async function loadCore() {
     settle("health", api.health()), settle("org", api.org()), settle("bots", api.bots()),
     settle("overview", api.dashboardOverview()), settle("inboxSummary", api.inboxSummary()),
     settle("rbac", api.rbacMe()), settle("team", api.team()), settle("subscription", api.subscription()),
+    settle("founderAccess", api.founderAccess()),
   ]);
   for (const result of results) if (result.ok) state[result.label] = result.data;
   state.bots = state.bots || [];
   state.team = state.team?.team || state.team || [];
   state.subscription = state.subscription || null;
+  const founderAccessResult = results.find((result) => result.label === "founderAccess");
+  state.founderAccess = Boolean(founderAccessResult?.ok && founderAccessResult.data?.founder);
   state.selectedBotId ||= state.bots[0]?.id || null;
   const jwt = parseJwt();
   state.user = state.team.find((member) => String(member.id) === String(jwt.sub)) || { id:jwt.sub, email:"", full_name:"Workspace Admin" };
@@ -95,6 +98,59 @@ async function renderDashboard() {
   const queueHtml = queue.length ? queue.slice(0,5).map((item) => activityItem({ channel:item.priority || 'H', title:item.end_user_name || 'Escalated conversation', description:item.reason || `${item.status} · human queue`, time:relativeTime(item.created_at) })).join("") : activities.length ? activities.map(activityItem).join("") : emptyState("No live activity", "Activity appears after your agents receive conversations.");
   setPage(`${pageHeader("Command Center",`Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Here is what is happening across ${state.org?.name || 'your workspace'}.`,`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button><button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>`)}<div class="grid grid-4">${metrics}</div><div class="grid dashboard-grid" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Conversation volume</h3><span class="subtle" style="font-size:9px">30-day customer demand</span></div><span class="status-badge active"><span class="live-dot"></span>Live data</span></div><div class="card-body"><div style="height:250px"><canvas id="overview-chart"></canvas></div></div></div><div class="card"><div class="card-head"><div><h3>Live activity</h3><span class="subtle" style="font-size:9px">Latest agent and handoff events</span></div></div><div class="card-body activity-list">${queueHtml}</div></div></div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent fleet</h3><span class="subtle" style="font-size:9px">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>`);
   drawChart("overview", "#overview-chart", analytics?.daily_volume || [], "line");
+}
+
+function founderInsightClass(type) {
+  if (type === "critical" || type === "warning") return type;
+  if (type === "positive") return "positive";
+  return "neutral";
+}
+
+async function renderFounder() {
+  loadingPage("Founder Operating System", "Monitor the company, not a tenant: revenue, growth, retention, AI economics, and risk.");
+  try { state.founder = await api.founderOverview(); }
+  catch (error) { setPage(`${pageHeader("Founder Operating System","Platform-wide metrics are restricted to BotNesia founders and platform operators.")}${errorState(error.message)}`); return; }
+  const data = state.founder || {};
+  const metrics = data.metrics || {};
+  const health = data.health_score || {};
+  const trend = data.trend || [];
+  const insightRows = (data.insights || []).map((item) => `<div class="founder-insight ${founderInsightClass(item.type)}"><span></span><div><strong>${esc(item.title)}</strong><p>${esc(item.detail)}</p></div></div>`).join("");
+  const agentRows = (data.top_agents || []).map((row) => `<tr><td><span class="table-title mono">${esc(row.agent_name)}</span></td><td>${formatNumber(row.executions)}</td><td>${formatNumber(row.tokens)}</td><td>${Number(row.failure_rate||0).toFixed(1)}%</td></tr>`).join("");
+  const channelRows = (data.top_channels || []).map((row) => `<tr><td><span class="table-title">${esc(row.channel)}</span></td><td>${formatNumber(row.conversations)}</td><td><div class="progress" style="min-width:110px"><span style="width:${Math.max(5,Math.round(Number(row.conversations||0)/Math.max(1,Number(data.top_channels?.[0]?.conversations||1))*100))}%"></span></div></td></tr>`).join("");
+  const tenantRows = (data.high_cost_tenants || []).map((row) => `<tr><td><span class="table-title">${esc(row.name)}</span><div class="subtle mono" style="font-size:8px">${esc(row.tenant_id)}</div></td><td>${usd(row.ai_cost_usd,4)}</td><td>${formatNumber(row.tokens)}</td></tr>`).join("");
+  const componentRows = Object.entries(health.components || {}).map(([key,value]) => `<div class="usage-row"><div class="usage-row-head"><span>${esc(key)}</span><b>${Number(value).toFixed(0)}</b></div><div class="progress"><span style="width:${Math.min(100,Number(value||0))}%"></span></div></div>`).join("");
+  const businessCards = [
+    metricCard("MRR",idr(metrics.mrr_idr),"Active recurring revenue","billing",metrics.growth_rate>=0?"trend-up":"trend-down"),
+    metricCard("ARR",idr(metrics.arr_idr),"MRR × 12","analytics"),
+    metricCard("Revenue",idr(metrics.monthly_revenue_idr),`${idr(metrics.revenue_idr)} lifetime`,"dashboard",metrics.revenue_growth_rate>=0?"trend-up":"trend-down"),
+    metricCard("Profit",idr(metrics.profit_idr),"Revenue minus operating cost","dashboard",metrics.profit_idr>=0?"trend-up":"trend-down"),
+    metricCard("Cost",idr(metrics.cost_idr),`${idr(metrics.ai_cost_idr)} AI cost`,"costs",metrics.cost_idr>metrics.monthly_revenue_idr?"trend-down":""),
+    metricCard("Active Tenants",formatNumber(metrics.active_tenants),`${formatNumber(metrics.total_tenants)} total tenants`,"team"),
+    metricCard("New Tenants",formatNumber(metrics.new_tenants),`${Number(metrics.tenant_growth_rate||0).toFixed(1)}% growth`,"founder",metrics.tenant_growth_rate>=0?"trend-up":"trend-down"),
+    metricCard("Churn Rate",`${Number(metrics.churn_rate||0).toFixed(1)}%`,`${Number(metrics.retention_rate||0).toFixed(1)}% retention`,"handoffs",metrics.churn_rate<=5?"trend-up":"trend-down"),
+    metricCard("Growth Rate",`${Number(metrics.growth_rate||0).toFixed(1)}%`,"Monthly revenue growth","analytics",metrics.growth_rate>=0?"trend-up":"trend-down"),
+  ].join("");
+  const aiCards = [
+    metricCard("Conversations",formatNumber(metrics.total_conversations),`${formatNumber(metrics.conversations_30d)} in 30 days`,"chat"),
+    metricCard("Token Usage",formatNumber(metrics.total_token_usage),`${formatNumber(metrics.tokens_30d)} in 30 days`,"observability"),
+    metricCard("AI Cost",usd(metrics.ai_cost_usd,4),`${idr(metrics.ai_cost_idr)} converted`,"costs"),
+    metricCard("Cost / Tenant",usd(metrics.cost_per_tenant_usd,4),"Active tenant average","team"),
+  ].join("");
+  setPage(`${pageHeader("Founder Operating System","Company-wide command center for SaaS economics, tenant growth, AI usage, and business risk.",`<span class="status-badge active">Founder only</span><button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
+    <div class="grid grid-4">${businessCards}</div>
+    <div class="grid dashboard-grid founder-primary" style="margin-top:16px">
+      <div class="card"><div class="card-head"><div><h3>Revenue Trend</h3><span class="subtle">Paid invoice revenue, last 30 days</span></div><span class="status-badge active">Platform-wide</span></div><div class="card-body"><div style="height:290px"><canvas id="founder-revenue-chart"></canvas></div></div></div>
+      <div class="card founder-health"><div class="card-head"><div><h3>Business Health Score</h3><span class="subtle">Growth · revenue · churn · usage · retention</span></div></div><div class="card-body"><div class="health-score ${esc(health.label||'watch')}"><strong>${formatNumber(health.score)}</strong><span>/ 100</span><small>${esc(health.label||'watch')}</small></div>${componentRows}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Founder Insights</h3><span class="subtle">Automated signals from revenue, churn, usage, tenant cost, and agent reliability</span></div></div><div class="card-body founder-insights">${insightRows || '<span class="subtle">No material founder insights detected.</span>'}</div></div>
+    <div class="grid grid-4" style="margin-top:16px">${aiCards}</div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="card"><div class="card-head"><h3>Top Agents</h3><span class="subtle">30-day executions and reliability</span></div>${agentRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Executions</th><th>Tokens</th><th>Failure</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agent usage","Agent metrics appear after AI executions.")}</div>
+      <div class="card"><div class="card-head"><h3>Top Channels</h3><span class="subtle">Conversation demand by channel</span></div>${channelRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Conversations</th><th>Share</th></tr></thead><tbody>${channelRows}</tbody></table></div>`:emptyState("No channel usage","Channel metrics appear after conversations.")}</div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><div><h3>High-Cost Tenants</h3><span class="subtle">Current-month AI cost concentration</span></div></div>${tenantRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Tenant</th><th>AI Cost</th><th>Tokens</th></tr></thead><tbody>${tenantRows}</tbody></table></div>`:emptyState("No tenant cost","AI cost will appear after model usage.")}</div>
+  `);
+  drawChart("founder-revenue","#founder-revenue-chart",trend.map((row)=>({date:row.date,value:row.revenue||0})),"line");
 }
 
 async function renderAgents() {
@@ -1027,7 +1083,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 

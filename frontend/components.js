@@ -1,4 +1,5 @@
 const paths = {
+  founder:'<path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/><path d="m3 7 6-4 6 5 7-6"/>',
   dashboard:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
   agents:'<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M8 3 6 1M16 3l2-2"/>',
   chat:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>',
@@ -101,17 +102,20 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
+  ["FOUNDER", [["founder","Founder OS"]]],
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
   ["PLATFORM", [["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
 
-export function sidebar({ route, org, user, counts = {} }) {
-  const items = navGroups.map(([section, links]) => `<div class="nav-section">${section}</div>${links.map(([key,label]) => `<button class="nav-item ${route===key?'active':''}" data-route="${key}">${icon(key)}<span>${label}</span>${counts[key] !== undefined ? `<span class="nav-count">${counts[key]}</span>` : ''}</button>`).join('')}`).join('');
+export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
+  const groups = navGroups.map(([section, links]) => [section, links.filter(([key]) => key !== "founder" || founderAccess)]).filter(([, links]) => links.length);
+  const items = groups.map(([section, links]) => `<div class="nav-section">${section}</div>${links.map(([key,label]) => `<button class="nav-item ${route===key?'active':''}" data-route="${key}">${icon(key)}<span>${label}</span>${counts[key] !== undefined ? `<span class="nav-count">${counts[key]}</span>` : ''}</button>`).join('')}`).join('');
   return `<div class="sidebar-head"><a class="brand" href="#dashboard"><span class="brand-mark">BN</span><span>BotNesia</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
 }
 
 const routeMeta = {
+  founder:["Founder Operating System","Platform-wide revenue, growth, retention, AI economics, and business health"],
   dashboard:["Command Center","Live overview of your AI operations"], agents:["AI Agent Center","Deploy, monitor, and tune every customer-facing agent"],
   chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
   conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
