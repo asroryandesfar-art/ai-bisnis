@@ -43,6 +43,7 @@ from identity_agent import (
     is_comparison_question,
     is_self_awareness_question,
 )
+from knowledge_access_engine import SOURCE_VERIFICATION_BLOCK, select_knowledge_sources
 
 
 # Pesan follow-up singkat yang harus dijawab dengan melanjutkan konteks
@@ -88,6 +89,7 @@ class ReasoningController:
         lower = text.lower()
         history = context.get("messages") or []
         has_history = bool(history)
+        knowledge_routing = select_knowledge_sources(text, history)
 
         is_comparison = is_comparison_question(lower)
         is_self_awareness = is_self_awareness_question(lower)
@@ -120,7 +122,7 @@ class ReasoningController:
         overclaim_risk = is_comparison or any(hint in lower for hint in _OVERCLAIM_HINTS)
         needs_honesty_emphasis = is_meta
 
-        blocks = [CORE_POLICY_BLOCK]
+        blocks = [CORE_POLICY_BLOCK, SOURCE_VERIFICATION_BLOCK]
         if is_meta:
             blocks.append(self.identity_agent.identity_block())
             blocks.append(self.identity_agent.truthfulness_policy())
@@ -144,5 +146,6 @@ class ReasoningController:
             "needs_prioritization": needs_prioritization,
             "needs_honesty_emphasis": needs_honesty_emphasis,
             "overclaim_risk": overclaim_risk,
+            "knowledge_routing": knowledge_routing,
             "style_guidance": "\n\n".join(blocks),
         }
