@@ -163,6 +163,9 @@ class Settings(BaseSettings):
     news_max_body_chars:  int = 1400
     news_max_concurrency: int = 3
     news_rss_feeds:       str = ""  # comma-separated news source URLs: RSS/Atom/article links (optional)
+    # Real-Time Knowledge Layer — general web search (WebSearchAgent)
+    search_api_provider: str = "tavily"
+    search_api_key:      str = ""  # optional: Tavily API key (https://tavily.com)
     kb_embedding_dim:     int = 256
     pinecone_api_key:     str = ""
     pinecone_index:       str = "botnesia-chunks"
@@ -4026,6 +4029,9 @@ async def chat(
             "_observability_pool": pool,
             "_cheap_model": cfg.groq_cheap_model,
             "_strong_model": cfg.groq_model,
+            "_search_api_key": cfg.search_api_key,
+            "_search_api_provider": cfg.search_api_provider,
+            "kb_chunks_count": len(relevant_chunks),
         }
         result = await supervisor.process(intelligence_context)
         answer = result.final_answer

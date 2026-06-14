@@ -41,6 +41,21 @@ _FINANCE_HINTS = (
     "saham", "ihsg", "rupiah", "dolar", "usd",
 )
 
+# Frasa "freshness" — pertanyaan yang menyiratkan butuh info real-time
+# (Real-Time Knowledge Layer). Sengaja terpisah dari _NEWS_HINTS/_FINANCE_HINTS
+# supaya freshness yang TIDAK tercakup kategori berita/finansial bisa diarahkan
+# ke web search umum (`web_search:general`).
+FRESHNESS_HINTS = (
+    "terbaru", "sekarang", "minggu ini", "bulan ini", "breaking news",
+    "baru-baru ini", "update terbaru", "hari ini", "saat ini",
+)
+
+
+def is_freshness_query(text: str) -> bool:
+    """True jika pertanyaan menyiratkan butuh data/informasi terkini."""
+    lower = (text or "").lower()
+    return any(hint in lower for hint in FRESHNESS_HINTS)
+
 
 def select_knowledge_sources(text: str, history: list | None = None) -> dict:
     """Tentukan kategori sumber pengetahuan yang relevan untuk `text`.
@@ -79,10 +94,24 @@ def select_knowledge_sources(text: str, history: list | None = None) -> dict:
     if detected_url:
         reasons["web_search:website_reader"] = "pengguna menyertakan URL untuk dibaca"
 
+    if (
+        is_freshness_query(text)
+        and "web_search:news" not in reasons
+        and "web_search:financial" not in reasons
+        and "web_search:website_reader" not in reasons
+    ):
+        reasons["web_search:general"] = (
+            "pertanyaan menyiratkan butuh informasi terbaru tapi tidak spesifik "
+            "berita/finansial — gunakan web search umum jika tersedia"
+        )
+
+    needs_fresh_data = any(key.startswith("web_search:") for key in reasons)
+
     return {
         "sources_considered": list(reasons.keys()),
         "detected_url": detected_url,
         "reasons": reasons,
+        "needs_fresh_data": needs_fresh_data,
     }
 
 
@@ -106,6 +135,17 @@ dibaca):
 - Jika tidak ada data eksternal yang relevan untuk pertanyaan ini, jawab
   berdasarkan pengetahuan internal dan knowledge base tenant seperti biasa —
   tidak setiap pertanyaan butuh sumber eksternal."""
+
+REALTIME_KNOWLEDGE_BLOCK = """## Real-Time Knowledge Layer
+Pertanyaan ini menyiratkan kebutuhan data terkini (mis. mengandung kata
+"terbaru", "sekarang", "hari ini", "minggu ini", "bulan ini", "breaking news").
+- Jika konteks di atas berisi data berita/finansial/web search yang relevan dan
+  bertanggal, PRIORITASKAN itu dibanding pengetahuan internal/training data, dan
+  sebutkan per kapan data tersebut (freshness).
+- Jika TIDAK ada data real-time yang relevan tersedia di konteks untuk
+  pertanyaan "apa yang terjadi sekarang/hari ini" semacam ini, katakan secara
+  jujur bahwa BotNesia tidak memiliki akses real-time untuk topik ini saat ini —
+  jangan menjawab seolah informasi training data adalah yang terbaru."""
 
 WEBSITE_READER_BLOCK = """## Website Reader
 Pengguna menyertakan URL dan halamannya sudah dibaca (lihat konteks "Konten

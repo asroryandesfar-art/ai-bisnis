@@ -27,6 +27,8 @@ from reasoning_controller import ReasoningController
 import tool_registry
 import groq_knowledge
 from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
+import web_search_agent
+from web_search_agent import format_web_search_context, WEB_SEARCH_BLOCK
 from agent_observability import observe_agent, trace_request
 
 MAX_RETRIES = 2
@@ -111,6 +113,10 @@ class SupervisorResult:
     reasoning_brief:    dict = field(default_factory=dict)
     meta_scores:        dict = field(default_factory=dict)
     meta_rewrite_applied: bool = False
+
+    # Real-Time Knowledge Layer
+    web_search_used:    bool = False
+    web_search_results: list = field(default_factory=list)
 
 
 class SupervisorAgent:
@@ -208,6 +214,27 @@ class SupervisorAgent:
         if groq_context:
             extra_context_parts.append(groq_context)
             extra_context_parts.append(groq_knowledge.GROQ_EXPERT_BLOCK)
+
+        # ── STEP 0.3b: WebSearchAgent — general web search untuk pertanyaan
+        # freshness yang tidak tercakup berita/finansial/website reader ─
+        web_search_used = False
+        web_search_results: list = []
+        knowledge_routing = reasoning_brief.get("knowledge_routing", {})
+        if "web_search:general" in knowledge_routing.get("reasons", {}):
+            search_result = await web_search_agent.search(
+                ctx.get("user_message") or "",
+                api_key=ctx.get("_search_api_key", ""),
+                provider=ctx.get("_search_api_provider", "tavily"),
+            )
+            if search_result.get("success"):
+                web_search_context = format_web_search_context(
+                    search_result, ctx.get("user_message") or ""
+                )
+                if web_search_context:
+                    extra_context_parts.append(web_search_context)
+                    extra_context_parts.append(WEB_SEARCH_BLOCK)
+                    web_search_used = True
+                    web_search_results = search_result.get("results") or []
 
         if extra_context_parts:
             existing_kb = (ctx.get("knowledge_base_context") or "").strip()
@@ -648,4 +675,8 @@ class SupervisorAgent:
             reasoning_brief     = reasoning_brief,
             meta_scores         = meta_scores,
             meta_rewrite_applied = meta_rewrite_applied,
+
+            # Real-Time Knowledge Layer
+            web_search_used     = web_search_used,
+            web_search_results  = web_search_results,
         )

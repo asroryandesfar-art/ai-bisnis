@@ -43,7 +43,11 @@ from identity_agent import (
     is_comparison_question,
     is_self_awareness_question,
 )
-from knowledge_access_engine import SOURCE_VERIFICATION_BLOCK, select_knowledge_sources
+from knowledge_access_engine import (
+    REALTIME_KNOWLEDGE_BLOCK,
+    SOURCE_VERIFICATION_BLOCK,
+    select_knowledge_sources,
+)
 
 
 # Pesan follow-up singkat yang harus dijawab dengan melanjutkan konteks
@@ -135,6 +139,8 @@ class ReasoningController:
             blocks.append(BUSINESS_CONSULTANT_BLOCK)
             if needs_prioritization:
                 blocks.append(PRIORITIZATION_BLOCK)
+        if knowledge_routing.get("needs_fresh_data"):
+            blocks.append(REALTIME_KNOWLEDGE_BLOCK)
 
         return {
             "intent_type": intent_type,
