@@ -29,12 +29,28 @@ from __future__ import annotations
 
 import re
 
+from anti_hallucination_engine import ANTI_HALLUCINATION_BLOCK
 from business_consultant_engine import (
     BUSINESS_CONSULTANT_BLOCK,
+    FOUNDER_COACH_BLOCK,
     PRIORITIZATION_BLOCK,
     STRATEGIC_THINKING_BLOCK,
     has_multiple_problems,
     is_business_strategy_question,
+)
+from decision_support_engine import (
+    RISK_ASSESSMENT_BLOCK,
+    ROOT_CAUSE_BLOCK,
+    TRADE_OFF_BLOCK,
+    is_root_cause_question,
+    is_trade_off_question,
+    needs_risk_assessment,
+)
+from goal_tracking_engine import (
+    GOAL_TRACKING_BLOCK,
+    TRACKED_GOAL_BLOCK,
+    has_tracked_goal,
+    is_goal_statement,
 )
 from identity_agent import (
     CORE_POLICY_BLOCK,
@@ -47,6 +63,15 @@ from knowledge_access_engine import (
     REALTIME_KNOWLEDGE_BLOCK,
     SOURCE_VERIFICATION_BLOCK,
     select_knowledge_sources,
+)
+from knowledge_gap_detector import KNOWLEDGE_GAP_BLOCK, detect_knowledge_gap
+from long_term_planner_engine import (
+    LONG_TERM_PLANNER_BLOCK,
+    is_long_term_planning_question,
+)
+from multi_step_thinking_engine import (
+    MULTI_STEP_THINKING_BLOCK,
+    count_sub_questions,
 )
 
 
@@ -126,7 +151,21 @@ class ReasoningController:
         overclaim_risk = is_comparison or any(hint in lower for hint in _OVERCLAIM_HINTS)
         needs_honesty_emphasis = is_meta
 
-        blocks = [CORE_POLICY_BLOCK, SOURCE_VERIFICATION_BLOCK]
+        # ── Advisor/Reasoning engines (Goal Tracking, Decision Support,
+        # Long-Term Planner, Founder Coach, Knowledge Gap, Multi-Step) ──
+        detected_goal = is_goal_statement(text)
+        has_tracked = has_tracked_goal(context.get("knowledge_base_context") or "")
+        is_root_cause = (not is_meta) and is_root_cause_question(text)
+        is_trade_off = (not is_meta) and is_trade_off_question(text)
+        risk_assessment_needed = needs_risk_assessment(text, is_business_strategy=is_business_strategy)
+        is_long_term_planning = (not is_meta) and is_long_term_planning_question(text)
+        multi_step_count = count_sub_questions(text)
+        is_multi_step = multi_step_count >= 2
+        knowledge_gap = detect_knowledge_gap(
+            text, context.get("kb_chunks_count", 0), knowledge_routing
+        )
+
+        blocks = [CORE_POLICY_BLOCK, SOURCE_VERIFICATION_BLOCK, ANTI_HALLUCINATION_BLOCK]
         if is_meta:
             blocks.append(self.identity_agent.identity_block())
             blocks.append(self.identity_agent.truthfulness_policy())
@@ -137,10 +176,27 @@ class ReasoningController:
         if is_business_strategy:
             blocks.append(STRATEGIC_THINKING_BLOCK)
             blocks.append(BUSINESS_CONSULTANT_BLOCK)
+            blocks.append(FOUNDER_COACH_BLOCK)
             if needs_prioritization:
                 blocks.append(PRIORITIZATION_BLOCK)
+        if detected_goal:
+            blocks.append(GOAL_TRACKING_BLOCK)
+        elif has_tracked:
+            blocks.append(TRACKED_GOAL_BLOCK)
+        if is_root_cause:
+            blocks.append(ROOT_CAUSE_BLOCK)
+        if is_trade_off:
+            blocks.append(TRADE_OFF_BLOCK)
+        if risk_assessment_needed:
+            blocks.append(RISK_ASSESSMENT_BLOCK)
+        if is_long_term_planning:
+            blocks.append(LONG_TERM_PLANNER_BLOCK)
+        if is_multi_step:
+            blocks.append(MULTI_STEP_THINKING_BLOCK)
         if knowledge_routing.get("needs_fresh_data"):
             blocks.append(REALTIME_KNOWLEDGE_BLOCK)
+        if knowledge_gap.get("knowledge_gap_detected"):
+            blocks.append(KNOWLEDGE_GAP_BLOCK)
 
         return {
             "intent_type": intent_type,
@@ -153,5 +209,14 @@ class ReasoningController:
             "needs_honesty_emphasis": needs_honesty_emphasis,
             "overclaim_risk": overclaim_risk,
             "knowledge_routing": knowledge_routing,
+            "detected_goal": detected_goal,
+            "has_tracked_goal": has_tracked,
+            "is_root_cause": is_root_cause,
+            "is_trade_off": is_trade_off,
+            "needs_risk_assessment": risk_assessment_needed,
+            "is_long_term_planning": is_long_term_planning,
+            "is_multi_step": is_multi_step,
+            "multi_step_count": multi_step_count,
+            "knowledge_gap_detected": knowledge_gap.get("knowledge_gap_detected", False),
             "style_guidance": "\n\n".join(blocks),
         }
