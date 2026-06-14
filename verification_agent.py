@@ -8,6 +8,7 @@ spesialis yang diberikan.
 """
 from __future__ import annotations
 
+from anti_hallucination_engine import score_hallucination_risk as _score_hallucination_risk
 from base import AgentResult, BaseAgent
 from identity_agent import COMPETITOR_PATTERN
 
@@ -256,3 +257,22 @@ class VerificationAgent(BaseAgent):
             "needs_rewrite": needs_rewrite,
             "issues": issues,
         }
+
+    def score_hallucination_risk(
+        self, answer: str, knowledge_base_context: str = "", specialist_results: dict | None = None
+    ) -> dict:
+        """Cek heuristik (tanpa LLM) risiko hallucination untuk SEMUA jawaban.
+
+        Delegasi ke `anti_hallucination_engine.score_hallucination_risk` —
+        dipakai oleh `SupervisorAgent` untuk memutuskan apakah jawaban perlu
+        ditulis ulang karena memuat klaim angka yang tidak didukung konteks
+        atau bahasa "pasti"/"dijamin" tanpa kualifikasi.
+
+        Returns: {
+            "risk_score": 0-100,
+            "unsupported_claims": [...],
+            "overconfidence_hits": int,
+            "needs_rewrite": bool,
+        }
+        """
+        return _score_hallucination_risk(answer, knowledge_base_context, specialist_results)

@@ -263,6 +263,7 @@ Fakta yang perlu diekstrak (jika ada):
 - Identitas: nama, email, nomor HP
 - Preferensi: bahasa, cara komunikasi, topik yang disukai
 - Konteks bisnis: nama perusahaan, industri, ukuran tim
+- Target/tujuan bisnis (key: "business_goal", contoh value: "naikkan omzet 20% dalam 3 bulan")
 - Riwayat penting: nomor order, masalah yang pernah terjadi, solusi yang berhasil
 - Pola perilaku: jam aktif, frekuensi komplain, topik berulang
 

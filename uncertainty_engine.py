@@ -157,6 +157,15 @@ class UncertaintyEngine(BaseAgent):
             reasons.append("jawaban meta perlu diturunkan kepastiannya")
             signals.append("meta_rewrite")
 
+        reflection_review = context.get("reflection_review") or {}
+        reflection_penalty = int(reflection_review.get("penalty", 0) or 0)
+        if reflection_penalty:
+            penalty += reflection_penalty
+            for note in reflection_review.get("notes") or []:
+                if note:
+                    reasons.append(str(note))
+            signals.append(f"reflection_penalty:{reflection_penalty}")
+
         band = self._pick_band(base_score, penalty)
         effective_score = max(0.0, min(100.0, round(base_score - penalty, 2)))
 

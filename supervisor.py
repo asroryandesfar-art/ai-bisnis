@@ -24,6 +24,7 @@ from first_principle_agent import FirstPrincipleAgent, format_first_principle_br
 from uncertainty_engine import UncertaintyEngine
 from identity_agent import IdentityAgent
 from reasoning_controller import ReasoningController
+import reflection_engine
 import tool_registry
 import groq_knowledge
 from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
@@ -117,6 +118,10 @@ class SupervisorResult:
     # Real-Time Knowledge Layer
     web_search_used:    bool = False
     web_search_results: list = field(default_factory=list)
+
+    # Advisor/Reasoning engines (Anti-Hallucination, Reflection)
+    hallucination_scores: dict = field(default_factory=dict)
+    reflection_review:  dict = field(default_factory=dict)
 
 
 class SupervisorAgent:
@@ -339,6 +344,7 @@ class SupervisorAgent:
         uncertainty_message = ""
         meta_scores: dict = {}
         meta_rewrite_applied = False
+        hallucination_scores: dict = {}
         devil_result = AgentResult(agent="devil_advocate_agent", success=True, output={}, latency_ms=0)
 
         async def challenge_draft(answer: str) -> str:
@@ -431,6 +437,9 @@ class SupervisorAgent:
                     meta_scores = self.verification_agent.score_meta_answer(
                         context.get("user_message", ""), cs_answer, reasoning_brief
                     )
+                hallucination_scores = self.verification_agent.score_hallucination_risk(
+                    cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
+                )
                 if verify_out.get("_llm_unavailable"):
                     verification_passed = True  # don't retry-storm during an outage
                 else:
@@ -438,8 +447,21 @@ class SupervisorAgent:
                         bool(verify_out.get("verified", True))
                         and verify_out.get("confidence_score", 100) >= 80
                         and not meta_scores.get("needs_rewrite", False)
+                        and not hallucination_scores.get("needs_rewrite", False)
                     )
                 verification_issues = verify_out.get("issues", []) + meta_scores.get("issues", [])
+                if hallucination_scores.get("needs_rewrite"):
+                    claims = hallucination_scores.get("unsupported_claims") or []
+                    if claims:
+                        verification_issues.append(
+                            "Jawaban memuat klaim angka yang tidak ada di konteks: "
+                            + ", ".join(claims)
+                        )
+                    if hallucination_scores.get("overconfidence_hits"):
+                        verification_issues.append(
+                            "Jawaban memuat kata-kata mutlak (\"pasti\"/\"dijamin\"/dll.) "
+                            "tanpa kualifikasi."
+                        )
                 confidence_score = round(
                     (confidence_score + verify_out.get("confidence_score", confidence_score)) / 2
                 )
@@ -450,7 +472,8 @@ class SupervisorAgent:
                 ctx["_verification_feedback"] = (
                     f"Jawaban sebelumnya memiliki masalah: {'; '.join(verification_issues)}. "
                     "Perbaiki jawaban. Pastikan jujur, tidak overclaim dibanding AI lain, "
-                    "akui keterbatasan jika relevan, dan beri kesimpulan."
+                    "akui keterbatasan jika relevan, jangan mengarang angka/data yang tidak "
+                    "ada di konteks, dan beri kesimpulan."
                 )
                 cs_synth = await observe_agent(
                     "cs_agent:synthesis", ctx,
@@ -488,31 +511,63 @@ class SupervisorAgent:
             cs_answer = await challenge_draft(cs_answer)
 
             # ── STEP 2.75: Cek jawaban untuk pertanyaan meta (identitas/
-            # perbandingan dengan AI lain) — tulis ulang sekali jika terlalu
-            # promosi/tidak jujur sesuai Truthfulness & Comparison Engine ─
+            # perbandingan dengan AI lain) DAN risiko hallucination (Anti-
+            # Hallucination Engine, untuk SEMUA jawaban) — tulis ulang sekali
+            # jika perlu sesuai Truthfulness/Comparison/Anti-Hallucination ─
             if reasoning_brief.get("is_meta"):
                 meta_scores = self.verification_agent.score_meta_answer(
                     context.get("user_message", ""), cs_answer, reasoning_brief
                 )
+            hallucination_scores = self.verification_agent.score_hallucination_risk(
+                cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
+            )
+            if meta_scores.get("needs_rewrite") or hallucination_scores.get("needs_rewrite"):
+                feedback_parts: list[str] = []
                 if meta_scores.get("needs_rewrite"):
-                    ctx["_verification_feedback"] = (
+                    feedback_parts.append(
                         "Jawaban sebelumnya terlalu promosi/kurang jujur: "
-                        f"{'; '.join(meta_scores.get('issues', []))}. "
-                        "Tulis ulang sesuai Truthfulness Policy dan Comparison Engine: jujur, akui "
-                        "keterbatasan BotNesia bila relevan, jangan klaim lebih unggul dari AI lain "
-                        "tanpa kualifikasi, dan tutup dengan kesimpulan yang membantu keputusan user."
+                        f"{'; '.join(meta_scores.get('issues', []))}."
                     )
-                    rewrite_result = await self.cs_agent.safe_run(ctx)
-                    if rewrite_result.success:
-                        rewritten = rewrite_result.output.get("answer")
-                        if rewritten:
-                            cs_answer = rewritten
-                            cs_result = rewrite_result
-                            meta_rewrite_applied = True
-                            cs_answer = await challenge_draft(cs_answer)
+                if hallucination_scores.get("needs_rewrite"):
+                    claims = hallucination_scores.get("unsupported_claims") or []
+                    if claims:
+                        feedback_parts.append(
+                            "Jawaban memuat klaim angka yang tidak ada di konteks: "
+                            + ", ".join(claims) + "."
+                        )
+                    if hallucination_scores.get("overconfidence_hits"):
+                        feedback_parts.append(
+                            "Jawaban memuat kata-kata mutlak (\"pasti\"/\"dijamin\"/dll.) "
+                            "tanpa kualifikasi."
+                        )
+                feedback_parts.append(
+                    "Tulis ulang sesuai Truthfulness Policy, Comparison Engine, dan "
+                    "Anti-Hallucination Engine: jujur, akui keterbatasan BotNesia bila "
+                    "relevan, jangan klaim lebih unggul dari AI lain tanpa kualifikasi, "
+                    "jangan mengarang angka/data yang tidak ada di konteks, dan tutup "
+                    "dengan kesimpulan yang membantu keputusan user."
+                )
+                ctx["_verification_feedback"] = " ".join(feedback_parts)
+                rewrite_result = await self.cs_agent.safe_run(ctx)
+                if rewrite_result.success:
+                    rewritten = rewrite_result.output.get("answer")
+                    if rewritten:
+                        cs_answer = rewritten
+                        cs_result = rewrite_result
+                        meta_rewrite_applied = True
+                        cs_answer = await challenge_draft(cs_answer)
+                        if reasoning_brief.get("is_meta"):
                             meta_scores = self.verification_agent.score_meta_answer(
                                 context.get("user_message", ""), cs_answer, reasoning_brief
                             )
+                        hallucination_scores = self.verification_agent.score_hallucination_risk(
+                            cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
+                        )
+
+        # ── STEP F: Reflection Engine — self-check jawaban final terhadap
+        # reasoning_brief (Prioritization, Risk Assessment, Root Cause,
+        # Multi-Step Thinking) sebelum confidence banding ─
+        reflection_review = reflection_engine.reflect(cs_answer, reasoning_brief, specialist_outputs)
 
         uncertainty_context = {
             **ctx,
@@ -526,6 +581,7 @@ class SupervisorAgent:
             "devil_advocate_review": devil_advocate_review,
             "first_principle_analysis": first_principle_analysis,
             "meta_scores": meta_scores,
+            "reflection_review": reflection_review,
             "retry_count": retry_count,
         }
         uncertainty_result = await self.uncertainty_engine.safe_run(uncertainty_context)
@@ -679,4 +735,8 @@ class SupervisorAgent:
             # Real-Time Knowledge Layer
             web_search_used     = web_search_used,
             web_search_results  = web_search_results,
+
+            # Advisor/Reasoning engines (Anti-Hallucination, Reflection)
+            hallucination_scores = hallucination_scores,
+            reflection_review    = reflection_review,
         )
