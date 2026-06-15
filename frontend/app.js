@@ -31,7 +31,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -277,8 +277,24 @@ async function renderConversations() {
 
 function renderMessagePanel() {
   const conv = state.conversations.find((item) => item.id === state.selectedConversationId);
-  const messages = state.messages.map((message) => `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${message.role==='user'?esc(message.content).replace(/\n/g,'<br>'):renderMarkdown(message.content)}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div>${message.role==='assistant'&&!String(message.model||'').startsWith('human:')&&!String(message.model||'').includes('human-handoff')?feedbackControls(message.id,state.selectedConversationId,message.feedback_rating):''}</div></div>`).join("");
-  return `<header class="chat-head"><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(conv?.end_user_name || 'AN')}</span><div><strong>${esc(conv?.end_user_name || conv?.end_user_email || 'Anonymous customer')}</strong><div style="margin-top:4px">${statusBadge(conv?.handoff_needed?'handoff':'resolved',conv?.handoff_needed?'Needs handoff':'AI handled')}</div></div></div><button class="icon-button">${icon('more')}</button></header><div class="messages">${messages || emptyState("No messages","This conversation does not contain messages.")}</div>`;
+  const isAdmin = (state.rbac?.permissions || []).includes("analytics.read");
+  const messages = state.messages.map((message) => {
+    const isAssistant = message.role==='assistant' && !String(message.model||'').startsWith('human:') && !String(message.model||'').includes('human-handoff');
+    const sourcesCount = Array.isArray(message.source_chunks) ? message.source_chunks.length : 0;
+    const sourcesButton = isAssistant && sourcesCount ? `<button type="button" class="button" style="margin-top:6px" data-view-sources="${esc(message.id)}">${icon('knowledge',14)} Lihat sumber (${sourcesCount})</button>` : '';
+    const intentBadges = (isAdmin && isAssistant && message.intent) ? `<div class="message-routing-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${statusBadge('default',`Intent: ${message.intent}`)}${statusBadge('default',`Agent: ${message.selected_agent||'—'}`)}${message.routing_confidence!=null?statusBadge('default',`Conf: ${Math.round(Number(message.routing_confidence)*100)}%`):''}${message.handoff_status?statusBadge('error',`Handoff: ${message.handoff_status}`):''}</div>` : '';
+    return `<div class="message ${message.role==='user'?'user':''}"><div class="message-bubble">${message.role==='user'?esc(message.content).replace(/\n/g,'<br>'):renderMarkdown(message.content)}<div class="message-meta">${esc(message.role)} · ${formatDate(message.created_at,{hour:'2-digit',minute:'2-digit'})}${message.latency_ms?` · ${message.latency_ms}ms`:''}</div>${isAssistant?feedbackControls(message.id,state.selectedConversationId,message.feedback_rating):''}${sourcesButton}${intentBadges}</div></div>`;
+  }).join("");
+  return `<header class="chat-head"><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(conv?.end_user_name || 'AN')}</span><div><strong>${esc(conv?.end_user_name || conv?.end_user_email || 'Anonymous customer')}</strong><div style="margin-top:4px">${statusBadge(conv?.handoff_needed?'handoff':'resolved',conv?.handoff_needed?'Needs handoff':'AI handled')}</div></div></div></header><div class="messages">${messages || emptyState("No messages","This conversation does not contain messages.")}</div>`;
+}
+
+async function openMessageSources(messageId) {
+  let sources;
+  try { sources = await api.messageSources(messageId); }
+  catch (error) { toast(error.message,"error"); return; }
+  const items = (sources || []).map((chunk) => `<div class="trace-step"><div><strong>${esc(chunk.filename || 'Document')}</strong><p>Chunk #${chunk.chunk_index} · ${formatDate(chunk.created_at,{hour:'2-digit',minute:'2-digit'})}</p><div style="margin-top:6px;font-size:11px;line-height:1.6;white-space:pre-wrap">${esc(chunk.content)}</div></div></div>`).join("");
+  const body = `<div class="trace-chain">${items || emptyState("No sources","Jawaban ini tidak dikutip dari dokumen knowledge base.")}</div>`;
+  el("#modal-root").innerHTML = modal({title:"Knowledge sources",body,wide:true});
 }
 
 async function openConversation(id) {
@@ -312,6 +328,29 @@ async function renderAnalytics(days = state.analyticsDays) {
   drawChart("analytics","#analytics-chart",state.analytics.daily_volume||[],"bar");
 }
 
+async function renderRoutingLogs() {
+  loadingPage("Routing Logs","Per-message Intent Router decisions: intent, selected agent, confidence, and handoff status.");
+  const hasAnalytics = (state.rbac?.permissions || []).includes("analytics.read");
+  if (!hasAnalytics) { setPage(pageHeader("Routing Logs","Akses terbatas untuk role dengan izin analytics.read.") + emptyState("Akses ditolak","Role kamu tidak memiliki izin untuk melihat Routing Logs.")); return; }
+  if (!state.selectedBotId) { setPage(pageHeader("Routing Logs","Per-message Intent Router decisions.") + emptyState("No agent selected","Pilih agent untuk melihat routing log.")); return; }
+  let data;
+  try { data = await api.routingLogs(state.selectedBotId); }
+  catch (error) { setPage(errorState(error.message)); return; }
+  const logs = data.logs || [];
+  const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
+  const intentColor = { general:"default", business:"training", faq:"active", sales:"training", customer_service:"warning", knowledge:"active", analytics:"active", human_handoff:"error" };
+  const rows = logs.map((log) => `<tr>
+    <td class="mono">${relativeTime(log.created_at)}</td>
+    <td>${esc(log.end_user_name || log.end_user_email || 'Anonymous')}</td>
+    <td class="truncate" style="max-width:200px" title="${esc(log.content)}">${esc((log.content||'').slice(0,80))}</td>
+    <td>${statusBadge(intentColor[log.intent]||'default', log.intent||'—')}</td>
+    <td>${esc(log.selected_agent||'—')}</td>
+    <td>${log.routing_confidence!=null ? `${Math.round(Number(log.routing_confidence)*100)}%` : '—'}</td>
+    <td>${log.handoff_status ? statusBadge('error',log.handoff_status) : statusBadge('active','No handoff')}</td>
+  </tr>`).join("");
+  setPage(`${pageHeader("Routing Logs","Intent Router decisions per pesan — intent, selected agent, confidence, dan handoff status.",`<select class="select" data-routing-logs-bot>${options}</select>`)}<div class="card"><div class="card-head"><h3>Routing decisions</h3><span class="subtle mono" style="font-size:9px">LAST ${logs.length} MESSAGES</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>Customer</th><th>Message</th><th>Intent</th><th>Selected Agent</th><th>Confidence</th><th>Handoff</th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No routing data","Kirim beberapa pesan ke agent ini untuk mengisi routing log.")}</div>`);
+}
+
 async function renderObservability(days = state.observabilityDays) {
   state.observabilityDays = Number(days) || 7;
   loadingPage("AI Observability","Inspect agent health, latency, token usage, and request traces.");
@@ -319,7 +358,7 @@ async function renderObservability(days = state.observabilityDays) {
   try { data = await api.observabilitySummary(state.observabilityDays); }
   catch (error) { setPage(errorState(error.message)); return; }
   const metrics = data.metrics || {};
-  const agentRows = (data.agents || []).map((agent) => `<tr><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td>${statusBadge(agent.failures ? 'error' : 'active', agent.failures ? `${agent.failures} failed` : 'healthy')}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`).join("");
+  const agentRows = (data.agents || []).map((agent) => { const latest=agent.last_status||'unknown'; const healthy=latest==='success'||latest==='skipped'; const label=healthy?'healthy':(latest==='running'?'running':'failed'); const detail=agent.failures?` title="${formatNumber(agent.failures)} historical failure(s) in this window"`:''; return `<tr><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td><span${detail}>${statusBadge(healthy?'active':latest,label)}</span></td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`; }).join("");
   const traceRows = (data.traces || []).map((trace) => `<tr data-observability-trace="${esc(trace.id)}"><td class="mono">${esc(String(trace.id).slice(0,8))}</td><td><span class="table-title trace-question">${esc(trace.user_question)}</span></td><td>${statusBadge(trace.status === 'success' ? 'active' : trace.status, trace.status)}</td><td>${formatNumber(trace.agent_count)} agents</td><td>${trace.duration_ms || 0}ms</td><td>${formatNumber(trace.total_tokens)}</td><td>${relativeTime(trace.started_at)}</td></tr>`).join("");
   setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}<div class="grid grid-3 observability-metrics">${metricCard("Active Agents",formatNumber(metrics.active_agents),"Currently executing","agents")}${metricCard("Failed Agents",formatNumber(metrics.failed_agents),"Executions in selected window","observability",metrics.failed_agents?'trend-down':'trend-up')}${metricCard("Average Latency",`${Math.round(metrics.average_latency_ms||0)}ms`,"Per agent execution","analytics")}${metricCard("Token Usage",formatNumber(metrics.total_tokens),`${formatNumber(metrics.prompt_tokens)} prompt · ${formatNumber(metrics.completion_tokens)} completion`,"billing")}${metricCard("Success Rate",`${Number(metrics.success_rate||0).toFixed(1)}%`,"Completed executions","dashboard","trend-up")}${metricCard("Error Rate",`${Number(metrics.error_rate||0).toFixed(1)}%`,"Failed executions","observability",metrics.error_rate?'trend-down':'trend-up')}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent health</h3><span class="subtle">Latency, failures, and token consumption per agent</span></div></div>${agentRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Executions</th><th>Status</th><th>Avg latency</th><th>Tokens</th><th>Last seen</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No execution data","Send a message to an AI agent to create the first trace.")}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent Trace Viewer</h3><span class="subtle">Open a request to inspect its complete execution chain</span></div></div>${traceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Trace</th><th>User question</th><th>Status</th><th>Chain</th><th>Latency</th><th>Tokens</th><th>Started</th></tr></thead><tbody>${traceRows}</tbody></table></div>`:emptyState("No traces yet","Request traces will appear here after an agent handles a message.")}</div>`);
 }
@@ -388,7 +427,7 @@ async function renderMarketplace() {
   const templateCard = (template) => {
     const install = installedByTemplate.get(template.key);
     const installed = !!install;
-    return `<article class="card card-hover marketplace-card"><div class="card-head"><div><h3>${esc(template.name)}</h3><span class="subtle" style="font-size:9px">${esc(template.category)} · v${esc(template.version || '1.0.0')}</span></div>${statusBadge(template.status || 'active', template.status || 'active')}</div><p>${esc(template.description)}</p><div class="marketplace-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">${installed ? `<span class="status-badge active">Installed</span><span class="status-badge ${esc(install.bot_status || 'active')}">${esc(install.bot_status || 'active')}</span>` : `<span class="status-badge ready">Available</span>`}</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center"><div class="subtle mono" style="font-size:8px">${installed ? `Bot: ${esc(install.bot_name || '')}` : `Template: ${esc(template.key)}`}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div></article>`;
+    return `<article class="card card-hover marketplace-card"><div class="card-head"><div><h3>${esc(template.name)}</h3><span class="subtle" style="font-size:9px">${esc(template.category)} · v${esc(template.version || '1.0.0')}</span></div>${statusBadge(template.status || 'active', template.status || 'active')}</div><p>${esc(template.description)}</p><div class="marketplace-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">${installed ? `<span class="status-badge active">Installed</span><span class="status-badge ${esc(install.bot_status || 'active')}">${esc(install.bot_status || 'active')}</span>` : `<span class="status-badge ready">Available</span>`}</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center"><div class="subtle mono" style="font-size:8px">${installed ? `Bot: ${esc(install.bot_name || '')}` : `Template: ${esc(template.key)}`}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-action="marketplace-install" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div></article>`;
   };
 
   const categorySections = categoryOrder.map((category) => {
@@ -853,44 +892,71 @@ async function submitCreateApiKey() {
 
 async function renderChannels() {
   loadingPage("Channels", "One AI system for WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat.");
-  const [statusResult, analyticsResult] = await Promise.all([settle("status",api.channelStatus()),settle("analytics",api.channelAnalytics(30))]);
+  const [statusResult, analyticsResult, whatsappResult, metaResult] = await Promise.all([
+    settle("status",api.channelStatus()),
+    settle("analytics",api.channelAnalytics(30)),
+    settle("whatsapp",api.whatsappEmbeddedStatus()),
+    settle("metaOAuth",api.metaOAuthStatus()),
+  ]);
   state.channels = statusResult.ok ? statusResult.data.channels || [] : [];
   state.channelAnalytics = analyticsResult.ok ? analyticsResult.data : {};
+  state.whatsappAccounts = whatsappResult.ok ? whatsappResult.data.accounts || [] : [];
+  state.metaOAuth = metaResult.ok ? metaResult.data : {};
   const catalog = [
     ["whatsapp","WhatsApp","Meta Cloud API"],["telegram","Telegram","Telegram Bot API"],
     ["instagram","Instagram","Instagram Messaging API"],["facebook","Facebook Messenger","Messenger Platform"],
     ["website","Website Chat","Embeddable BotNesia widget"],
   ];
   const cards = catalog.map(([key,label,provider]) => {
+    if (key === "whatsapp") {
+      const accounts = state.whatsappAccounts || [];
+      const connected = accounts.filter((account) => account.connected);
+      const errors = accounts.filter((account) => account.connection_status === "error");
+      const status = connected.length ? "connected" : (errors.length ? "error" : "disconnected");
+      const accountRows = accounts.length
+        ? accounts.map((account) => {
+            const bot = state.bots.find((item) => item.id === account.bot_id);
+            return `<div class="channel-stat"><span>${esc(bot?.name || "AI agent")}</span><strong>${esc(account.phone_number_id || "Setup incomplete")}</strong></div>`;
+          }).join("")
+        : `<div class="channel-stat"><span>Connection</span><strong>Not configured</strong></div>`;
+      const accountActions = connected.map((account) => `<button class="button button-danger" data-disconnect-whatsapp-bot="${esc(account.bot_id)}">Disconnect ${esc(state.bots.find((bot) => bot.id === account.bot_id)?.name || "agent")}</button>`).join("");
+      return `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">WA</span><div><h3>WhatsApp</h3><span class="subtle">Meta Embedded Signup · no token copy-paste</span></div></div>${statusBadge(status,status.charAt(0).toUpperCase()+status.slice(1))}</div><div class="card-body"><div class="channel-stat"><span>Connected agents</span><strong>${formatNumber(connected.length)}</strong></div>${accountRows}<div class="channel-actions"><button class="button button-primary" data-action="connect-whatsapp">Connect agent</button>${accountActions}</div></div></article>`;
+    }
     const item = state.channels.find((row)=>row.channel_type===key && row.status!=="disconnected") || state.channels.find((row)=>row.channel_type===key);
+    if (key === "facebook" || key === "instagram") {
+      const oauth = state.metaOAuth || {};
+      const selected = oauth.selected || {};
+      const channelSelection = selected[key] || {};
+      const connected = item?.status === "connected";
+      const assetName = key === "facebook" ? channelSelection.page_name : channelSelection.instagram_username;
+      const oauthStatus = oauth.status === "reauth_required" ? "error" : (connected ? "connected" : "disconnected");
+      return `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">${initials(label)}</span><div><h3>${esc(label)}</h3><span class="subtle">Meta OAuth · tenant-owned account</span></div></div>${statusBadge(oauthStatus,oauthStatus.charAt(0).toUpperCase()+oauthStatus.slice(1))}</div><div class="card-body"><div class="channel-stat"><span>Account</span><strong>${esc(assetName||item?.display_name||"Not selected")}</strong></div><div class="channel-stat"><span>Token expiry</span><strong>${oauth.token_expires_at?formatDate(oauth.token_expires_at):"Not connected"}</strong></div><div class="channel-stat"><span>Agent</span><strong>${esc(state.bots.find((bot)=>bot.id===(item?.bot_id||channelSelection.bot_id))?.name||"Not assigned")}</strong></div><div class="channel-actions">${connected?`<button class="button" data-action="refresh-meta-token">Refresh access</button><button class="button button-danger" data-disconnect-channel="${esc(item.id)}">Disconnect</button>`:`<button class="button button-primary" data-connect-meta-channel="${key}">${key==='facebook'?'Hubungkan Facebook':'Hubungkan Instagram Business'}</button>`}</div></div></article>`;
+    }
     const status = item?.status || "disconnected";
     return `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">${initials(label)}</span><div><h3>${esc(label)}</h3><span class="subtle">${esc(provider)}</span></div></div>${statusBadge(status,status.charAt(0).toUpperCase()+status.slice(1))}</div><div class="card-body"><div class="channel-stat"><span>Last activity</span><strong>${relativeTime(item?.last_activity_at||item?.connected_at)}</strong></div><div class="channel-stat"><span>Message count</span><strong>${formatNumber(item?.message_count||0)}</strong></div><div class="channel-stat"><span>Connection</span><strong>${esc(item?.display_name||"Not configured")}</strong></div><div class="channel-actions">${status==="connected"?`<button class="button" data-action="refresh-channel-health">Health check</button><button class="button button-danger" data-disconnect-channel="${esc(item.id)}">Disconnect</button>`:`<button class="button button-primary" data-connect-channel-type="${key}">Connect ${esc(label)}</button>`}</div></div></article>`;
   }).join("");
   const a=state.channelAnalytics||{};
   const usage=(a.channel_usage||[]).map((row)=>`<tr><td><span class="table-title">${esc(row.channel)}</span></td><td>${formatNumber(row.messages)}</td><td>${formatNumber(row.active_users)}</td></tr>`).join("");
-  setPage(`${pageHeader("Omni Channel Manager","All inbound messages use the same Supervisor, Knowledge Base, Memory, and specialist agents.",`<button class="button" data-action="refresh-channel-health">${icon('refresh',14)} Health check</button><button class="button button-primary" data-action="connect-channel">${icon('plus',14)} Connect channel</button>`)}<div class="grid grid-4"><article class="card metric-card"><div class="metric-label">Total Messages</div><div class="metric-value">${formatNumber(a.total_messages)}</div><div class="metric-meta">Last 30 days</div></article><article class="card metric-card"><div class="metric-label">Active Users</div><div class="metric-value">${formatNumber(a.active_users)}</div><div class="metric-meta">Unique channel users</div></article><article class="card metric-card"><div class="metric-label">Response Time</div><div class="metric-value">${Number(a.response_time_ms||0).toFixed(0)}ms</div><div class="metric-meta">Average channel delivery</div></article><article class="card metric-card"><div class="metric-label">Conversion Rate</div><div class="metric-value">${Number(a.conversion_rate||0).toFixed(1)}%</div><div class="metric-meta">Marked conversions</div></article></div><div class="grid channel-grid" style="margin-top:16px">${cards}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Channel Usage</h3><span class="subtle">Per-tenant message and active-user distribution</span></div></div>${usage?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Messages</th><th>Active Users</th></tr></thead><tbody>${usage}</tbody></table></div>`:emptyState("No channel traffic","Usage appears after the first inbound message.")}</div>`);
+  setPage(`${pageHeader("Omni Channel Manager","All inbound messages use the same Supervisor, Knowledge Base, Memory, and specialist agents.",`<button class="button" data-action="refresh-channel-health">${icon('refresh',14)} Health check</button><button class="button button-primary" data-action="connect-channel">${icon('plus',14)} Connect other channel</button>`)}<div class="grid grid-4"><article class="card metric-card"><div class="metric-label">Total Messages</div><div class="metric-value">${formatNumber(a.total_messages)}</div><div class="metric-meta">Last 30 days</div></article><article class="card metric-card"><div class="metric-label">Active Users</div><div class="metric-value">${formatNumber(a.active_users)}</div><div class="metric-meta">Unique channel users</div></article><article class="card metric-card"><div class="metric-label">Response Time</div><div class="metric-value">${Number(a.response_time_ms||0).toFixed(0)}ms</div><div class="metric-meta">Average channel delivery</div></article><article class="card metric-card"><div class="metric-label">Conversion Rate</div><div class="metric-value">${Number(a.conversion_rate||0).toFixed(1)}%</div><div class="metric-meta">Marked conversions</div></article></div><div class="grid channel-grid" style="margin-top:16px">${cards}</div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Channel Usage</h3><span class="subtle">Per-tenant message and active-user distribution</span></div></div>${usage?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Messages</th><th>Active Users</th></tr></thead><tbody>${usage}</tbody></table></div>`:emptyState("No channel traffic","Usage appears after the first inbound message.")}</div>`);
+  const params=new URLSearchParams(location.search);
+  if(params.get("meta_oauth")==="success"){
+    const channel=params.get("meta_channel")||"facebook";
+    history.replaceState(null,"",location.pathname+"#channels");
+    setTimeout(()=>showMetaAssetSelection(channel),0);
+  } else if(params.get("meta_oauth") && params.get("meta_oauth")!=="success"){
+    toast("Meta login was not completed.","error");
+    history.replaceState(null,"",location.pathname+"#channels");
+  }
 }
 
 async function renderSettings() {
-  loadingPage("Platform Settings","Configure channels, security posture, and workspace connectivity.");
-  const [channelResult, integrationResult, waEmbeddedResult] = await Promise.all([
-    settle("channels",api.channels()),
-    settle("integrations",api.integrations()),
-    state.selectedBotId ? settle("whatsappEmbedded",api.whatsappEmbeddedStatus(state.selectedBotId)) : Promise.resolve({ok:false}),
-  ]);
-  state.channels = channelResult.ok ? channelResult.data.channels || [] : [];
+  loadingPage("Platform Settings","Configure security posture and workspace connectivity.");
+  const integrationResult = await settle("integrations",api.integrations());
   state.integrations = integrationResult.ok ? integrationResult.data : {};
-  state.whatsappEmbedded = waEmbeddedResult.ok ? waEmbeddedResult.data : {};
-  const channelRows = state.channels.map((channel) => `<tr><td><span class="activity-symbol">${initials(channel.channel_type)}</span></td><td><span class="table-title">${esc(channel.display_name)}</span><div class="subtle" style="font-size:9px">${esc(channel.channel_type)}</div></td><td>${statusBadge(channel.is_active?'active':'inactive')}</td><td>${relativeTime(channel.last_sync_at||channel.connected_at)}</td><td><button class="button button-danger" data-disconnect-channel="${esc(channel.id)}">Disconnect</button></td></tr>`).join("");
-  const integrationCards = `<div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Meta WhatsApp</h3><span class="subtle" style="font-size:9px">Cloud API and inbound bot mapping</span></div>${statusBadge(state.integrations?.meta?.connected?'active':'inactive',state.integrations?.meta?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">Phone ID: ${esc(state.integrations?.meta?.wa_phone_number_id||'Not configured')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="configure-meta">Configure Meta</button>${state.integrations?.meta?.connected?'<button class="button" data-action="test-meta">Send test</button><button class="button button-danger" data-disconnect-integration="meta">Disconnect</button>':''}</div></div></div><div class="card"><div class="card-head"><div><h3>Gmail</h3><span class="subtle" style="font-size:9px">OAuth inbox processing</span></div>${statusBadge(state.integrations?.gmail?.connected?'active':'inactive',state.integrations?.gmail?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">${esc(state.integrations?.gmail?.email||'No Gmail account connected')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="gmail-start">${state.integrations?.gmail?.connected?'Reconnect Gmail':'Connect Gmail'}</button>${state.integrations?.gmail?.connected?'<button class="button" data-action="gmail-map">Map to agent</button><button class="button" data-action="gmail-poll">Poll now</button><button class="button button-danger" data-disconnect-integration="gmail">Disconnect</button>':''}</div></div></div></div>`;
-  const wa = state.whatsappEmbedded || {};
-  const waStatusVariant = wa.connected ? 'active' : (wa.connection_status==='error' ? 'error' : 'inactive');
-  const waStatusLabel = wa.connected ? 'Connected' : (wa.connection_status==='error' ? 'Setup error' : 'Not connected');
-  const waEmbeddedCard = state.selectedBotId ? `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>WhatsApp (Embedded Signup)</h3><span class="subtle" style="font-size:9px">Connect via Meta — login, pick a number, done. No token copy-paste.</span></div>${statusBadge(waStatusVariant,waStatusLabel)}</div><div class="card-body"><p class="subtle">Agent: ${esc(state.bots.find(b=>b.id===state.selectedBotId)?.name||state.selectedBotId)}</p><p class="subtle">Phone number ID: ${esc(wa.phone_number_id||'Not connected')}</p><p class="subtle">WABA ID: ${esc(wa.waba_id||'-')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="connect-whatsapp-embedded">${wa.connected?'Reconnect WhatsApp':'Connect WhatsApp'}</button>${wa.connected?'<button class="button button-danger" data-action="disconnect-whatsapp-embedded">Disconnect</button>':''}</div></div></div>` : '';
+  const integrationCards = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Gmail</h3><span class="subtle" style="font-size:9px">OAuth inbox processing</span></div>${statusBadge(state.integrations?.gmail?.connected?'active':'inactive',state.integrations?.gmail?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">${esc(state.integrations?.gmail?.email||'No Gmail account connected')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="gmail-start">${state.integrations?.gmail?.connected?'Reconnect Gmail':'Connect Gmail'}</button>${state.integrations?.gmail?.connected?'<button class="button" data-action="gmail-map">Map to agent</button><button class="button" data-action="gmail-poll">Poll now</button><button class="button button-danger" data-disconnect-integration="gmail">Disconnect</button>':''}</div></div></div>`;
   const systemStatus = `<div class="grid grid-2"><div class="card"><div class="card-head"><h3>System status</h3></div><div class="card-body"><div class="setting-row"><div><strong>FastAPI backend</strong><p class="subtle">Application and REST APIs</p></div>${statusBadge(state.health?.db?'active':'error',state.health?.db?'Connected':'Unavailable')}</div><div class="setting-row"><div><strong>PostgreSQL</strong><p class="subtle">Tenant and business data</p></div>${statusBadge(state.health?.schema?'active':'error',state.health?.schema?'Schema ready':'Schema issue')}</div><div class="setting-row"><div><strong>AI provider</strong><p class="subtle">${esc(state.health?.ai?.model||'Not configured')}</p></div>${statusBadge(state.health?.ai?.configured?'active':'error',state.health?.ai?.configured?'Ready':'Not configured')}</div></div></div><div class="card"><div class="card-head"><h3>Workspace identity</h3></div><div class="card-body"><div class="form-grid"><label class="field full"><span>Organization</span><input value="${esc(state.org?.name||'')}" readonly></label><label class="field"><span>Tenant slug</span><input value="${esc(state.org?.slug||'')}" readonly></label><label class="field"><span>Application URL</span><input value="${esc(location.origin)}" readonly></label></div></div></div></div>`;
-  const channelTable = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Connected channels</h3><span class="subtle" style="font-size:9px">Website and Telegram channels, plus managed integrations below</span></div><span class="status-badge active">${state.channels.filter(c=>c.is_active).length} active</span></div>${channelRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Channel</th><th>Status</th><th>Last sync</th><th></th></tr></thead><tbody>${channelRows}</tbody></table></div>`:emptyState("No platform channels","Connect a website or Telegram channel to an AI agent.")}</div>`;
   const sessionCard = `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Session & security</h3></div><div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div><strong>Current authenticated session</strong><p class="subtle" style="margin:5px 0 0;font-size:10px">JWT authentication and RBAC permissions are enforced by FastAPI.</p></div><button class="button button-danger" data-action="logout">Sign out</button></div></div>`;
-  setPage(`${pageHeader("Platform Settings","Manage deployment connectivity, integrations, and workspace security.",`<button class="button" data-action="connect-channel">Connect channel</button><button class="button" data-action="security-scan">Run security scan</button>`)}${systemStatus}${channelTable}${integrationCards}${waEmbeddedCard}${sessionCard}`);
+  setPage(`${pageHeader("Platform Settings","Manage deployment connectivity, integrations, and workspace security.",`<button class="button" data-action="security-scan">Run security scan</button>`)}${systemStatus}${integrationCards}${sessionCard}`);
 }
 
 // ─── WhatsApp Embedded Signup (Meta) ────────────────────────────
@@ -924,8 +990,7 @@ function waitForEmbeddedSignupMessage() {
   });
 }
 
-async function connectWhatsAppEmbedded() {
-  const botId = state.selectedBotId;
+async function connectWhatsAppEmbedded(botId = state.selectedBotId) {
   if (!botId) return toast("Create an AI agent first.", "error");
   try {
     const config = await api.whatsappEmbeddedConnect(botId);
@@ -948,14 +1013,13 @@ async function connectWhatsAppEmbedded() {
       business_id: signupData.business_id,
     });
     toast("WhatsApp connected successfully.", "success");
-    await renderSettings();
+    await renderChannels();
   } catch (error) { toast(error.message, "error"); }
 }
 
-async function disconnectWhatsAppEmbedded() {
-  const botId = state.selectedBotId;
+async function disconnectWhatsAppEmbedded(botId = state.selectedBotId) {
   if (!botId || !confirm("Disconnect WhatsApp for this agent?")) return;
-  try { await api.whatsappEmbeddedDisconnect(botId); toast("WhatsApp disconnected.", "success"); await renderSettings(); }
+  try { await api.whatsappEmbeddedDisconnect(botId); toast("WhatsApp disconnected.", "success"); await renderChannels(); }
   catch (error) { toast(error.message, "error"); }
 }
 
@@ -976,8 +1040,18 @@ async function submitInviteMember() {
 
 function showMemberRole(userId) {
   const member=state.team.find((item)=>String(item.id)===String(userId)); if(!member)return;
-  const options=state.roles.map((role)=>`<option value="${esc(role.key)}" ${(member.roles||[]).includes(role.key)?"selected":""}>${esc(role.name||role.key)}</option>`).join("");
-  el("#modal-root").innerHTML=modal({title:`Manage access - ${member.full_name||member.email}`,body:`<form id="member-role-form" data-user-id="${esc(member.id)}"><label class="field"><span>Add role</span><select name="role_key">${options}</select></label></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-member-role">Assign role</button>`});
+  const currentRoles=member.roles||[];
+  const rolesList=currentRoles.length
+    ? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">${currentRoles.map((roleKey)=>{
+        const roleInfo=state.roles.find((role)=>role.key===roleKey);
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span class="status-badge ready">${esc(roleInfo?.name||roleKey)}</span><button type="button" class="button button-danger" data-revoke-member-role="${esc(roleKey)}" data-user-id="${esc(member.id)}">Hapus</button></div>`;
+      }).join("")}</div>`
+    : `<p class="subtle" style="font-size:11px">Anggota ini belum punya role.</p>`;
+  const assignableRoles=state.roles.filter((role)=>!currentRoles.includes(role.key));
+  const addForm=assignableRoles.length
+    ? `<form id="member-role-form" data-user-id="${esc(member.id)}"><label class="field"><span>Add role</span><select name="role_key">${assignableRoles.map((role)=>`<option value="${esc(role.key)}">${esc(role.name||role.key)}</option>`).join("")}</select></label></form>`
+    : `<p class="subtle" style="font-size:11px">Semua role sudah ditugaskan ke anggota ini.</p>`;
+  el("#modal-root").innerHTML=modal({title:`Manage access - ${member.full_name||member.email}`,body:`<div><span class="eyebrow">CURRENT ROLES</span>${rolesList}</div>${addForm}`,footer:`<button class="button" data-action="close-modal">Cancel</button>${assignableRoles.length?`<button class="button button-primary" data-action="submit-member-role">Assign role</button>`:''}`});
 }
 
 async function submitMemberRole() {
@@ -994,18 +1068,60 @@ function exportTeam() {
 
 function showConnectChannel(preselected = "website") {
   const bots=state.bots.map((bot)=>`<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
-  const options=[["whatsapp","WhatsApp"],["telegram","Telegram"],["instagram","Instagram"],["facebook","Facebook Messenger"],["website","Website Chat"]].map(([value,label])=>`<option value="${value}" ${value===preselected?'selected':''}>${label}</option>`).join("");
-  el("#modal-root").innerHTML=modal({title:"Connect business channel",body:`<form id="connect-channel-form"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>Channel</span><select name="channel_type">${options}</select></label><label class="field full"><span>Display name</span><input name="display_name" required placeholder="Main customer channel"></label><label class="field"><span>External ID</span><input name="external_id" placeholder="Phone ID, Page ID, account ID, or domain"></label><label class="field"><span>Access token / Telegram token</span><input name="access_token" type="password" placeholder="Leave empty for Website Chat"></label><label class="field full"><span>Allowed website domain</span><input name="domain" placeholder="https://example.com (Website Chat only)"></label><p class="subtle full">WhatsApp: external ID = phone number ID. Instagram: Instagram account ID. Facebook: Page ID. Telegram: paste bot token.</p></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-connect-channel">Connect</button>`});
+  const options=[["telegram","Telegram"],["website","Website Chat"]].map(([value,label])=>`<option value="${value}" ${value===preselected?'selected':''}>${label}</option>`).join("");
+  el("#modal-root").innerHTML=modal({title:"Connect business channel",body:`<form id="connect-channel-form"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>Channel</span><select name="channel_type">${options}</select></label><label class="field full"><span>Display name</span><input name="display_name" required placeholder="Main customer channel"></label><label class="field full"><span>Allowed website domain</span><input name="domain" placeholder="https://example.com (Website Chat only)"></label><p class="subtle full">Provider credentials are managed securely by the platform operator. Customers never need to paste Telegram, Instagram, or Facebook tokens.</p></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-connect-channel">Connect</button>`});
+}
+
+async function showMetaConnect(channel) {
+  if (!state.bots.length) return toast("Buat AI agent terlebih dahulu.", "error");
+  if (!(state.metaOAuth?.pages || []).length) {
+    const botId = state.selectedBotId || state.bots[0].id;
+    try {
+      const result = await api.metaOAuthStart(botId, channel);
+      location.href = result.auth_url;
+    } catch (error) { toast(error.message,"error"); }
+    return;
+  }
+  showMetaAssetSelection(channel);
+}
+
+function showMetaAssetSelection(channel) {
+  const pages = state.metaOAuth?.pages || [];
+  const usable = channel === "instagram" ? pages.filter((page)=>page.instagram?.id) : pages;
+  if (!usable.length) return toast(channel === "instagram" ? "Tidak ada akun Instagram Business yang tertaut ke Facebook Page Anda." : "Tidak ada Facebook Page yang tersedia.", "error");
+  const bots = state.bots.map((bot)=>`<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
+  const assets = usable.map((page)=>`<option value="${esc(page.id)}" data-instagram-id="${esc(page.instagram?.id||'')}">${esc(channel==='instagram' ? `${page.instagram?.username || 'Instagram'} - ${page.name}` : page.name)}</option>`).join("");
+  el("#modal-root").innerHTML=modal({title:`Hubungkan ${channel==='instagram'?'Instagram Business':'Facebook Page'}`,body:`<form id="meta-asset-form" data-channel="${channel}"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>${channel==='instagram'?'Akun Instagram Business':'Facebook Page'}</span><select name="page_id">${assets}</select></label></div><p class="subtle" style="margin-top:12px">Login dilakukan melalui OAuth resmi Meta. Token disimpan terenkripsi per tenant.</p></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta-asset">Hubungkan</button>`});
+}
+
+async function submitMetaAssetSelection() {
+  const form=el("#meta-asset-form"); if(!form)return;
+  const channel=form.dataset.channel;
+  const option=form.elements.page_id.selectedOptions[0];
+  const body={bot_id:form.elements.bot_id.value,page_id:form.elements.page_id.value,channels:[channel]};
+  if(channel==="instagram") body.instagram_id=option.dataset.instagramId;
+  try { await api.metaOAuthSelect(body); el("#modal-root").innerHTML=""; toast(`${channel==='instagram'?'Instagram':'Facebook'} connected.`,"success"); await renderChannels(); }
+  catch(error){ toast(error.message,"error"); }
+}
+
+function showWhatsAppConnect() {
+  if (!state.bots.length) return toast("Create an AI agent first.", "error");
+  const options = state.bots.map((bot) => `<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
+  el("#modal-root").innerHTML = modal({title:"Connect WhatsApp",body:`<form id="connect-whatsapp-form"><label class="field"><span>Route WhatsApp to agent</span><select name="bot_id">${options}</select></label><p class="subtle" style="margin-top:12px">You will sign in to Meta, choose the WhatsApp Business account and phone number, then BotNesia stores the connection securely. Users do not need to paste an access token.</p></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-connect-whatsapp">Continue with Meta</button>`});
+}
+
+async function submitWhatsAppConnect() {
+  const form = el("#connect-whatsapp-form");
+  if (!form) return;
+  const botId = form.elements.bot_id.value;
+  el("#modal-root").innerHTML = "";
+  await connectWhatsAppEmbedded(botId);
 }
 
 async function submitConnectChannel() {
   const form=el("#connect-channel-form"); if(!form || !form.reportValidity())return; const data=Object.fromEntries(new FormData(form));
-  const token=data.access_token; delete data.access_token; const domain=data.domain; delete data.domain;
-  if(data.channel_type==="telegram") data.credentials=token?{bot_token:token}:{};
-  else if(data.channel_type==="whatsapp") data.credentials=token?{access_token:token,phone_number_id:data.external_id}:{};
-  else if(data.channel_type==="instagram") data.credentials=token?{access_token:token,instagram_account_id:data.external_id}:{};
-  else if(data.channel_type==="facebook") data.credentials=token?{access_token:token,page_id:data.external_id}:{};
-  else data.credentials={}; data.config=domain?{domain}:{};
+  const domain=data.domain; delete data.domain;
+  data.credentials={}; data.config=domain?{domain}:{};
   try { const result=await api.connectChannel(data); el("#modal-root").innerHTML=""; toast("Channel connected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); if(data.channel_type==="website") showWidgetSnippet(result.channel); } catch(error){ toast(error.message,"error"); }
 }
 
@@ -1014,17 +1130,9 @@ function showWidgetSnippet(channel) {
   el("#modal-root").innerHTML=modal({title:"Website Chat ready",body:`<p class="subtle">Embed this snippet before the closing body tag.</p><label class="field"><span>Embed code</span><textarea readonly style="min-height:110px" onclick="this.select()">${esc(snippet)}</textarea></label>`,footer:`<button class="button button-primary" data-action="close-modal">Done</button>`});
 }
 
-function showMetaIntegration() {
-  const bots=state.bots.map((bot)=>`<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
-  el("#modal-root").innerHTML=modal({title:"Configure Meta WhatsApp",body:`<form id="meta-integration-form"><div class="form-grid"><label class="field"><span>WhatsApp phone number ID</span><input name="wa_phone_number_id" required value="${esc(state.integrations?.meta?.wa_phone_number_id||'')}"></label><label class="field"><span>Route inbound to agent</span><select name="wa_bot_id">${bots}</select></label><label class="field full"><span>Permanent access token</span><input type="password" name="wa_token" required></label><label class="field"><span>Default test number</span><input name="default_to_number" placeholder="62812..."></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta">Save integration</button>`});
-}
-
-async function submitMetaIntegration() { const form=el("#meta-integration-form"); if(!form||!form.reportValidity())return; try{await api.saveMeta(Object.fromEntries(new FormData(form))); el("#modal-root").innerHTML=""; toast("Meta WhatsApp configured.","success"); await renderSettings();}catch(error){toast(error.message,"error");} }
 async function startGmail() { try{const result=await api.gmailStart(); location.href=result.auth_url;}catch(error){toast(error.message,"error");} }
 async function mapGmail() { const botId=state.selectedBotId||state.bots[0]?.id; if(!botId)return toast("Create an agent first.","error"); try{await api.gmailMapBot(botId); toast("Gmail mapped to selected agent.","success"); await renderSettings();}catch(error){toast(error.message,"error");} }
 async function pollGmail() { try{const result=await api.gmailPoll(); toast(`Gmail poll complete: ${result.processed||0} messages.`,"success");}catch(error){toast(error.message,"error");} }
-function showMetaTest() { el("#modal-root").innerHTML=modal({title:"Send WhatsApp test",body:`<form id="meta-test-form"><label class="field"><span>Destination number</span><input name="to_number" required placeholder="62812..."></label><label class="field" style="margin-top:12px"><span>Message</span><textarea name="text">Halo! Ini test dari BotNesia.</textarea></label></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta-test">Send test</button>`}); }
-async function submitMetaTest(){const form=el("#meta-test-form");if(!form||!form.reportValidity())return;try{await api.sendMetaTest(form.elements.to_number.value,form.elements.text.value);el("#modal-root").innerHTML="";toast("WhatsApp test sent.","success");}catch(error){toast(error.message,"error");}}
 async function showNotifications(){const [queue,audit]=await Promise.all([settle("queue",api.handoffQueue({limit:5})),settle("audit",api.auditLogs({limit:8}))]);const q=queue.ok?(queue.data.queue||[]):[];const logs=audit.ok?(audit.data.logs||[]):[];const body=`<h4>Human handoff</h4>${q.length?q.map((item)=>`<div class="setting-row"><span>${esc(item.reason||'Escalated conversation')}</span>${statusBadge(item.status||'waiting')}</div>`).join(""):"<p class=subtle>No pending handoff.</p>"}<h4 style="margin-top:20px">Recent audit</h4>${logs.length?logs.map((item)=>`<div class="setting-row"><span>${esc(item.action)} - ${esc(item.resource_type)}</span><span class="subtle">${relativeTime(item.created_at)}</span></div>`).join(""):"<p class=subtle>No recent audit events.</p>"}`;el("#modal-root").innerHTML=modal({title:"Notifications",body,wide:true});}
 
 function showMarketplaceInstall(templateKey) {
@@ -1189,7 +1297,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1343,6 +1451,8 @@ document.addEventListener("click", async (event) => {
   if(resolveHandoff){ const note=prompt("Catatan resolusi (opsional):") || null; try{ await api.resolveHandoff(resolveHandoff.dataset.resolveHandoff,note); toast("Handoff resolved. AI can resume.","success"); await renderHumanHandoff(); }catch(error){ toast(error.message,"error"); } return; }
   const traceTarget=event.target.closest("[data-observability-trace]");
   if(traceTarget){ await openObservabilityTrace(traceTarget.dataset.observabilityTrace); return; }
+  const viewSources=event.target.closest("[data-view-sources]");
+  if(viewSources){ await openMessageSources(viewSources.dataset.viewSources); return; }
   const routeTarget=event.target.closest("[data-route]");
   if(routeTarget){ location.hash=routeTarget.dataset.route; return; }
   const agentTarget=event.target.closest("[data-agent-id]");
@@ -1362,15 +1472,15 @@ document.addEventListener("click", async (event) => {
   }
   if(action==="close-drawer") closeDrawer();
   if(action==="notifications") await showNotifications();
-  if(action==="configure-meta") showMetaIntegration();
-  if(action==="submit-meta") await submitMetaIntegration();
-  if(action==="test-meta") showMetaTest();
-  if(action==="submit-meta-test") await submitMetaTest();
   if(action==="gmail-start") await startGmail();
   if(action==="gmail-map") await mapGmail();
   if(action==="gmail-poll") await pollGmail();
-  if(action==="connect-whatsapp-embedded") await connectWhatsAppEmbedded();
-  if(action==="disconnect-whatsapp-embedded") await disconnectWhatsAppEmbedded();
+  if(action==="connect-whatsapp") showWhatsAppConnect();
+  if(action==="submit-meta-asset") await submitMetaAssetSelection();
+  if(action==="refresh-meta-token"){ try{await api.metaOAuthRefresh();toast("Meta access refreshed.","success");await renderChannels();}catch(error){toast(error.message,"error");} }
+  const connectMeta=event.target.closest("[data-connect-meta-channel]"); if(connectMeta) await showMetaConnect(connectMeta.dataset.connectMetaChannel);
+  if(action==="submit-connect-whatsapp") await submitWhatsAppConnect();
+  const disconnectWhatsApp=event.target.closest("[data-disconnect-whatsapp-bot]"); if(disconnectWhatsApp) await disconnectWhatsAppEmbedded(disconnectWhatsApp.dataset.disconnectWhatsappBot);
   const disconnectIntegration=event.target.closest("[data-disconnect-integration]"); if(disconnectIntegration && confirm("Disconnect this integration?")){ try{ await api.deleteIntegration(disconnectIntegration.dataset.disconnectIntegration); toast("Integration disconnected.","success"); await renderSettings(); }catch(error){toast(error.message,"error");} }
   if(action==="send-chat") { event.preventDefault(); await sendPlayground(event.target.closest("form")); }
   if(action==="toggle-recording") await toggleRecording(event.target.closest('[data-action="toggle-recording"]'));
@@ -1397,9 +1507,20 @@ document.addEventListener("click", async (event) => {
   const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); }catch(error){toast(error.message,"error");} }
   if(action==="manage-member") showMemberRole(event.target.closest("[data-team-user]")?.dataset.teamUser);
   if(action==="submit-member-role") await submitMemberRole();
+  const revokeMemberRole=event.target.closest("[data-revoke-member-role]");
+  if(revokeMemberRole && confirm("Hapus role ini dari anggota?")){
+    try{ await api.revokeRole(revokeMemberRole.dataset.userId,revokeMemberRole.dataset.revokeMemberRole); toast("Role dihapus.","success"); await renderTeam(); showMemberRole(revokeMemberRole.dataset.userId); }
+    catch(error){ toast(error.message,"error"); }
+    return;
+  }
   if(action==="export-team") exportTeam();
   if(action==="connect-channel") showConnectChannel();
-  const connectType=event.target.closest("[data-connect-channel-type]"); if(connectType) showConnectChannel(connectType.dataset.connectChannelType);
+  const connectType=event.target.closest("[data-connect-channel-type]"); if(connectType) {
+    const type=connectType.dataset.connectChannelType;
+    if(type==="whatsapp") showWhatsAppConnect();
+    else if(type==="facebook"||type==="instagram") await showMetaConnect(type);
+    else showConnectChannel(type);
+  }
   if(action==="refresh-channel-health"){ try{ await api.channelStatus(true); toast("Channel health refreshed.","success"); if(state.route==="channels") await renderChannels(); }catch(error){toast(error.message,"error");} }
   if(action==="submit-connect-channel") await submitConnectChannel();
   const deleteDoc=event.target.closest("[data-delete-document]"); if(deleteDoc && confirm("Delete this knowledge document?")){ try{ await api.deleteDocument(state.selectedBotId,deleteDoc.dataset.deleteDocument); toast("Document deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} }
@@ -1479,6 +1600,7 @@ document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-conversation-bot]")){ state.selectedBotId=event.target.value; state.selectedConversationId=null; state.messages=[]; await renderConversations(); }
   if(event.target.matches("[data-analytics-bot]")){ state.selectedBotId=event.target.value; await renderAnalytics(); }
   if(event.target.matches("[data-analytics-days]")) await renderAnalytics(event.target.value);
+  if(event.target.matches("[data-routing-logs-bot]")){ state.selectedBotId=event.target.value; await renderRoutingLogs(); }
   if(event.target.matches("[data-observability-days]")) await renderObservability(event.target.value);
   if(event.target.matches("[data-knowledge-bot]")){ state.selectedBotId=event.target.value; await renderKnowledge(); }
   if(event.target.matches("[data-document-upload]")) await uploadDocument(event.target);

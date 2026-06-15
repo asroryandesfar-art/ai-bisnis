@@ -12,30 +12,37 @@ from bn_platform.handoff import (
 
 
 @pytest.mark.parametrize(
-    ("overrides", "reason", "priority"),
+    ("overrides", "expected"),
     [
-        ({"confidence": 0.2}, "low_confidence", "high"),
-        ({"final_answer": "Maaf, saya tidak tahu jawabannya."}, "ai_does_not_know", "medium"),
-        ({"user_message": "Saya sangat marah dan kecewa."}, "angry_user", "high"),
-        ({"user_message": "Tolong hubungkan ke manusia."}, "user_requested_human", "medium"),
-        ({"errors": ["provider timeout"]}, "ai_error", "high"),
+        # AI tidak yakin / "tidak tahu" / error internal -> TIDAK ada handoff.
+        (
+            {"allow_human_handoff": False, "handoff_reason": None,
+             "escalation_urgency": None, "friction_points": []},
+            (False, "", "low"),
+        ),
+        # Permintaan eksplisit dari user -> handoff, prioritas ikut urgency escalation.
+        (
+            {"allow_human_handoff": True, "handoff_reason": "user_requested_human",
+             "escalation_urgency": "medium", "friction_points": []},
+            (True, "user_requested_human", "medium"),
+        ),
+        # Refund/legal/dll -> handoff meski urgency escalation rendah/None (floor "medium").
+        (
+            {"allow_human_handoff": True, "handoff_reason": "Permintaan refund...",
+             "escalation_urgency": "low", "friction_points": []},
+            (True, "Permintaan refund...", "medium"),
+        ),
+        # Banyak friction point berturut -> backstop heavy_complaint meski tidak ada
+        # pemicu eksplisit dari Intent Router.
+        (
+            {"allow_human_handoff": False, "handoff_reason": None,
+             "escalation_urgency": None, "friction_points": ["a", "b", "c"]},
+            (True, "heavy_complaint", "medium"),
+        ),
     ],
 )
-def test_handoff_trigger_covers_required_conditions(overrides, reason, priority):
-    values = {
-        "confidence": 0.9,
-        "sentiment": {"label": "neutral", "score": 0},
-        "should_escalate": False,
-        "escalation_urgency": None,
-        "escalation_reason": None,
-        "friction_points": [],
-        "user_message": "",
-        "final_answer": "Jawaban tersedia.",
-        "errors": [],
-    }
-    values.update(overrides)
-
-    assert evaluate_handoff_trigger(**values) == (True, reason, priority)
+def test_handoff_trigger_covers_required_conditions(overrides, expected):
+    assert evaluate_handoff_trigger(**overrides) == expected
 
 
 class FakePool:
