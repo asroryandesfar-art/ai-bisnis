@@ -90,11 +90,15 @@ class BaseAgent:
             raise RuntimeError("API key kosong. Set GROQ_API_KEY untuk mode cloud.")
 
         base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
-        default_model = self.model or "llama-3.3-70b-versatile"
+        default_model = self.model or "meta-llama/llama-4-scout-17b-16e-instruct"
         selected_model = routed_model(default_model)
         models = [selected_model]
         if selected_model != default_model:
             models.append(default_model)
+        # Selalu tambah 8b sebagai last-resort fallback saat model utama rate-limited
+        _FAST_FALLBACK = "llama-3.1-8b-instant"
+        if _FAST_FALLBACK not in models:
+            models.append(_FAST_FALLBACK)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
