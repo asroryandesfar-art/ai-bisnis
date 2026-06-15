@@ -277,33 +277,36 @@ class SupervisorAgent:
     ):
         # Cloud-only: api_key dipakai untuk LLM dan memori.
         kwargs = {"api_key": api_key or "", "base_url": base_url or "", "app_url": app_url}
-        if model:
-            kwargs["model"] = model
+        strong_model = model or "meta-llama/llama-4-scout-17b-16e-instruct"
+        # Agen internal pipeline pakai model ringan untuk hemat RPD quota Groq.
+        # Hanya cs_agent (jawaban utama ke user) yang pakai strong model.
+        fast_kwargs = {**kwargs, "model": "llama-3.1-8b-instant"}
+        strong_kwargs = {**kwargs, "model": strong_model}
 
-        self.cs_agent        = CSAgent(**kwargs)
-        self.escalation_agent = EscalationAgent(**kwargs)
-        self.analytics_agent  = AnalyticsAgent(**kwargs)
-        self.trainer_agent    = TrainerAgent(**kwargs)
-        self.memory_agent     = MemoryAgent(**kwargs, persist_path="data/memory.json")
+        self.cs_agent        = CSAgent(**strong_kwargs)
+        self.escalation_agent = EscalationAgent(**fast_kwargs)
+        self.analytics_agent  = AnalyticsAgent(**fast_kwargs)
+        self.trainer_agent    = TrainerAgent(**fast_kwargs)
+        self.memory_agent     = MemoryAgent(**fast_kwargs, persist_path="data/memory.json")
 
         # Intelligence Platform — agen ringan (read-mostly di jalur realtime,
         # penulisan berat dilakukan async setelah jawaban terkirim)
-        self.faq_agent       = FAQAgent(**kwargs)
-        self.sales_agent     = SalesAgent(**kwargs)
-        self.knowledge_agent = KnowledgeAgent(**kwargs)
+        self.faq_agent       = FAQAgent(**fast_kwargs)
+        self.sales_agent     = SalesAgent(**fast_kwargs)
+        self.knowledge_agent = KnowledgeAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
-        self.socratic_engine   = SocraticReasoningEngine(**kwargs)
-        self.devil_advocate_agent = DevilAdvocateAgent(**kwargs)
-        self.first_principle_agent = FirstPrincipleAgent(**kwargs)
-        self.uncertainty_engine = UncertaintyEngine(**kwargs)
-        self.intent_classifier = IntentClassifier(**kwargs)
-        self.planner_agent     = PlannerAgent(**kwargs)
-        self.reasoning_agent   = ReasoningAgent(**kwargs)
-        self.verification_agent = VerificationAgent(**kwargs)
+        self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)
+        self.devil_advocate_agent = DevilAdvocateAgent(**fast_kwargs)
+        self.first_principle_agent = FirstPrincipleAgent(**fast_kwargs)
+        self.uncertainty_engine = UncertaintyEngine(**fast_kwargs)
+        self.intent_classifier = IntentClassifier(**fast_kwargs)
+        self.planner_agent     = PlannerAgent(**fast_kwargs)
+        self.reasoning_agent   = ReasoningAgent(**fast_kwargs)
+        self.verification_agent = VerificationAgent(**fast_kwargs)
 
         # Reasoning/Truthfulness/Comparison/Self-Awareness engine
-        self.identity_agent = IdentityAgent(**kwargs)
+        self.identity_agent = IdentityAgent(**fast_kwargs)
         self.reasoning_controller = ReasoningController(identity_agent=self.identity_agent)
 
     async def process(self, context: dict) -> SupervisorResult:

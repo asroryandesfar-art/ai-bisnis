@@ -218,7 +218,7 @@ async def trace_request(context: dict, operation: Callable[[], Awaitable[T]]) ->
         str(context.get("user_message") or ""),
         str(context.get("reasoning_mode") or "standard"),
         str(context.get("_cheap_model") or "llama-3.1-8b-instant"),
-        str(context.get("_strong_model") or "llama-3.3-70b-versatile"),
+        str(context.get("_strong_model") or "meta-llama/llama-4-scout-17b-16e-instruct"),
     )
     route_token = set_model_route(route)
     state = TraceState(

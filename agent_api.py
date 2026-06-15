@@ -45,7 +45,7 @@ logger = logging.getLogger("agent_api.intelligence")
 
 class Settings(BaseSettings):
     groq_api_key:        str = ""
-    groq_model:          str = "llama-3.3-70b-versatile"
+    groq_model:          str = "meta-llama/llama-4-scout-17b-16e-instruct"
     groq_cheap_model:    str = "llama-3.1-8b-instant"
     groq_base_url:       str = "https://api.groq.com/openai/v1"
     app_url:             str = "https://botnesia.id"

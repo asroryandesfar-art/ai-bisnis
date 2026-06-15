@@ -10,8 +10,9 @@ from decimal import Decimal
 
 # Groq public pricing, USD per 1M tokens. Override with AI_MODEL_PRICING_JSON.
 DEFAULT_MODEL_PRICING = {
-    "llama-3.1-8b-instant": {"input": Decimal("0.05"), "output": Decimal("0.08")},
-    "llama-3.3-70b-versatile": {"input": Decimal("0.59"), "output": Decimal("0.79")},
+    "llama-3.1-8b-instant":                       {"input": Decimal("0.05"),  "output": Decimal("0.08")},
+    "llama-3.3-70b-versatile":                     {"input": Decimal("0.59"),  "output": Decimal("0.79")},
+    "meta-llama/llama-4-scout-17b-16e-instruct":   {"input": Decimal("0.11"),  "output": Decimal("0.34")},
 }
 
 
