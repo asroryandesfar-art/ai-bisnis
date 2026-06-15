@@ -4203,6 +4203,7 @@ async def chat(
                 except Exception:
                     logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
     except Exception as e:
+        logger.exception("CHAT EXCEPTION bot=%s conv=%s: %s", bot_id, conv_id, e)
         if market_answer:
             answer = market_answer
             model_used = "system:market-data"
