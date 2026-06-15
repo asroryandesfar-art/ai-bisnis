@@ -64,11 +64,18 @@ def evaluate_handoff_trigger(*, confidence: float | None, sentiment: dict | None
                              escalation_reason: str | None,
                              friction_points: list[str] | None,
                              user_message: str = "", final_answer: str = "",
-                             errors: list[str] | None = None) -> tuple[bool, str, str]:
+                             errors: list[str] | None = None,
+                             confidence_threshold: float | None = None) -> tuple[bool, str, str]:
     """
     Tentukan apakah percakapan ini perlu di-handoff ke manusia.
     Return (should_handoff, reason, priority).
+
+    `confidence_threshold` (opsional, dari `bots.handoff_confidence_threshold`)
+    menimpa `HANDOFF_CONFIDENCE_THRESHOLD` global per-bot — dipakai mis. untuk
+    bot "asisten umum" yang sering menjawab dengan nada hati-hati (confidence
+    rendah) tapi bukan kasus yang butuh agen manusia.
     """
+    threshold = HANDOFF_CONFIDENCE_THRESHOLD if confidence_threshold is None else confidence_threshold
     sentiment = sentiment or {}
     friction_points = friction_points or []
     errors = errors or []
@@ -97,7 +104,7 @@ def evaluate_handoff_trigger(*, confidence: float | None, sentiment: dict | None
         return True, "ai_does_not_know", "medium"
 
     # 1) confidence rendah
-    if confidence is not None and confidence < HANDOFF_CONFIDENCE_THRESHOLD:
+    if confidence is not None and confidence < threshold:
         priority = "high" if confidence < 0.25 else "medium"
         return True, "low_confidence", priority
 

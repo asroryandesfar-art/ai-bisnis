@@ -1013,6 +1013,7 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_cost_records_model ON cost_records(tenant_id, model_name, created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, channel, created_at DESC);",
         "ALTER TABLE bots ADD COLUMN IF NOT EXISTS reasoning_mode TEXT NOT NULL DEFAULT 'standard';",
+        "ALTER TABLE bots ADD COLUMN IF NOT EXISTS handoff_confidence_threshold FLOAT;",
         """
         CREATE TABLE IF NOT EXISTS feedback_records (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -3787,6 +3788,7 @@ async def chat(
     # 1. Load bot config
     bot = await pool.fetchrow(
         """SELECT b.id, b.org_id, b.system_prompt, b.language, b.temperature, b.reasoning_mode,
+                  b.handoff_confidence_threshold,
                   o.plan, o.billing_status, o.conv_limit
            FROM bots b
            JOIN organizations o ON o.id = b.org_id
@@ -4089,6 +4091,7 @@ async def chat(
                 user_message=body.message,
                 final_answer=answer,
                 errors=result.errors,
+                confidence_threshold=bot["handoff_confidence_threshold"],
             )
         if should_handoff:
             handoff_message = result.escalation_message or (
