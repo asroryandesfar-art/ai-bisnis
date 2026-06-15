@@ -2,17 +2,19 @@
 bn_platform/handoff.py — Human Handoff Queue
 
 Memutuskan kapan percakapan harus dialihkan dari AI ke agent manusia, lalu
-mengelola antreannya (assign, prioritas, SLA, resolusi). Trigger dievaluasi
-dari hasil SupervisorResult (lihat supervisor.py) — TIDAK menduplikasi logic
-EscalationAgent, hanya menambah lapisan keputusan "perlu antre ke manusia atau
-tidak" + queue management yang EscalationAgent existing belum punya.
+mengelola antreannya (assign, prioritas, SLA, resolusi).
 
-Trigger handoff (sesuai spesifikasi Phase 2 §3):
-  • confidence rendah        -> cs_confidence < HANDOFF_CONFIDENCE_THRESHOLD
-  • customer marah           -> sentiment.label in {"negative"} dgn score ekstrem,
-                                atau urgency escalation >= "high"
-  • komplain berat           -> EscalationAgent.should_escalate = True dgn
-                                urgency "high"/"critical", atau banyak friction_points
+Kebijakan global: AI TIDAK PERNAH menawarkan handoff ke manusia kecuali
+salah satu dari ini benar — user secara eksplisit minta bicara dengan
+manusia, ada indikasi legal/refund/akun yang butuh staf (AI tidak punya
+akses), atau user marah dan EscalationAgent menilai urgency-nya
+high/critical. Keputusan ini dibuat SATU KALI oleh Intent Router
+(`supervisor.py::route_intent`) dan diekspos sebagai
+`SupervisorResult.intent_routing["allow_human_handoff"]` — fungsi
+`evaluate_handoff_trigger` di bawah ini HANYA menerjemahkan keputusan itu
+(plus backstop friction_points) menjadi prioritas antrean, dan TIDAK
+menduplikasi/menge-derive ulang trigger-nya sendiri (confidence rendah,
+"AI tidak tahu", atau error internal BUKAN alasan untuk handoff).
 
 Prioritas SLA (lihat bn_platform/config.py):
   urgent  -> respon dlm HANDOFF_SLA_MINUTES_URGENT menit (default 15)
@@ -38,8 +40,6 @@ GetCurrentUser  = Callable[..., Awaitable[dict]]
 GetPool         = Callable[..., Awaitable[asyncpg.Pool]]
 DispatchWebhook = Callable[..., Awaitable[None]]
 
-HANDOFF_CONFIDENCE_THRESHOLD = 0.45
-
 _URGENCY_TO_PRIORITY = {
     "critical": "urgent",
     "high":     "high",
@@ -59,69 +59,35 @@ _SLA_MINUTES = {
 # TRIGGER EVALUATION
 # ============================================================
 
-def evaluate_handoff_trigger(*, confidence: float | None, sentiment: dict | None,
-                             should_escalate: bool, escalation_urgency: str | None,
-                             escalation_reason: str | None,
-                             friction_points: list[str] | None,
-                             user_message: str = "", final_answer: str = "",
-                             errors: list[str] | None = None,
-                             confidence_threshold: float | None = None) -> tuple[bool, str, str]:
+def evaluate_handoff_trigger(*, allow_human_handoff: bool,
+                             handoff_reason: str | None,
+                             escalation_urgency: str | None,
+                             friction_points: list[str] | None) -> tuple[bool, str, str]:
     """
     Tentukan apakah percakapan ini perlu di-handoff ke manusia.
     Return (should_handoff, reason, priority).
 
-    `confidence_threshold` (opsional, dari `bots.handoff_confidence_threshold`)
-    menimpa `HANDOFF_CONFIDENCE_THRESHOLD` global per-bot — dipakai mis. untuk
-    bot "asisten umum" yang sering menjawab dengan nada hati-hati (confidence
-    rendah) tapi bukan kasus yang butuh agen manusia.
+    `allow_human_handoff` (dari Intent Router, lihat
+    `supervisor.py::route_intent`) adalah satu-satunya sumber kebenaran untuk
+    "apakah user boleh ditawarkan handoff ke manusia" — true HANYA untuk
+    permintaan eksplisit, indikasi legal/refund/akun perlu staf, atau user
+    marah & EscalationAgent menilai urgency-nya high/critical.
+
+    confidence rendah, AI menjawab "tidak tahu", dan error internal yang
+    TIDAK menggagalkan jawaban BUKAN alasan untuk menawarkan handoff — dan
+    TIDAK lagi diperiksa di sini.
     """
-    threshold = HANDOFF_CONFIDENCE_THRESHOLD if confidence_threshold is None else confidence_threshold
-    sentiment = sentiment or {}
     friction_points = friction_points or []
-    errors = errors or []
-    label = str(sentiment.get("label", "neutral")).lower()
-    score = float(sentiment.get("score", 0.0) or 0.0)
-    message = user_message.lower()
-    answer = final_answer.lower()
 
-    if errors:
-        return True, "ai_error", "high"
+    if allow_human_handoff:
+        priority = _URGENCY_TO_PRIORITY.get((escalation_urgency or "medium").lower(), "medium")
+        if priority == "low":
+            priority = "medium"
+        return True, handoff_reason or "handoff_requested", priority
 
-    human_requests = (
-        "minta manusia", "bicara dengan manusia", "bicara manusia",
-        "hubungkan ke manusia", "cs manusia", "customer service",
-        "live agent", "human agent", "tidak mau bot",
-    )
-    if any(term in message for term in human_requests):
-        return True, "user_requested_human", "medium"
-
-    unknown_answers = (
-        "saya tidak tahu", "saya belum tahu", "tidak memiliki informasi",
-        "informasi tersebut tidak tersedia", "saya tidak dapat memastikan",
-        "saya tidak bisa memastikan", "di luar pengetahuan saya",
-    )
-    if any(term in answer for term in unknown_answers):
-        return True, "ai_does_not_know", "medium"
-
-    # 1) confidence rendah
-    if confidence is not None and confidence < threshold:
-        priority = "high" if confidence < 0.25 else "medium"
-        return True, "low_confidence", priority
-
-    # 2) customer marah (sentiment atau kata eksplisit)
-    angry_terms = ("marah", "kecewa", "parah", "bodoh", "brengsek", "penipuan", "bohong")
-    if any(term in message for term in angry_terms):
-        return True, "angry_user", "high"
-    if label in ("negative", "angry", "frustrated") and abs(score) >= 0.6:
-        return True, "angry_sentiment", "high"
-
-    # 3) komplain berat -> ikuti urgency dari EscalationAgent
-    if should_escalate and escalation_urgency:
-        priority = _URGENCY_TO_PRIORITY.get(escalation_urgency.lower(), "medium")
-        if escalation_urgency.lower() in ("high", "critical"):
-            return True, escalation_reason or "heavy_complaint", priority
-
-    # 4) banyak friction point berturut -> indikasi komplain berat meski urgency belum tinggi
+    # Banyak friction point berturut -> AI tidak mampu menyelesaikan, meski
+    # tidak ada pemicu eksplisit (catch-all yang masih sejalan dengan
+    # "AI lacks ability to resolve, user needs staff").
     if len(friction_points) >= 3:
         return True, "heavy_complaint", "medium"
 

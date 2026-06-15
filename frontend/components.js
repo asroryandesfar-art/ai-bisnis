@@ -104,7 +104,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 
 const navGroups = [
   ["FOUNDER", [["founder","Founder OS"]]],
-  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
+  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
   ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
@@ -121,6 +121,7 @@ const routeMeta = {
   chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
   conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
   observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
+  "routing-logs":["Routing Logs","Per-message Intent Router decisions: intent, selected agent, confidence, and handoff status"],
   channels:["Channels","Connect and monitor WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat"],
   costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
   marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],

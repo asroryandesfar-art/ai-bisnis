@@ -203,6 +203,9 @@ _gmail_poll_task: asyncio.Task | None = None
 _gmail_poll_stop: asyncio.Event | None = None
 _intelligence_learning_task: asyncio.Task | None = None
 _intelligence_learning_stop: asyncio.Event | None = None
+_meta_refresh_task: asyncio.Task | None = None
+_meta_refresh_stop: asyncio.Event | None = None
+_platform_route_inbound = None
 
 
 class QueueBusyError(RuntimeError):
@@ -528,6 +531,7 @@ async def get_pool_safe(timeout: float | None = None) -> asyncpg.Pool | None:
 async def startup():
     global _gmail_poll_task, _gmail_poll_stop
     global _intelligence_learning_task, _intelligence_learning_stop
+    global _meta_refresh_task, _meta_refresh_stop
     try:
         await _replicate_image_queue.start()
         await _replicate_video_queue.start()
@@ -578,10 +582,20 @@ async def startup():
     except Exception as e:
         print(f"[WARN] Intelligence nightly learning gagal start: {e}")
 
+    try:
+        from bn_platform.meta_oauth import meta_refresh_loop
+        if _meta_refresh_task is None:
+            _meta_refresh_stop = asyncio.Event()
+            _meta_refresh_task = asyncio.create_task(meta_refresh_loop(_meta_refresh_stop, get_pool))
+            print("[OK] Meta OAuth token refresh aktif")
+    except Exception as e:
+        print(f"[WARN] Meta OAuth refresh gagal start: {e}")
+
 @app.on_event("shutdown")
 async def shutdown():
     global _pool, _pool_loop, _gmail_poll_task, _gmail_poll_stop
     global _intelligence_learning_task, _intelligence_learning_stop
+    global _meta_refresh_task, _meta_refresh_stop
     try:
         if _gmail_poll_stop is not None:
             _gmail_poll_stop.set()
@@ -604,6 +618,17 @@ async def shutdown():
     finally:
         _intelligence_learning_task = None
         _intelligence_learning_stop = None
+    try:
+        if _meta_refresh_stop is not None:
+            _meta_refresh_stop.set()
+        if _meta_refresh_task is not None:
+            try:
+                await asyncio.wait_for(_meta_refresh_task, timeout=3.0)
+            except BaseException:
+                _meta_refresh_task.cancel()
+    finally:
+        _meta_refresh_task = None
+        _meta_refresh_stop = None
     try:
         from intelligence.db import close_pool as close_intelligence_pool
         await close_intelligence_pool()
@@ -821,6 +846,17 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
             org_id UUID NOT NULL,
             bot_id UUID NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS meta_asset_routes (
+            channel_type TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+            connection_id UUID,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (channel_type, external_id)
         );
         """,
         """
@@ -1174,6 +1210,13 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_whatsapp_embedded_accounts_phone ON whatsapp_embedded_accounts(phone_number_id);",
+        # ── Intent Router: routing columns per assistant message ──────────────
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS intent TEXT;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS selected_agent TEXT;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS routing_confidence FLOAT;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS handoff_status TEXT;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS allow_human_handoff BOOLEAN;",
+        "CREATE INDEX IF NOT EXISTS idx_messages_intent ON messages(intent) WHERE intent IS NOT NULL;",
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
@@ -2910,11 +2953,44 @@ async def meta_webhook_receive(request: Request):
     # - call /chat pipeline and send response via WhatsApp Cloud API
     try:
         await _handle_meta_whatsapp_inbound(payload)
+        await _handle_meta_social_inbound(payload)
     except Exception:
         # jangan bikin webhook gagal
-        pass
+        logger.exception("Meta webhook processing failed")
 
     return {"status": "ok"}
+
+
+async def _handle_meta_social_inbound(payload: dict) -> None:
+    object_type = str(payload.get("object") or "").lower()
+    channel_type = "instagram" if object_type == "instagram" else "facebook" if object_type == "page" else None
+    if not channel_type or not _platform_route_inbound:
+        return
+    pool = await get_pool_safe()
+    if not pool:
+        return
+    from bn_platform.channel_manager import ChannelManager
+    for entry in payload.get("entry") or []:
+        external_id = str((entry or {}).get("id") or "")
+        if not external_id:
+            continue
+        row = await pool.fetchrow(
+            """SELECT cc.id FROM meta_asset_routes mar
+               JOIN channel_connections cc ON cc.id=mar.connection_id
+               WHERE mar.external_id=$1 AND mar.channel_type=$2
+               AND cc.status='connected'""",
+            external_id, channel_type,
+        )
+        if not row:
+            continue
+        manager = ChannelManager(
+            pool, route_inbound_message=_platform_route_inbound,
+            app_url=cfg.app_url, webhook_secret="",
+        )
+        await manager.receive_message(
+            connection_id=str(row["id"]),
+            payload={"object": object_type, "entry": [entry]},
+        )
 
 
 async def _handle_meta_whatsapp_inbound(payload: dict) -> None:
@@ -3788,7 +3864,6 @@ async def chat(
     # 1. Load bot config
     bot = await pool.fetchrow(
         """SELECT b.id, b.org_id, b.system_prompt, b.language, b.temperature, b.reasoning_mode,
-                  b.handoff_confidence_threshold,
                   o.plan, o.billing_status, o.conv_limit
            FROM bots b
            JOIN organizations o ON o.id = b.org_id
@@ -3916,6 +3991,9 @@ async def chat(
         return {
             "answer": handoff_answer, "session_id": conv_id, "latency_ms": 0,
             "handoff": True, "handoff_status": str(active_handoff["status"]),
+            "intent": "human_handoff", "selected_agent": "Human Handoff Agent",
+            "confidence": None, "handoff_offered": True,
+            "sources": [], "follow_up_questions": [],
         }
 
     # 5. Ambil riwayat percakapan (max 10 pesan terakhir)
@@ -3970,6 +4048,9 @@ async def chat(
             news_timeout = float(cfg.news_timeout_seconds or 8.0)
             if not news_needs_bodies:
                 news_timeout = min(news_timeout, 4.0)
+            # RSS discovery and article-body fetching are sequential stages.
+            # Give detailed requests enough total time to complete both stages.
+            total_news_timeout = news_timeout * (2 if news_needs_bodies else 1) + 2.0
             news_ctx = await asyncio.wait_for(
                 build_news_context(
                     body.message,
@@ -3980,7 +4061,7 @@ async def chat(
                     max_concurrency=max(1, min(8, int(cfg.news_max_concurrency or 3))),
                     rss_urls=rss_urls,
                 ),
-                timeout=news_timeout,
+                timeout=total_news_timeout,
             )
             if news_ctx:
                 system = (
@@ -3993,8 +4074,12 @@ async def chat(
                       "tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. "
                       "Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "News retrieval failed for query=%r: %s",
+                body.message[:120],
+                exc,
+            )
 
     # 7.5 Self-knowledge BotNesia: paket/usage/channel tenant + performa bisnis
     # (query DB ringan, tanpa LLM — selalu tersedia untuk semua mode/bot).
@@ -4013,6 +4098,10 @@ async def chat(
     t_start = time.monotonic()
     agent_meta: dict | None = None
     result = None
+    should_handoff = False
+    handoff_reason: str | None = None
+    handoff_priority = "medium"
+    intent_routing: dict = {}
     try:
         use_cloud = should_use_cloud(bot["plan"], bot["billing_status"])
         supervisor = get_supervisor(use_cloud)
@@ -4077,22 +4166,18 @@ async def chat(
             "uncertainty_reasons": result.uncertainty_reasons,
         }
 
-        should_handoff = result.should_escalate
-        handoff_reason = result.escalation_reason or "escalation_requested"
-        handoff_priority = (result.escalation_urgency or "medium").lower()
+        intent_routing = result.intent_routing or {}
         if _platform_evaluate_handoff:
             should_handoff, handoff_reason, handoff_priority = _platform_evaluate_handoff(
-                confidence=result.confidence,
-                sentiment=result.sentiment,
-                should_escalate=result.should_escalate,
+                allow_human_handoff=intent_routing.get("allow_human_handoff", False),
+                handoff_reason=intent_routing.get("reason") or result.escalation_reason,
                 escalation_urgency=result.escalation_urgency,
-                escalation_reason=result.escalation_reason,
                 friction_points=result.friction_points,
-                user_message=body.message,
-                final_answer=answer,
-                errors=result.errors,
-                confidence_threshold=bot["handoff_confidence_threshold"],
             )
+        else:
+            should_handoff = bool(intent_routing.get("allow_human_handoff", False))
+            handoff_reason = intent_routing.get("reason") or result.escalation_reason or "escalation_requested"
+            handoff_priority = (result.escalation_urgency or "medium").lower()
         if should_handoff:
             handoff_message = result.escalation_message or (
                 "Saya akan menghubungkan percakapan ini ke tim manusia agar dapat ditangani lebih lanjut."
@@ -4154,17 +4239,35 @@ async def chat(
                 except Exception:
                     logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
 
+    # Additive routing fields dari Intent Router (backward-compatible di resp dict)
+    router_intent         = intent_routing.get("intent", "general")
+    router_selected_agent = intent_routing.get("selected_agent", "General AI Agent")
+    router_confidence     = intent_routing.get("confidence", result.confidence if result else None)
+    handoff_offered       = bool(should_handoff)
+    sources = [
+        {"document": c.get("filename") or c.get("file_name"), "chunk_index": c.get("chunk_index")}
+        for c in relevant_chunks
+        if c.get("filename") or c.get("file_name")
+    ]
+    follow_up_questions = (
+        [result.suggested_followup] if result and result.suggested_followup else []
+    )
+
     # 9. Simpan respons bot
     bot_msg_id = str(uuid.uuid4())
     chunk_ids  = [c["id"] for c in relevant_chunks]
     await pool.execute(
         """INSERT INTO messages
-           (id, conversation_id, role, content, model, input_tokens, output_tokens, latency_ms, source_chunks)
-           VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8)""",
+           (id, conversation_id, role, content, model, input_tokens, output_tokens, latency_ms,
+            source_chunks, intent, selected_agent, routing_confidence, handoff_status, allow_human_handoff)
+           VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
         bot_msg_id, conv_id, answer,
         model_used,
         input_tokens, output_tokens, latency_ms,
         chunk_ids,
+        router_intent, router_selected_agent, router_confidence,
+        (handoff_reason if should_handoff else None),
+        intent_routing.get("allow_human_handoff", False),
     )
 
     # 10. Update stats
@@ -4201,10 +4304,16 @@ async def chat(
         ))
 
     resp = {
-        "answer":      answer,
-        "session_id":  conv_id,
-        "message_id":  bot_msg_id,
-        "latency_ms":  latency_ms,
+        "answer":               answer,
+        "session_id":           conv_id,
+        "message_id":           bot_msg_id,
+        "latency_ms":           latency_ms,
+        "intent":               router_intent,
+        "selected_agent":       router_selected_agent,
+        "confidence":           router_confidence,
+        "handoff_offered":      handoff_offered,
+        "sources":              sources,
+        "follow_up_questions":  follow_up_questions,
     }
 
     # Observability: log request (best-effort).
@@ -4498,8 +4607,18 @@ def _looks_like_news_query(text: str) -> bool:
     keys = [
         "berita",
         "news",
+        "kabar",
+        "terbaru",
         "terkini",
         "hari ini",
+        "kemarin",
+        "minggu ini",
+        "bulan ini",
+        "sekarang",
+        "saat ini",
+        "baru-baru ini",
+        "breaking",
+        "viral",
         "trending",
         "update",
         "headline",
@@ -4626,6 +4745,7 @@ async def get_messages(
 
     rows = await pool.fetch(
         """SELECT m.id, m.role, m.content, m.model, m.latency_ms, m.created_at, m.source_chunks,
+                  m.intent, m.selected_agent, m.routing_confidence, m.handoff_status, m.allow_human_handoff,
                   fr.rating AS feedback_rating, fr.comment AS feedback_comment
            FROM messages m
            LEFT JOIN feedback_records fr ON fr.message_id=m.id AND fr.tenant_id=$2
@@ -4633,6 +4753,33 @@ async def get_messages(
         conv_id, user["org_id"],
     )
     return [dict(r) for r in rows]
+
+
+@app.get("/bots/{bot_id}/routing-logs")
+async def get_routing_logs(
+    bot_id: str,
+    user=Depends(get_current_user),
+    pool=Depends(get_pool),
+    limit: int = 50,
+    offset: int = 0,
+):
+    bot = await pool.fetchrow(
+        "SELECT id FROM bots WHERE id=$1 AND org_id=$2",
+        bot_id, user["org_id"],
+    )
+    if not bot:
+        raise HTTPException(404, "Bot tidak ditemukan")
+    rows = await pool.fetch(
+        """SELECT m.id, m.conversation_id, m.content, m.intent, m.selected_agent,
+                  m.routing_confidence, m.handoff_status, m.allow_human_handoff, m.created_at,
+                  c.end_user_name, c.end_user_email
+           FROM messages m
+           JOIN conversations c ON c.id = m.conversation_id
+           WHERE c.bot_id=$1 AND c.org_id=$2 AND m.role='assistant' AND m.intent IS NOT NULL
+           ORDER BY m.created_at DESC LIMIT $3 OFFSET $4""",
+        bot_id, user["org_id"], limit, offset,
+    )
+    return {"logs": [dict(r) for r in rows]}
 
 
 @app.get("/messages/{message_id}/sources")
@@ -4819,6 +4966,12 @@ async def health():
     }
 
 
+@app.get("/ready")
+async def ready():
+    """Liveness probe — process is running. Does not touch the DB."""
+    return {"status": "ok"}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # PHASE 2 — BUSINESS PLATFORM (bn_platform) WIRING
 #
@@ -4851,6 +5004,7 @@ try:
     from bn_platform.knowledge_builder import build_knowledge_builder_router
     from bn_platform.workflow_builder import build_workflow_builder_router
     from bn_platform.improvement_engine import build_improvement_router
+    from bn_platform.meta_oauth import build_meta_oauth_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -4891,6 +5045,8 @@ try:
             logger.exception("Route inbound platform message failed (org=%s bot=%s channel=%s)", org_id, bot_id, channel)
             return "Maaf, terjadi kesalahan. Tim kami sudah diberitahu."
 
+    _platform_route_inbound = _route_inbound_platform_message
+
     # ── 4. Daftarkan semua router Phase 2 ───────────────────────
     #    prefix="/api" konsisten dengan endpoint existing di main.py
     #    Catatan webhook: URL yang didaftarkan ke Midtrans/Xendit/Telegram
@@ -4922,6 +5078,14 @@ try:
             app_url=cfg.app_url,
             route_inbound_message=_route_inbound_platform_message,
             check_limit=check_limit,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_meta_oauth_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            route_inbound_message=_route_inbound_platform_message,
         ),
         prefix="/api",
     )

@@ -39,6 +39,30 @@ MAX_RETRIES = 2
 from intelligence.faq_agent       import FAQAgent
 from intelligence.sales_agent     import SalesAgent
 from intelligence.knowledge_agent import KnowledgeAgent
+from text_insights import intent_from_text
+
+INTENT_TAXONOMY = (
+    "general", "business", "faq", "sales",
+    "customer_service", "knowledge", "analytics", "human_handoff",
+)
+
+SELECTED_AGENT_BY_INTENT: dict[str, str] = {
+    "general":          "General AI Agent",
+    "business":         "Business AI Agent",
+    "faq":              "FAQ Agent",
+    "sales":            "Sales Agent",
+    "customer_service": "Customer Service Agent",
+    "knowledge":        "Knowledge Agent",
+    "analytics":        "Analytics Agent",
+    "human_handoff":    "Human Handoff Agent",
+}
+
+# Union dari keyword permintaan manusia eksplisit di escalation.py + handoff.py
+EXPLICIT_HUMAN_REQUEST_TERMS = (
+    "minta manusia", "bicara orang", "bicara dengan manusia", "bicara manusia",
+    "tidak mau bot", "admin", "cs manusia", "customer service",
+    "hubungkan ke manusia", "live agent", "human agent",
+)
 
 
 @dataclass
@@ -122,6 +146,117 @@ class SupervisorResult:
     # Advisor/Reasoning engines (Anti-Hallucination, Reflection)
     hallucination_scores: dict = field(default_factory=dict)
     reflection_review:  dict = field(default_factory=dict)
+
+    # Intent Router — keputusan routing per-turn (intent, selected_agent, allow_human_handoff, dll.)
+    intent_routing: dict = field(default_factory=dict)
+
+
+def route_intent(
+    *,
+    user_message: str,
+    reasoning_brief: dict,
+    text_intent: str,
+    faq_out: dict,
+    sales_out: dict,
+    kg_out: dict,
+    esc_out: dict,
+    cs_confidence: float,
+    llm_unavailable: bool,
+) -> dict:
+    """
+    Klasifikasikan intent user ke salah satu dari 8 kelas dan tentukan apakah
+    human handoff diizinkan untuk giliran ini.  Fungsi ini deterministik (tanpa
+    LLM) — dipanggil setelah STEP 3 (esc_out tersedia), hasilnya disimpan di
+    SupervisorResult.intent_routing.
+
+    Kebijakan global (ditegakkan di sini, BUKAN di handoff.py):
+      - allow_human_handoff=True HANYA jika user minta eksplisit, ada trigger
+        legal/refund/public, atau user marah dengan urgency high/critical.
+      - confidence rendah, "AI tidak tahu", atau error AI bukan alasan handoff.
+    """
+    trigger_factors: list[str] = esc_out.get("trigger_factors") or []
+    msg = user_message.lower()
+    how_to_kw = ("cara", "bagaimana", "hubungkan", "setup", "integrasi")
+
+    def _make(intent: str, confidence: float, reason: str,
+               allow_human_handoff: bool, needs_clarification: bool = False) -> dict:
+        if llm_unavailable:
+            confidence = max(confidence, 0.5)
+        return {
+            "intent":              intent,
+            "confidence":          round(confidence, 4),
+            "selected_agent":      SELECTED_AGENT_BY_INTENT[intent],
+            "reason":              reason,
+            "needs_clarification": needs_clarification,
+            "allow_human_handoff": allow_human_handoff,
+        }
+
+    # 1. Permintaan eksplisit ke manusia
+    if "request_human" in trigger_factors or any(t in msg for t in EXPLICIT_HUMAN_REQUEST_TERMS):
+        return _make("human_handoff", 0.95,
+                     "User secara eksplisit minta bicara dengan manusia", True)
+
+    # 2. Ancaman legal/hukum
+    if "legal_threat" in trigger_factors:
+        return _make("human_handoff", 0.9, "Indikasi ancaman legal/hukum", True)
+
+    # 3. Permintaan refund / pembayaran (AI lacks permission)
+    if "refund" in trigger_factors:
+        return _make("customer_service", 0.85,
+                     "Permintaan refund — AI tidak punya akses untuk memproses, perlu tim finance",
+                     True)
+
+    # 4. Ancaman publik (viral / media)
+    if "public_threat" in trigger_factors:
+        return _make("human_handoff", 0.85, "User mengancam komplain publik", True)
+
+    # 5. User marah + eskalasi urgensi tinggi
+    if "repeated_negative" in trigger_factors and esc_out.get("urgency") in ("high", "critical"):
+        return _make("human_handoff", 0.8, "User marah dan butuh eskalasi ke supervisor", True)
+
+    # 6. General carve-out: pertanyaan umum di luar topik bisnis/produk.
+    # Pastikan tidak ada sinyal how-to/setup yang akan ditangkap branch 10.
+    if (
+        reasoning_brief.get("intent_type") == "general"
+        and text_intent == "general_question"
+        and not faq_out.get("matched")
+        and not sales_out.get("signals")
+        and not sales_out.get("has_objection")
+        and not kg_out.get("product_mentions")
+        and not trigger_factors
+        and not any(k in msg for k in how_to_kw)
+    ):
+        return _make("general", 0.6, "Pertanyaan umum di luar topik bisnis/produk", False)
+
+    # 7. Strategi bisnis
+    if reasoning_brief.get("is_business_strategy"):
+        return _make("business", 0.75, "Pertanyaan strategi/konsultasi bisnis user", False,
+                     needs_clarification=bool(reasoning_brief.get("needs_prioritization")))
+
+    # 8. FAQ match terverifikasi
+    if faq_out.get("matched"):
+        sim = float(faq_out.get("similarity") or 0.8)
+        return _make("faq", sim, "Cocok dengan FAQ terverifikasi", False)
+
+    # 9. Sinyal penjualan / harga
+    if sales_out.get("signals") or sales_out.get("has_objection") or text_intent == "pricing_question":
+        return _make("sales", 0.7, "Sinyal minat beli/harga terdeteksi", False)
+
+    # 10. How-to / setup / produk
+    if (
+        kg_out.get("product_mentions")
+        or any(k in msg for k in how_to_kw)
+        or text_intent in ("auth_login_issue", "auth_register_issue", "shipping_status")
+    ):
+        return _make("knowledge", 0.65, "Pertanyaan how-to/setup produk", False)
+
+    # 11. Komplain / isu teknis
+    if text_intent in ("complaint_refund", "technical_issue") or "technical" in trigger_factors:
+        allow = bool(esc_out.get("should_escalate")) and esc_out.get("urgency") in ("high", "critical")
+        return _make("customer_service", 0.6, "Kendala/komplain yang ditangani CS Agent", allow)
+
+    # 12. Default
+    return _make("general", 0.5 if llm_unavailable else cs_confidence, "Pertanyaan umum", False)
 
 
 class SupervisorAgent:
@@ -346,6 +481,7 @@ class SupervisorAgent:
         meta_rewrite_applied = False
         hallucination_scores: dict = {}
         devil_result = AgentResult(agent="devil_advocate_agent", success=True, output={}, latency_ms=0)
+        llm_unavailable = False
 
         async def challenge_draft(answer: str) -> str:
             nonlocal devil_advocate_review, devil_revision_applied, devil_result
@@ -496,6 +632,9 @@ class SupervisorAgent:
                 errors.append(f"cs_agent: {cs_result.error}")
 
             cs_out = cs_result.output
+            # Short-circuit: Groq sedang rate-limited/unavailable — skip challenge/rewrite
+            # agar fallback "sistem sedang sibuk" tidak dimodifikasi atau di-handoff.
+            llm_unavailable = bool(cs_out.get("_llm_unavailable"))
             cs_answer = cs_out.get("answer") or self.cs_agent._clarify_response(
                 context.get("user_message", "")
             )
@@ -507,100 +646,114 @@ class SupervisorAgent:
             cs_topics = cs_out.get("topics", [])
             cs_followup = cs_out.get("suggested_followup")
 
-            # ── STEP 2.5: Tantang jawaban jalur cepat ─────────────
-            cs_answer = await challenge_draft(cs_answer)
+            if not llm_unavailable:
+                # ── STEP 2.5: Tantang jawaban jalur cepat ─────────────
+                cs_answer = await challenge_draft(cs_answer)
 
-            # ── STEP 2.75: Cek jawaban untuk pertanyaan meta (identitas/
-            # perbandingan dengan AI lain) DAN risiko hallucination (Anti-
-            # Hallucination Engine, untuk SEMUA jawaban) — tulis ulang sekali
-            # jika perlu sesuai Truthfulness/Comparison/Anti-Hallucination ─
-            if reasoning_brief.get("is_meta"):
-                meta_scores = self.verification_agent.score_meta_answer(
-                    context.get("user_message", ""), cs_answer, reasoning_brief
-                )
-            hallucination_scores = self.verification_agent.score_hallucination_risk(
-                cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
-            )
-            if meta_scores.get("needs_rewrite") or hallucination_scores.get("needs_rewrite"):
-                feedback_parts: list[str] = []
-                if meta_scores.get("needs_rewrite"):
-                    feedback_parts.append(
-                        "Jawaban sebelumnya terlalu promosi/kurang jujur: "
-                        f"{'; '.join(meta_scores.get('issues', []))}."
+                # ── STEP 2.75: Cek jawaban untuk pertanyaan meta (identitas/
+                # perbandingan dengan AI lain) DAN risiko hallucination (Anti-
+                # Hallucination Engine, untuk SEMUA jawaban) — tulis ulang sekali
+                # jika perlu sesuai Truthfulness/Comparison/Anti-Hallucination ─
+                if reasoning_brief.get("is_meta"):
+                    meta_scores = self.verification_agent.score_meta_answer(
+                        context.get("user_message", ""), cs_answer, reasoning_brief
                     )
-                if hallucination_scores.get("needs_rewrite"):
-                    claims = hallucination_scores.get("unsupported_claims") or []
-                    if claims:
-                        feedback_parts.append(
-                            "Jawaban memuat klaim angka yang tidak ada di konteks: "
-                            + ", ".join(claims) + "."
-                        )
-                    if hallucination_scores.get("overconfidence_hits"):
-                        feedback_parts.append(
-                            "Jawaban memuat kata-kata mutlak (\"pasti\"/\"dijamin\"/dll.) "
-                            "tanpa kualifikasi."
-                        )
-                feedback_parts.append(
-                    "Tulis ulang sesuai Truthfulness Policy, Comparison Engine, dan "
-                    "Anti-Hallucination Engine: jujur, akui keterbatasan BotNesia bila "
-                    "relevan, jangan klaim lebih unggul dari AI lain tanpa kualifikasi, "
-                    "jangan mengarang angka/data yang tidak ada di konteks, dan tutup "
-                    "dengan kesimpulan yang membantu keputusan user."
+                hallucination_scores = self.verification_agent.score_hallucination_risk(
+                    cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
                 )
-                ctx["_verification_feedback"] = " ".join(feedback_parts)
-                rewrite_result = await self.cs_agent.safe_run(ctx)
-                if rewrite_result.success:
-                    rewritten = rewrite_result.output.get("answer")
-                    if rewritten:
-                        cs_answer = rewritten
-                        cs_result = rewrite_result
-                        meta_rewrite_applied = True
-                        cs_answer = await challenge_draft(cs_answer)
-                        if reasoning_brief.get("is_meta"):
-                            meta_scores = self.verification_agent.score_meta_answer(
-                                context.get("user_message", ""), cs_answer, reasoning_brief
+                if meta_scores.get("needs_rewrite") or hallucination_scores.get("needs_rewrite"):
+                    feedback_parts: list[str] = []
+                    if meta_scores.get("needs_rewrite"):
+                        feedback_parts.append(
+                            "Jawaban sebelumnya terlalu promosi/kurang jujur: "
+                            f"{'; '.join(meta_scores.get('issues', []))}."
+                        )
+                    if hallucination_scores.get("needs_rewrite"):
+                        claims = hallucination_scores.get("unsupported_claims") or []
+                        if claims:
+                            feedback_parts.append(
+                                "Jawaban memuat klaim angka yang tidak ada di konteks: "
+                                + ", ".join(claims) + "."
                             )
-                        hallucination_scores = self.verification_agent.score_hallucination_risk(
-                            cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
-                        )
+                        if hallucination_scores.get("overconfidence_hits"):
+                            feedback_parts.append(
+                                "Jawaban memuat kata-kata mutlak (\"pasti\"/\"dijamin\"/dll.) "
+                                "tanpa kualifikasi."
+                            )
+                    feedback_parts.append(
+                        "Tulis ulang sesuai Truthfulness Policy, Comparison Engine, dan "
+                        "Anti-Hallucination Engine: jujur, akui keterbatasan BotNesia bila "
+                        "relevan, jangan klaim lebih unggul dari AI lain tanpa kualifikasi, "
+                        "jangan mengarang angka/data yang tidak ada di konteks, dan tutup "
+                        "dengan kesimpulan yang membantu keputusan user."
+                    )
+                    ctx["_verification_feedback"] = " ".join(feedback_parts)
+                    rewrite_result = await self.cs_agent.safe_run(ctx)
+                    if rewrite_result.success:
+                        rewritten = rewrite_result.output.get("answer")
+                        if rewritten:
+                            cs_answer = rewritten
+                            cs_result = rewrite_result
+                            meta_rewrite_applied = True
+                            cs_answer = await challenge_draft(cs_answer)
+                            if reasoning_brief.get("is_meta"):
+                                meta_scores = self.verification_agent.score_meta_answer(
+                                    context.get("user_message", ""), cs_answer, reasoning_brief
+                                )
+                            hallucination_scores = self.verification_agent.score_hallucination_risk(
+                                cs_answer, ctx.get("knowledge_base_context", ""), specialist_outputs
+                            )
 
-        # ── STEP F: Reflection Engine — self-check jawaban final terhadap
-        # reasoning_brief (Prioritization, Risk Assessment, Root Cause,
-        # Multi-Step Thinking) sebelum confidence banding ─
-        reflection_review = reflection_engine.reflect(cs_answer, reasoning_brief, specialist_outputs)
-
-        uncertainty_context = {
-            **ctx,
-            "final_answer": cs_answer,
-            "bot_response": cs_answer,
-            "confidence_score": confidence_score,
-            "confidence": cs_confidence,
-            "verification_passed": verification_passed,
-            "verification_issues": verification_issues,
-            "socratic_review": socratic_review,
-            "devil_advocate_review": devil_advocate_review,
-            "first_principle_analysis": first_principle_analysis,
-            "meta_scores": meta_scores,
-            "reflection_review": reflection_review,
-            "retry_count": retry_count,
-        }
-        uncertainty_result = await self.uncertainty_engine.safe_run(uncertainty_context)
-        if uncertainty_result.success:
-            uncertainty_review = uncertainty_result.output or {}
-            uncertainty_band = str(uncertainty_review.get("band") or uncertainty_band)
-            uncertainty_score = float(uncertainty_review.get("score", uncertainty_score) or uncertainty_score)
-            uncertainty_reasons = list(uncertainty_review.get("reasons") or [])
-            uncertainty_message = str(uncertainty_review.get("message") or "").strip()
-            confidence_score = uncertainty_score
-            cs_confidence = uncertainty_score / 100.0
-            if uncertainty_review.get("should_prefix") and uncertainty_message:
-                cs_answer = uncertainty_message
-                cs_result = AgentResult(
-                    agent="cs_agent", success=True,
-                    output={**(cs_result.output or {}), "answer": cs_answer}, latency_ms=0,
-                )
+        # ── STEP F: Reflection Engine + Uncertainty banding ─────────────────
+        # Jika LLM sedang unavailable (Groq rate-limited), skip reflection dan
+        # uncertainty — fallback "sistem sibuk" harus sampai ke user apa adanya,
+        # tanpa prefix "Saya belum cukup yakin..." dan tanpa handoff offer.
+        if llm_unavailable:
+            reflection_review = {}
+            uncertainty_band = "Medium Confidence"
+            uncertainty_score = 55.0
+            uncertainty_reasons = ["llm_unavailable"]
+            uncertainty_message = ""
+            confidence_score = 55.0
+            cs_confidence = 0.55
         else:
-            errors.append(f"uncertainty_engine: {uncertainty_result.error}")
+            # ── STEP F: Reflection Engine — self-check jawaban final terhadap
+            # reasoning_brief (Prioritization, Risk Assessment, Root Cause,
+            # Multi-Step Thinking) sebelum confidence banding ─
+            reflection_review = reflection_engine.reflect(cs_answer, reasoning_brief, specialist_outputs)
+
+            uncertainty_context = {
+                **ctx,
+                "final_answer": cs_answer,
+                "bot_response": cs_answer,
+                "confidence_score": confidence_score,
+                "confidence": cs_confidence,
+                "verification_passed": verification_passed,
+                "verification_issues": verification_issues,
+                "socratic_review": socratic_review,
+                "devil_advocate_review": devil_advocate_review,
+                "first_principle_analysis": first_principle_analysis,
+                "meta_scores": meta_scores,
+                "reflection_review": reflection_review,
+                "retry_count": retry_count,
+            }
+            uncertainty_result = await self.uncertainty_engine.safe_run(uncertainty_context)
+            if uncertainty_result.success:
+                uncertainty_review = uncertainty_result.output or {}
+                uncertainty_band = str(uncertainty_review.get("band") or uncertainty_band)
+                uncertainty_score = float(uncertainty_review.get("score", uncertainty_score) or uncertainty_score)
+                uncertainty_reasons = list(uncertainty_review.get("reasons") or [])
+                uncertainty_message = str(uncertainty_review.get("message") or "").strip()
+                confidence_score = uncertainty_score
+                cs_confidence = uncertainty_score / 100.0
+                if uncertainty_review.get("should_prefix") and uncertainty_message:
+                    cs_answer = uncertainty_message
+                    cs_result = AgentResult(
+                        agent="cs_agent", success=True,
+                        output={**(cs_result.output or {}), "answer": cs_answer}, latency_ms=0,
+                    )
+            else:
+                errors.append(f"uncertainty_engine: {uncertainty_result.error}")
 
         enriched = {
             **ctx,
@@ -631,6 +784,21 @@ class SupervisorAgent:
         anal_out = anal_result.output
         train_out = train_result.output
         mem_out = mem_result.output
+
+        # ── Intent Router (Supervisor Agent layer) ────────────────────────
+        # Jalankan setelah esc_out tersedia (trigger_factors, urgency, dll).
+        text_intent = intent_from_text(context.get("user_message", ""))
+        intent_routing = route_intent(
+            user_message=context.get("user_message", ""),
+            reasoning_brief=reasoning_brief,
+            text_intent=text_intent,
+            faq_out=faq_out,
+            sales_out=sales_out,
+            kg_out=kg_out,
+            esc_out=esc_out,
+            cs_confidence=cs_confidence,
+            llm_unavailable=llm_unavailable,
+        )
 
         total_ms = int((time.monotonic() - t_start) * 1000)
 
@@ -739,4 +907,7 @@ class SupervisorAgent:
             # Advisor/Reasoning engines (Anti-Hallucination, Reflection)
             hallucination_scores = hallucination_scores,
             reflection_review    = reflection_review,
+
+            # Intent Router
+            intent_routing       = intent_routing,
         )
