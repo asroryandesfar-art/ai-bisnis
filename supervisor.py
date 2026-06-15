@@ -708,6 +708,7 @@ class SupervisorAgent:
         # Jika LLM sedang unavailable (Groq rate-limited), skip reflection dan
         # uncertainty — fallback "sistem sibuk" harus sampai ke user apa adanya,
         # tanpa prefix "Saya belum cukup yakin..." dan tanpa handoff offer.
+        uncertainty_result = None  # default; hanya di-assign di else-branch
         if llm_unavailable:
             reflection_review = {}
             uncertainty_band = "Medium Confidence"
