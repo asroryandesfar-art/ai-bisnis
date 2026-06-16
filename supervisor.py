@@ -750,7 +750,14 @@ class SupervisorAgent:
                 uncertainty_message = str(uncertainty_review.get("message") or "").strip()
                 confidence_score = uncertainty_score
                 cs_confidence = uncertainty_score / 100.0
-                if uncertainty_review.get("should_prefix") and uncertainty_message:
+                # Jangan prefix salam/sapaan atau pertanyaan umum singkat —
+                # uncertainty prefix hanya masuk akal untuk pertanyaan faktual kompleks.
+                _user_msg = context.get("user_message", "")
+                _skip_prefix = (
+                    len(_user_msg.strip()) <= 30
+                    or reasoning_brief.get("intent_type") == "general"
+                )
+                if uncertainty_review.get("should_prefix") and uncertainty_message and not _skip_prefix:
                     cs_answer = uncertainty_message
                     cs_result = AgentResult(
                         agent="cs_agent", success=True,
