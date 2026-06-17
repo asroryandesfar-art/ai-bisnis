@@ -32,6 +32,7 @@ from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
 import web_search_agent
 from web_search_agent import format_web_search_context, WEB_SEARCH_BLOCK
 from agent_observability import observe_agent, trace_request
+import handoff_guard
 
 MAX_RETRIES = 2
 
@@ -86,13 +87,6 @@ SELECTED_AGENT_BY_INTENT: dict[str, str] = {
     "analytics":        "Analytics Agent",
     "human_handoff":    "Human Handoff Agent",
 }
-
-# Union dari keyword permintaan manusia eksplisit di escalation.py + handoff.py
-EXPLICIT_HUMAN_REQUEST_TERMS = (
-    "minta manusia", "bicara orang", "bicara dengan manusia", "bicara manusia",
-    "tidak mau bot", "admin", "cs manusia", "customer service",
-    "hubungkan ke manusia", "live agent", "human agent",
-)
 
 
 @dataclass
@@ -199,10 +193,13 @@ def route_intent(
     LLM) — dipanggil setelah STEP 3 (esc_out tersedia), hasilnya disimpan di
     SupervisorResult.intent_routing.
 
-    Kebijakan global (ditegakkan di sini, BUKAN di handoff.py):
-      - allow_human_handoff=True HANYA jika user minta eksplisit, ada trigger
-        legal/refund/public, atau user marah dengan urgency high/critical.
-      - confidence rendah, "AI tidak tahu", atau error AI bukan alasan handoff.
+    Kebijakan global handoff (NEVER OFFER HUMAN HANDOFF UNLESS USER REQUESTS
+    IT) ditegakkan SATU-SATUNYA oleh `handoff_guard.is_handoff_allowed()` —
+    lihat handoff_guard.py untuk daftar lengkap 5 kategori yang diizinkan
+    (explicit_human_request/legal/refund/billing_dispute/account_ownership).
+    confidence rendah, "AI tidak tahu", error AI, user marah, urgency tinggi,
+    atau banyak friction point TANPA salah satu kategori itu BUKAN alasan
+    handoff — function ini TIDAK menduplikasi/menge-derive ulang aturan itu.
     """
     trigger_factors: list[str] = esc_out.get("trigger_factors") or []
     msg = user_message.lower()
@@ -221,28 +218,34 @@ def route_intent(
             "allow_human_handoff": allow_human_handoff,
         }
 
-    # 1. Permintaan eksplisit ke manusia
-    if "request_human" in trigger_factors or any(t in msg for t in EXPLICIT_HUMAN_REQUEST_TERMS):
+    handoff_allowed, handoff_category = handoff_guard.is_handoff_allowed(
+        trigger_factors=trigger_factors, message=user_message,
+    )
+
+    # 1. Permintaan eksplisit ke manusia/admin/supervisor
+    if handoff_category == "explicit_human_request":
         return _make("human_handoff", 0.95,
-                     "User secara eksplisit minta bicara dengan manusia", True)
+                     "User secara eksplisit minta bicara dengan manusia/admin/supervisor", True)
 
     # 2. Ancaman legal/hukum
-    if "legal_threat" in trigger_factors:
+    if handoff_category == "legal":
         return _make("human_handoff", 0.9, "Indikasi ancaman legal/hukum", True)
 
-    # 3. Permintaan refund / pembayaran (AI lacks permission)
-    if "refund" in trigger_factors:
+    # 3. Permintaan refund (AI lacks permission)
+    if handoff_category == "refund":
         return _make("customer_service", 0.85,
                      "Permintaan refund — AI tidak punya akses untuk memproses, perlu tim finance",
                      True)
 
-    # 4. Ancaman publik (viral / media)
-    if "public_threat" in trigger_factors:
-        return _make("human_handoff", 0.85, "User mengancam komplain publik", True)
+    # 4. Dispute tagihan/billing
+    if handoff_category == "billing_dispute":
+        return _make("customer_service", 0.85,
+                     "Dispute tagihan — perlu verifikasi tim finance", True)
 
-    # 5. User marah + eskalasi urgensi tinggi
-    if "repeated_negative" in trigger_factors and esc_out.get("urgency") in ("high", "critical"):
-        return _make("human_handoff", 0.8, "User marah dan butuh eskalasi ke supervisor", True)
+    # 5. Masalah kepemilikan/akses akun
+    if handoff_category == "account_ownership":
+        return _make("customer_service", 0.85,
+                     "Masalah kepemilikan/akses akun — perlu verifikasi identitas oleh staf", True)
 
     # 6. General carve-out: pertanyaan umum di luar topik bisnis/produk.
     # Pastikan tidak ada sinyal how-to/setup yang akan ditangkap branch 10.
@@ -280,10 +283,11 @@ def route_intent(
     ):
         return _make("knowledge", 0.65, "Pertanyaan how-to/setup produk", False)
 
-    # 11. Komplain / isu teknis
+    # 11. Komplain / isu teknis — urgency/should_escalate TIDAK lagi mengizinkan
+    # handoff sendirian; AI wajib solve/explain/clarify dulu (lihat handoff_guard.py).
     if text_intent in ("complaint_refund", "technical_issue") or "technical" in trigger_factors:
-        allow = bool(esc_out.get("should_escalate")) and esc_out.get("urgency") in ("high", "critical")
-        return _make("customer_service", 0.6, "Kendala/komplain yang ditangani CS Agent", allow)
+        return _make("customer_service", 0.6, "Kendala/komplain yang ditangani CS Agent",
+                     handoff_allowed)
 
     # 12. Default
     return _make("general", 0.5 if llm_unavailable else cs_confidence, "Pertanyaan umum", False)

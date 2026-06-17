@@ -32,12 +32,13 @@ from bn_platform.handoff import (
              "escalation_urgency": "low", "friction_points": []},
             (True, "Permintaan refund...", "medium"),
         ),
-        # Banyak friction point berturut -> backstop heavy_complaint meski tidak ada
-        # pemicu eksplisit dari Intent Router.
+        # Banyak friction point berturut TANPA pemicu eksplisit -> TIDAK ada
+        # handoff (backstop heavy_complaint dihapus, melanggar aturan
+        # "NEVER OFFER HUMAN HANDOFF UNLESS USER REQUESTS IT").
         (
             {"allow_human_handoff": False, "handoff_reason": None,
              "escalation_urgency": None, "friction_points": ["a", "b", "c"]},
-            (True, "heavy_complaint", "medium"),
+            (False, "", "low"),
         ),
     ],
 )
