@@ -1,5 +1,7 @@
 """Omni Channel Phase 1: one tenant-safe manager for WhatsApp, Telegram, Website Chat, Instagram, and Facebook."""
 
+import hashlib
+import hmac
 import json
 import logging
 from typing import Annotated, Awaitable, Callable
@@ -16,6 +18,11 @@ from .security import write_audit_log
 logger = logging.getLogger("bn_platform.omnichannel")
 GetCurrentUser = Callable[..., Awaitable[dict]]
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
+
+# Channel yang webhook-nya datang dari Meta Graph API -- diverifikasi lewat
+# X-Hub-Signature-256 (App Secret yang sama dengan main.py's /webhooks/meta),
+# bukan token/secret per-koneksi seperti Telegram.
+_META_CHANNELS = {ChannelType.WHATSAPP, ChannelType.INSTAGRAM, ChannelType.FACEBOOK}
 RouteInboundMessage = Callable[..., Awaitable[str]]
 
 
@@ -203,11 +210,24 @@ def build_omnichannel_router(*, get_pool: GetPool, get_current_user: GetCurrentU
 
     @router.post("/webhooks/channels/{channel}/{connection_id}", include_in_schema=False)
     async def channel_webhook(channel: ChannelType, connection_id: str, request: Request, pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
+        body_bytes = await request.body()
         if channel == ChannelType.TELEGRAM:
             provided = request.headers.get("x-telegram-bot-api-secret-token") or ""
             if not await manager(pool).verify_webhook_secret(connection_id=connection_id, provided=provided):
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Webhook secret tidak valid")
-        payload = await request.json()
+        elif channel in _META_CHANNELS:
+            # Sebelumnya endpoint ini sama sekali tidak verifikasi apa pun untuk
+            # whatsapp/instagram/facebook -- hanya connection_id (UUID di URL)
+            # yang menjaga, mirip lubang Telegram yang sudah diperbaiki. Meta
+            # selalu mengirim X-Hub-Signature-256, jadi wajib dicek di sini juga.
+            app_secret = (platform_cfg.meta_app_secret or "").strip()
+            if not app_secret:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Meta webhook belum dikonfigurasi di server ini")
+            sig = (request.headers.get("X-Hub-Signature-256") or "").strip()
+            expected = "sha256=" + hmac.new(app_secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+            if not (sig and hmac.compare_digest(sig, expected)):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid signature")
+        payload = json.loads(body_bytes.decode("utf-8") or "{}") if body_bytes else {}
         try:
             responses = await manager(pool).receive_message(connection_id=connection_id, payload=payload)
         except ValueError as exc:
