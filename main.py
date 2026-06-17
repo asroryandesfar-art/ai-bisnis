@@ -1312,6 +1312,33 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS handoff_status TEXT;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS allow_human_handoff BOOLEAN;",
         "CREATE INDEX IF NOT EXISTS idx_messages_intent ON messages(intent) WHERE intent IS NOT NULL;",
+        # ── Memory Agent: long-term memory dipindah dari file JSON lokal
+        # (data/memory.json) ke Postgres -- shared antar proses/worker,
+        # tidak hilang/tidak sinkron lagi saat scale ke multi-instance.
+        # org_id/bot_id/end_user_id sengaja TEXT tanpa FK (end_user_id bukan
+        # baris di tabel users, dan beberapa context test/internal memakai
+        # ID non-UUID) -- konsisten dengan longgarnya skema file lama.
+        """
+        CREATE TABLE IF NOT EXISTS user_memory_profiles (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id TEXT NOT NULL,
+            bot_id TEXT NOT NULL,
+            end_user_id TEXT NOT NULL,
+            facts JSONB NOT NULL DEFAULT '{}'::jsonb,
+            total_convs INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (org_id, bot_id, end_user_id)
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_user_memory_profiles_lookup ON user_memory_profiles(org_id, bot_id, end_user_id);",
+        """
+        CREATE TABLE IF NOT EXISTS conversation_memory_summaries (
+            conversation_id TEXT PRIMARY KEY,
+            summary TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
     ]
     async with pool.acquire() as conn:
         for sql in stmts:
