@@ -109,7 +109,24 @@ async def enqueue_handoff(pool: asyncpg.Pool, *, org_id: str, conversation_id: s
     percakapan hanya boleh punya satu entri antrean aktif, lihat UNIQUE
     constraint di human_queue). Dipanggil fire-and-forget dari agent_api.py
     setelah SupervisorResult menyatakan should_escalate / confidence rendah.
+
+    conversation_id divalidasi dulu milik org_id yang sama sebelum ditulis --
+    tanpa ini, caller yang salah pasangkan org_id/conversation_id (mis. lewat
+    workflow_engine.py's "human_handoff" action node, dimana conversation_id
+    bisa datang dari trigger_payload yang user-controlled lewat endpoint
+    test-run) bisa menulis baris human_queue milik org lain dan menandai
+    conversations.handoff_needed pada percakapan tenant lain.
     """
+    conversation = await pool.fetchrow(
+        "SELECT id FROM conversations WHERE id=$1 AND org_id=$2", conversation_id, org_id,
+    )
+    if not conversation:
+        logger.warning(
+            "enqueue_handoff: conversation_id=%s tidak ditemukan untuk org_id=%s, dilewati",
+            conversation_id, org_id,
+        )
+        return None
+
     sla_due = _sla_due_at(priority)
     row = await pool.fetchrow(
         """INSERT INTO human_queue (org_id, conversation_id, reason, priority, status, sla_due_at)
@@ -131,7 +148,9 @@ async def enqueue_handoff(pool: asyncpg.Pool, *, org_id: str, conversation_id: s
            RETURNING *""",
         org_id, conversation_id, reason, priority, sla_due,
     )
-    await pool.execute("UPDATE conversations SET handoff_needed=TRUE WHERE id=$1", conversation_id)
+    await pool.execute(
+        "UPDATE conversations SET handoff_needed=TRUE WHERE id=$1 AND org_id=$2", conversation_id, org_id,
+    )
     if row and dispatch_webhook:
         await dispatch_webhook(org_id, "handoff.created", {
             "queue_id": str(row["id"]), "conversation_id": conversation_id,
