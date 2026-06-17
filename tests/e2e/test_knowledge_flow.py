@@ -33,3 +33,17 @@ def test_chat_uses_uploaded_knowledge_to_answer(client, registered_org, bot):
     assert "08:00" in answer or "08.00" in answer or "jam 8" in answer, (
         f"Jawaban tidak menggunakan informasi dari knowledge base yang baru diupload: {answer!r}"
     )
+
+
+def test_url_ingestion_rejects_internal_network_target(client, registered_org, bot):
+    """SSRF regression: /bots/{bot_id}/documents/url used to fetch ANY
+    submitted URL server-side with zero validation. A malicious/curious
+    tenant could point it at a cloud metadata endpoint or internal service."""
+    resp = client.post(
+        f"/bots/{bot}/documents/url",
+        json={"url": "http://169.254.169.254/latest/meta-data/"},
+        headers=registered_org["headers"],
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "failed", data
