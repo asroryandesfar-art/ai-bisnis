@@ -4953,6 +4953,15 @@ def _score_kb_candidate(query_tokens: list[str], query_vec: list[float], content
     keyword_hits = sum(1 for t in query_tokens if t in content_lower)
     kw_score = keyword_hits / max(1, len(query_tokens))
     emb_score = 0.0
+    # asyncpg tidak auto-decode kolom JSONB ke Python list — selalu balik
+    # sebagai str mentah. Tanpa json.loads() di sini, scoring embedding
+    # (bobot 78%) diam-diam tidak pernah jalan dan retrieval hanya
+    # mengandalkan keyword match (22%).
+    if isinstance(embedding, str):
+        try:
+            embedding = json.loads(embedding)
+        except (TypeError, ValueError):
+            embedding = None
     if isinstance(embedding, list):
         emb_score = _cosine_similarity(query_vec, embedding)
     return (emb_score * 0.78) + (kw_score * 0.22)
@@ -5044,7 +5053,7 @@ async def _store_chunk_embeddings(
                    model=EXCLUDED.model""",
             chunk_id,
             org_id,
-            embedding,
+            json.dumps(embedding),  # asyncpg tidak auto-encode list -> JSONB
             f"hash-emb-{cfg.kb_embedding_dim or KB_EMBED_DIM}",
         )
 
