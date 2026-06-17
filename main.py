@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     replicate_media_cooldown_seconds: int = 12
     # Phase 3 Multimodal — image provider abstraction (graceful-degrade per provider key)
     image_provider:       str = "replicate"  # replicate | openai | google_imagen | stability | fal
+    image_provider_fallback_order: str = "google_imagen,replicate"  # dipakai saat caller TIDAK minta provider spesifik
     openai_api_key:       str = ""
     google_api_key:       str = ""
     stability_api_key:    str = ""
@@ -2271,9 +2272,15 @@ async def _run_image_generation(
     conversation_id: str | None = None,
 ) -> dict:
     """Logika inti generate image, dipakai bersama oleh /media/image (legacy),
-    /api/images/generate, dan integrasi Chat + Image."""
+    /api/images/generate, dan integrasi Chat + Image.
+
+    Jika caller TIDAK meminta provider spesifik (provider_name kosong), coba
+    berurutan sesuai `cfg.image_provider_fallback_order` (default Google Imagen
+    -> Replicate) dan pakai provider pertama yang tersedia & berhasil. Jika
+    caller secara eksplisit meminta provider tertentu, perilaku persis seperti
+    sebelumnya: hanya provider itu yang dicoba, tidak ada override diam-diam."""
     org_id = str(org_id)
-    provider_name = (provider_name or cfg.image_provider or "replicate").strip().lower()
+    explicit_provider = bool((provider_name or "").strip())
 
     if _platform_check_limit:
         ok, detail = await _platform_check_limit(pool, org_id, "image_generations")
@@ -2287,26 +2294,46 @@ async def _run_image_generation(
     if not await _moderate_prompt(prompt):
         raise HTTPException(422, "Permintaan gambar ini tidak bisa diproses karena melanggar kebijakan konten.")
 
-    try:
-        provider = image_providers.get_provider(provider_name, **_image_provider_kwargs())
-    except image_providers.ImageProviderError as exc:
-        raise HTTPException(400, str(exc))
-    if not provider.available:
-        raise HTTPException(400, f"Provider gambar '{provider_name}' belum dikonfigurasi (API key kosong).")
-
-    started = time.monotonic()
-    try:
-        if provider.name == "replicate":
-            result = await _replicate_image_queue.submit(
-                lambda: provider.generate(prompt, size=size, style=style, quality=quality)
+    async def _attempt(name: str):
+        candidate = image_providers.get_provider(name, **_image_provider_kwargs())
+        if not candidate.available:
+            raise image_providers.ImageProviderError(f"Provider gambar '{name}' belum dikonfigurasi (API key kosong).")
+        attempt_started = time.monotonic()
+        if candidate.name == "replicate":
+            res = await _replicate_image_queue.submit(
+                lambda: candidate.generate(prompt, size=size, style=style, quality=quality)
             )
         else:
-            result = await provider.generate(prompt, size=size, style=style, quality=quality)
-    except image_providers.ImageProviderError as exc:
-        raise HTTPException(502, str(exc))
-    except Exception as exc:
-        raise _friendly_replicate_error(exc, "gambar")
-    generation_time = round(time.monotonic() - started, 2)
+            res = await candidate.generate(prompt, size=size, style=style, quality=quality)
+        return res, round(time.monotonic() - attempt_started, 2)
+
+    if explicit_provider:
+        name = provider_name.strip().lower()
+        try:
+            result, generation_time = await _attempt(name)
+        except image_providers.ImageProviderError as exc:
+            raise HTTPException(400 if "belum dikonfigurasi" in str(exc) else 502, str(exc))
+        except Exception as exc:
+            raise _friendly_replicate_error(exc, "gambar")
+    else:
+        fallback_order = [p.strip().lower() for p in (cfg.image_provider_fallback_order or "").split(",") if p.strip()]
+        candidates = fallback_order or [(cfg.image_provider or "replicate").strip().lower()]
+        result = None
+        generation_time = 0.0
+        last_exc: Exception | None = None
+        for name in candidates:
+            try:
+                result, generation_time = await _attempt(name)
+                break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Provider gambar '%s' gagal/tidak tersedia, mencoba provider berikutnya: %s", name, exc,
+                )
+        if result is None:
+            if isinstance(last_exc, image_providers.ImageProviderError):
+                raise HTTPException(502, f"Semua provider gambar gagal: {last_exc}")
+            raise _friendly_replicate_error(last_exc, "gambar") if last_exc else HTTPException(502, "Gagal generate gambar")
 
     ext = ".webp" if result.content_type == "image/webp" else ".png"
     _, url = storage_backend.save_bytes("generated", result.data, ext=ext)
