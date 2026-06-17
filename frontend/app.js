@@ -1254,6 +1254,15 @@ async function showMetaConnect(channel) {
     const botId = state.selectedBotId || state.bots[0].id;
     try {
       const result = await api.metaOAuthStart(botId, channel);
+      if (channel === "instagram") {
+        state.pendingMetaAuthUrl = result.auth_url;
+        el("#modal-root").innerHTML = modal({
+          title: "Login lewat Facebook",
+          body: `<p class="subtle">Instagram Messaging API tidak punya login sendiri dari Meta — akses ke pesan Instagram Business harus lewat <strong>Facebook Login</strong>, karena akun Instagram Business Anda perlu tertaut ke sebuah Facebook Page. Ini aturan resmi dari Meta, bukan kekurangan BotNesia.</p><p class="subtle" style="margin-top:10px">Setelah login, Anda akan diminta memilih akun Instagram Business yang ingin dihubungkan ke agent ini.</p>`,
+          footer: `<button class="button" data-action="close-modal">Batal</button><button class="button button-primary" data-action="confirm-meta-redirect">Lanjutkan ke Facebook</button>`,
+        });
+        return;
+      }
       location.href = result.auth_url;
     } catch (error) { toast(error.message,"error"); }
     return;
@@ -1267,7 +1276,10 @@ function showMetaAssetSelection(channel) {
   if (!usable.length) return toast(channel === "instagram" ? "Tidak ada akun Instagram Business yang tertaut ke Facebook Page Anda." : "Tidak ada Facebook Page yang tersedia.", "error");
   const bots = state.bots.map((bot)=>`<option value="${esc(bot.id)}">${esc(bot.name)}</option>`).join("");
   const assets = usable.map((page)=>`<option value="${esc(page.id)}" data-instagram-id="${esc(page.instagram?.id||'')}">${esc(channel==='instagram' ? `${page.instagram?.username || 'Instagram'} - ${page.name}` : page.name)}</option>`).join("");
-  el("#modal-root").innerHTML=modal({title:`Hubungkan ${channel==='instagram'?'Instagram Business':'Facebook Page'}`,body:`<form id="meta-asset-form" data-channel="${channel}"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>${channel==='instagram'?'Akun Instagram Business':'Facebook Page'}</span><select name="page_id">${assets}</select></label></div><p class="subtle" style="margin-top:12px">Login dilakukan melalui OAuth resmi Meta. Token disimpan terenkripsi per tenant.</p></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta-asset">Hubungkan</button>`});
+  const helpText = channel === "instagram"
+    ? "Page ditampilkan karena Instagram Business API mengharuskan akun Instagram tertaut ke Facebook Page (aturan Meta). Token disimpan terenkripsi per tenant."
+    : "Login dilakukan melalui OAuth resmi Meta. Token disimpan terenkripsi per tenant.";
+  el("#modal-root").innerHTML=modal({title:`Hubungkan ${channel==='instagram'?'Instagram Business':'Facebook Page'}`,body:`<form id="meta-asset-form" data-channel="${channel}"><div class="form-grid"><label class="field"><span>Agent</span><select name="bot_id">${bots}</select></label><label class="field"><span>${channel==='instagram'?'Akun Instagram Business':'Facebook Page'}</span><select name="page_id">${assets}</select></label></div><p class="subtle" style="margin-top:12px">${helpText}</p></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-meta-asset">Hubungkan</button>`});
 }
 
 async function submitMetaAssetSelection() {
@@ -1706,6 +1718,7 @@ document.addEventListener("click", async (event) => {
   if(action==="gmail-poll") await pollGmail();
   if(action==="connect-whatsapp") showWhatsAppConnect();
   if(action==="submit-meta-asset") await submitMetaAssetSelection();
+  if(action==="confirm-meta-redirect" && state.pendingMetaAuthUrl) location.href = state.pendingMetaAuthUrl;
   if(action==="refresh-meta-token"){ try{await api.metaOAuthRefresh();toast("Meta access refreshed.","success");await renderChannels();}catch(error){toast(error.message,"error");} }
   const connectMeta=event.target.closest("[data-connect-meta-channel]"); if(connectMeta) await showMetaConnect(connectMeta.dataset.connectMetaChannel);
   if(action==="submit-connect-whatsapp") await submitWhatsAppConnect();
