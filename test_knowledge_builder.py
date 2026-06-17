@@ -463,7 +463,7 @@ def test_update_faq_reject_unpublishes_from_kb():
     assert result["faq"]["status"] == "rejected"
     assert result["faq"]["chunk_id"] is None
     deletes = [c for c in pool.calls if c[0] == "execute" and "DELETE FROM doc_chunks" in c[1]]
-    assert deletes and deletes[0][2] == ("chunk-9",)
+    assert deletes and deletes[0][2] == ("chunk-9", "org-1")
 
 
 def test_update_faq_not_found_raises_404():
