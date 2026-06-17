@@ -78,7 +78,12 @@ def test_supervisor_runs_socratic_before_cs_and_keeps_review_internal(monkeypatc
     monkeypatch.setattr(BaseAgent, "_call_llm", fake_llm)
     supervisor = SupervisorAgent(api_key="test")
     result = asyncio.run(supervisor.process({
-        "user_message": "Berikan rekomendasi terbaik.", "messages": [],
+        # heuristic_complexity() must classify this as "complex" so the
+        # Socratic gate (supervisor.py STEP 0.26, performance fix) doesn't
+        # skip it — a bare "Berikan rekomendasi terbaik." now counts as
+        # "simple" and would bypass this engine entirely.
+        "user_message": "Bandingkan opsi yang ada dan berikan rekomendasi terbaik untuk bisnis saya.",
+        "messages": [],
         "knowledge_base_context": "", "reasoning_mode": "standard",
     }))
 

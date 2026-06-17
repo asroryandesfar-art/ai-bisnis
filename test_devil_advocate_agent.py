@@ -75,7 +75,12 @@ def test_supervisor_revises_marketing_claim_once(monkeypatch):
     monkeypatch.setattr(BaseAgent, "_call_llm_json", fake_json)
     monkeypatch.setattr(BaseAgent, "_call_llm", fake_llm)
     result = asyncio.run(SupervisorAgent(api_key="test").process({
-        "user_message": "Apakah BotNesia lebih baik?", "messages": [],
+        # heuristic_complexity() must classify this as "complex" so the
+        # Devil's-Advocate gate (supervisor.py STEP 0.26, performance fix)
+        # doesn't skip it — a bare "Apakah BotNesia lebih baik?" now counts
+        # as "simple" and would bypass this engine entirely.
+        "user_message": "Bandingkan BotNesia dengan kompetitor, apakah BotNesia lebih baik?",
+        "messages": [],
         "knowledge_base_context": "", "reasoning_mode": "standard",
     }))
 
