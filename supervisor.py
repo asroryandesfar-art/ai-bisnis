@@ -5,6 +5,7 @@ Koordinator utama: routing, orkestrasi paralel, agregasi hasil.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +34,35 @@ from web_search_agent import format_web_search_context, WEB_SEARCH_BLOCK
 from agent_observability import observe_agent, trace_request
 
 MAX_RETRIES = 2
+
+_GREETING_RE = re.compile(
+    r"^\s*(halo+|hai+|hi+|hello+|hey+|pagi|siang|sore|malam|selamat\s+\w+|"
+    r"makasih|terima\s*kasih|thanks?|thank\s*you|oke?|ok(?:e|ay)?|baik(?:lah)?|"
+    r"mantap|keren|good|nice)[\s.,!]*$",
+    re.IGNORECASE,
+)
+_QUESTION_WORD_RE = re.compile(
+    r"\b(kenapa|mengapa|bagaimana|gimana|apa|kapan|dimana|di\s*mana|berapa|siapa|cara)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_greeting_or_filler(text: str) -> bool:
+    """Sapaan/basa-basi singkat tanpa substansi — BUKAN sekadar pesan pendek.
+
+    Pesan pendek tapi mengandung kata tanya atau "?" tetap dianggap pertanyaan
+    sungguhan (mis. "Kenapa bisnis saya sepi?" hanya 24 karakter), supaya
+    uncertainty prefix tidak ikut terbungkam untuk pertanyaan substantif yang
+    memang gagal diverifikasi.
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+    if _GREETING_RE.match(t):
+        return True
+    if len(t) <= 30 and "?" not in t and not _QUESTION_WORD_RE.search(t):
+        return True
+    return False
 
 # Agen Intelligence Platform — berbagi knowledge lewat shared store (Postgres),
 # lihat intelligence/ARCHITECTURE.md §3.3
@@ -750,13 +780,13 @@ class SupervisorAgent:
                 uncertainty_message = str(uncertainty_review.get("message") or "").strip()
                 confidence_score = uncertainty_score
                 cs_confidence = uncertainty_score / 100.0
-                # Jangan prefix salam/sapaan atau pertanyaan umum singkat —
-                # uncertainty prefix hanya masuk akal untuk pertanyaan faktual kompleks.
+                # Jangan prefix salam/sapaan — uncertainty prefix hanya masuk akal untuk
+                # pertanyaan faktual. Sengaja TIDAK pakai intent_type=="general" atau panjang
+                # pesan semata: keduanya terlalu luas dan ikut membungkam pertanyaan faktual
+                # serius yang singkat (mis. "Kenapa bisnis saya sepi?") atau di luar topik
+                # bisnis (mis. harga kripto) — lihat _looks_like_greeting_or_filler().
                 _user_msg = context.get("user_message", "")
-                _skip_prefix = (
-                    len(_user_msg.strip()) <= 30
-                    or reasoning_brief.get("intent_type") == "general"
-                )
+                _skip_prefix = _looks_like_greeting_or_filler(_user_msg)
                 if uncertainty_review.get("should_prefix") and uncertainty_message and not _skip_prefix:
                     cs_answer = uncertainty_message
                     cs_result = AgentResult(

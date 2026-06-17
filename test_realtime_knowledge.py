@@ -7,6 +7,8 @@ import asyncio
 
 import knowledge_access_engine as kae
 import web_search_agent as wsa
+import news_fetcher
+import main
 from base import BaseAgent
 from reasoning_controller import ReasoningController
 
@@ -55,6 +57,30 @@ def test_select_knowledge_sources_no_fresh_data_for_generic_question():
     routing = kae.select_knowledge_sources("Bagaimana cara menghubungkan WhatsApp?", [])
     assert routing["needs_fresh_data"] is False
     assert "web_search:general" not in routing["reasons"]
+
+
+def test_main_news_detection_matches_natural_freshness_phrases():
+    queries = [
+        "Apa kabar terbaru tentang ekonomi Indonesia?",
+        "Apa yang terjadi di Timur Tengah sekarang?",
+        "Topik AI yang viral minggu ini",
+        "Ada breaking update soal kebijakan baru?",
+    ]
+    for query in queries:
+        assert main._looks_like_news_query(query), query
+
+
+def test_main_news_detection_ignores_generic_question():
+    assert not main._looks_like_news_query("Bagaimana cara menghubungkan WhatsApp?")
+
+
+def test_news_search_phrase_keeps_topic_and_removes_freshness_words():
+    assert news_fetcher._search_phrase(
+        "Apa kabar terbaru tentang ekonomi Indonesia sekarang?"
+    ) == "ekonomi indonesia"
+    assert news_fetcher._search_phrase(
+        "Apa yang terjadi di Timur Tengah saat ini?"
+    ) == "timur tengah"
 
 
 # ─────────────────────────────────────────────────────────────────

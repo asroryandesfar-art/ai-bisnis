@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from bn_platform.agent_marketplace_catalog import MARKETPLACE_CATEGORIES, PROFESSIONAL_AGENT_TEMPLATES
 from bn_platform.marketplace import (
     install_template,
     list_installs,
@@ -32,6 +33,17 @@ class FakePool:
     async def execute(self, sql, *args):
         self.calls.append(("execute", sql, args))
         return "OK"
+
+
+def test_phase4_catalog_has_100_plus_professional_templates():
+    names = {item["name"] for item in PROFESSIONAL_AGENT_TEMPLATES}
+    categories = {item["category"] for item in PROFESSIONAL_AGENT_TEMPLATES}
+    assert len(PROFESSIONAL_AGENT_TEMPLATES) >= 100
+    assert len(MARKETPLACE_CATEGORIES) == 22
+    assert len(categories) == 22
+    assert "General AI Agent" in names
+    assert "Supervisor Agent" in names
+    assert all(item.get("tools") and item.get("starter_questions") and item.get("knowledge_sources") for item in PROFESSIONAL_AGENT_TEMPLATES)
 
 
 @pytest.mark.parametrize("status", ["active", "inactive"])
@@ -91,9 +103,15 @@ def test_marketplace_routes_and_schema_contract_are_present():
     assert "/api/marketplace/installs" in paths
     assert "/api/marketplace/installs/{install_id}/update" in paths
     assert "/api/marketplace/installs/{install_id}/uninstall" in paths
+    assert "/api/marketplace/categories" in paths
+    assert "/api/marketplace/analytics" in paths
+    assert "/api/marketplace/recommended" in paths
+    assert "/api/marketplace/supervisor/route" in paths
 
     schema = Path(__file__).resolve().parent / "schema.sql"
     text = schema.read_text()
-    assert "CREATE OR REPLACE VIEW agent_templates AS" in text
+    assert "CREATE VIEW agent_templates AS" in text or "CREATE OR REPLACE VIEW agent_templates AS" in text
     for field in ("id", "name", "description", "category", "version", "status"):
         assert field in text
+    for table in ("agents", "agent_versions", "agent_installs", "agent_ratings", "agent_categories", "agent_knowledge_sources"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in text

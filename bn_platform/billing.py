@@ -63,6 +63,7 @@ LIMIT_FIELDS = {
     "users":         "max_users",
     "knowledge":     "max_knowledge_docs",
     "channels":      "max_channels",
+    "image_generations": "max_image_generations_per_month",
 }
 
 
@@ -84,7 +85,7 @@ async def get_active_subscription(pool: asyncpg.Pool, org_id: str) -> dict | Non
     row = await pool.fetchrow(
         """SELECT s.*, p.key AS plan_key, p.name AS plan_name,
                   p.max_conversations_per_month, p.max_agents, p.max_users,
-                  p.max_knowledge_docs, p.max_channels, p.features,
+                  p.max_knowledge_docs, p.max_channels, p.max_image_generations_per_month, p.features,
                   p.price_monthly_idr, p.price_yearly_idr
            FROM subscriptions s JOIN plans p ON p.id = s.plan_id
            WHERE s.org_id = $1""",
@@ -121,7 +122,10 @@ async def current_usage(pool: asyncpg.Pool, org_id: str) -> dict:
              (SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive')   AS agents,
              (SELECT COUNT(*) FROM users WHERE org_id=$1 AND is_active=TRUE)        AS users,
              (SELECT COUNT(*) FROM documents WHERE org_id=$1)                      AS knowledge,
-             (SELECT COUNT(*) FROM channel_accounts WHERE org_id=$1 AND is_active)  AS channels
+             (SELECT COUNT(*) FROM channel_accounts WHERE org_id=$1 AND is_active)  AS channels,
+             (SELECT COUNT(*) FROM image_generations
+                WHERE org_id=$1 AND kind='generate' AND status='completed'
+                  AND created_at >= DATE_TRUNC('month', NOW()))                    AS image_generations
         """,
         org_id,
     )

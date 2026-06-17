@@ -7,7 +7,9 @@ without rebuild. Canonical storage tetap memakai `marketplace_templates` dan
 """
 # from __future__ import annotations  # dihapus: menyebabkan Depends(closure_var) gagal di-resolve oleh FastAPI get_type_hints()
 
+import json
 import logging
+from collections import Counter
 from typing import Annotated, Awaitable, Callable
 
 import asyncpg
@@ -23,29 +25,56 @@ GetPool        = Callable[..., Awaitable[asyncpg.Pool]]
 CheckLimit     = Callable[[asyncpg.Pool, str, str], Awaitable[tuple[bool, dict]]]
 
 
+def _json_value(value, default):
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default
+    return value
+
+
+def _enrich_template(row: dict) -> dict:
+    item = dict(row)
+    item["tools"] = _json_value(item.get("tools"), [])
+    item["knowledge_sources"] = _json_value(item.get("knowledge_sources"), [])
+    item["starter_questions"] = _json_value(item.get("starter_questions"), [])
+    item["visibility"] = _json_value(item.get("visibility"), {"public": True, "featured": False, "recommended": True})
+    item["featured"] = bool(item["visibility"].get("featured"))
+    item["recommended"] = bool(item["visibility"].get("recommended", True))
+    item["rating"] = float(item.get("rating") or 0)
+    item["popularity_score"] = int(item.get("popularity_score") or 0)
+    item["icon"] = item.get("icon") or "agents"
+    return item
+
+
 async def list_templates(pool: asyncpg.Pool) -> list[dict]:
     rows = await pool.fetch(
         """SELECT id, key, category, name, description, preview_image, primary_color,
-                  install_count, version, sample_faqs,
+                  install_count, version, sample_faqs, icon, tools, knowledge_sources,
+                  starter_questions, visibility, rating, popularity_score, created_at, updated_at,
                   CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
            FROM marketplace_templates
           WHERE is_active=TRUE
-          ORDER BY category, install_count DESC, name""",
+          ORDER BY (visibility->>'featured')::boolean DESC, popularity_score DESC, install_count DESC, name""",
     )
-    return [dict(r) for r in rows]
+    return [_enrich_template(dict(r)) for r in rows]
 
 
 async def get_template(pool: asyncpg.Pool, key: str) -> dict | None:
     row = await pool.fetchrow(
         """SELECT id, key, category, name, description, preview_image, system_prompt,
-                  greeting, primary_color, sample_faqs, install_count, version,
+                  greeting, primary_color, sample_faqs, install_count, version, icon, tools,
+                  knowledge_sources, starter_questions, visibility, rating, popularity_score,
                   CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status,
                   is_active
            FROM marketplace_templates
           WHERE key=$1 AND is_active=TRUE""",
         key,
     )
-    return dict(row) if row else None
+    return _enrich_template(dict(row)) if row else None
 
 
 async def _parse_sample_faqs(template: dict) -> list[dict]:
@@ -177,6 +206,13 @@ async def install_template(pool: asyncpg.Pool, *, org_id: str, user_id: str,
         org_id, template["id"], bot["id"], user_id,
     )
     await pool.execute("UPDATE marketplace_templates SET install_count = install_count + 1 WHERE id=$1", template["id"])
+    await pool.execute(
+        """INSERT INTO agent_installs (org_id, agent_id, template_id, bot_id, installed_by, status)
+           SELECT $1, a.id, $2, $3, $4, 'active'
+             FROM agents a WHERE a.template_id=$2
+           ON CONFLICT DO NOTHING""",
+        org_id, template["id"], bot["id"], user_id,
+    )
     await write_audit_log(
         pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="create",
         resource_type="marketplace_install", resource_id=str(install_row["id"]),
@@ -262,6 +298,76 @@ async def uninstall_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, in
     }
 
 
+
+async def list_categories(pool: asyncpg.Pool) -> list[dict]:
+    try:
+        rows = await pool.fetch(
+            """SELECT ac.key, ac.name, ac.description, ac.icon, ac.color, ac.sort_order,
+                      COUNT(mt.id)::int AS template_count
+                 FROM agent_categories ac
+                 LEFT JOIN marketplace_templates mt ON mt.category = ac.name AND mt.is_active=TRUE
+                WHERE ac.is_active=TRUE
+                GROUP BY ac.key, ac.name, ac.description, ac.icon, ac.color, ac.sort_order
+                ORDER BY ac.sort_order, ac.name"""
+        )
+        return [dict(r) for r in rows]
+    except Exception:
+        templates = await list_templates(pool)
+        counts = Counter(t["category"] for t in templates)
+        return [{"key": k.lower().replace(" ", "-"), "name": k, "description": "", "icon": "agents", "color": "#2563EB", "template_count": v} for k, v in counts.items()]
+
+
+async def marketplace_analytics(pool: asyncpg.Pool, org_id: str) -> dict:
+    templates = await list_templates(pool)
+    installs = await list_installs(pool, org_id)
+    categories = Counter(t["category"] for t in templates)
+    featured = [t for t in templates if t.get("featured")]
+    return {
+        "template_count": len(templates),
+        "category_count": len(categories),
+        "featured_count": len(featured),
+        "installed_count": len(installs),
+        "active_installs": sum(1 for item in installs if item.get("bot_status") == "active"),
+        "total_install_count": sum(int(t.get("install_count") or 0) for t in templates),
+        "average_rating": round(sum(float(t.get("rating") or 0) for t in templates) / max(1, len(templates)), 2),
+        "category_breakdown": dict(categories),
+        "handoff_policy": "NEVER_OFFER_UNLESS_USER_REQUESTS",
+    }
+
+
+def _score_template_for_query(template: dict, query: str) -> float:
+    if not query:
+        return float(template.get("popularity_score") or 0) / 1000
+    haystack = " ".join([template.get("name", ""), template.get("category", ""), template.get("description", "")]).lower()
+    terms = [term for term in query.lower().split() if len(term) > 2]
+    hits = sum(1 for term in terms if term in haystack)
+    return hits + (float(template.get("rating") or 0) / 10) + (float(template.get("popularity_score") or 0) / 5000)
+
+
+async def recommended_templates(pool: asyncpg.Pool, *, query: str = "", limit: int = 12) -> list[dict]:
+    templates = await list_templates(pool)
+    rows = sorted(templates, key=lambda item: _score_template_for_query(item, query), reverse=True)
+    return rows[: max(1, min(limit, 50))]
+
+
+async def supervisor_route(pool: asyncpg.Pool, message: str) -> dict:
+    recommendations = await recommended_templates(pool, query=message, limit=3)
+    selected = recommendations[0] if recommendations else None
+    confidence = min(0.95, 0.45 + _score_template_for_query(selected or {}, message) / 4) if selected else 0.3
+    if not selected or confidence < 0.55:
+        general = await get_template(pool, "general-ai")
+        selected = general or selected
+        confidence = max(confidence, 0.55)
+    return {
+        "assistant": "BotNesia Assistant",
+        "selected_agent": selected,
+        "confidence": round(confidence, 2),
+        "fallback": selected and selected.get("key") == "general-ai",
+        "policy": "solve_explain_recommend_clarify_escalate; never offer human handoff unless user requests it",
+        "candidates": recommendations,
+    }
+
+
 # ============================================================
 # ROUTER
 # ============================================================
@@ -333,5 +439,32 @@ def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         return await uninstall_install(pool, org_id=user["org_id"], user_id=user["id"], install_id=install_id)
+
+    @router.get("/categories")
+    async def get_categories(pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
+        return {"categories": await list_categories(pool)}
+
+    @router.get("/analytics")
+    async def get_marketplace_analytics(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await marketplace_analytics(pool, user["org_id"])
+
+    @router.get("/recommended")
+    async def get_recommended_templates(
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        q: str = "",
+        limit: int = 12,
+    ):
+        return {"templates": await recommended_templates(pool, query=q, limit=limit)}
+
+    @router.post("/supervisor/route")
+    async def route_with_supervisor(
+        body: dict,
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        _user: Annotated[dict, Depends(get_current_user)],
+    ):
+        return await supervisor_route(pool, str(body.get("message") or ""))
 
     return router

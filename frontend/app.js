@@ -10,12 +10,13 @@ const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
   inboxSummary: null, team: [], roles: [], rbac: null, subscription: null,
   usage: null, plans: [], invoices: [], selectedBotId: null, selectedConversationId: null,
-  conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], channels: [], channelAnalytics: null, integrations: null,
+  conversations: [], messages: [], analytics: null, costIntelligence: null, documents: [], knowledgeSources: [], knowledgeStats: null, knowledgeFilters: { status:"", category:"", search:"" }, channels: [], channelAnalytics: null, integrations: null,
   kbOverview: null, kbFaqs: [], kbSops: [], security: null, securityScan: null,
   improvement: null, improvementDays: 30,
   wfNodeCatalog: null, wfWorkflows: [], wfWorkflow: null, wfExecutions: [], wfExecution: null,
   wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
+  multimedia: { generating: false, analyzing: false, generatingDoc: false, lastImage: null, lastAnalysis: null, lastDocument: null, history: [] },
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
   speechContext: null, speechSources: new Set(),
 };
@@ -31,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -165,7 +166,7 @@ async function renderChat() {
   const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
   state.selectedBotId = bot.id;
   const options = state.bots.map((item) => `<option value="${esc(item.id)}" ${item.id===bot.id?"selected":""}>${esc(item.name)}</option>`).join("");
-  const body = `<div class="card chat-page"><div class="card-head"><div><h3>${esc(bot.name)}</h3><span class="subtle" style="font-size:9px">Ngobrol bebas dengan agent ini, lengkap dengan suara dan mikrofon - seperti ChatGPT atau Claude.</span></div><div style="display:flex;gap:8px;align-items:center"><select class="select" data-chat-page-bot>${options}</select><button class="button" data-action="new-chat" title="Mulai obrolan baru">${icon('plus',14)} Chat baru</button></div></div><div id="playground-messages" class="messages chat-page-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="chat-page-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice">${icon("mic",17)}</button><textarea name="message" placeholder="Tulis pesan untuk agent..." required></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} Kirim</button></form><div class="voice-status" data-voice-status>Mic ready · AI replies will be read aloud</div></div></div>`;
+  const body = `<div class="card chat-page"><div class="card-head"><div><h3>${esc(bot.name)}</h3><span class="subtle" style="font-size:9px">Ngobrol bebas dengan agent ini, lengkap dengan suara dan mikrofon - seperti ChatGPT atau Claude.</span></div><div style="display:flex;gap:8px;align-items:center"><select class="select" data-chat-page-bot>${options}</select><button class="button" data-action="new-chat" title="Mulai obrolan baru">${icon('plus',14)} Chat baru</button></div></div><div id="playground-messages" class="messages chat-page-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="chat-page-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><label class="icon-button" title="Upload &amp; analisis gambar">${icon("upload",17)}<input type="file" data-chat-image-upload accept="image/png,image/jpeg,image/webp,image/gif" hidden></label><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice">${icon("mic",17)}</button><textarea name="message" placeholder="Tulis pesan untuk agent..." required></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} Kirim</button></form><div class="voice-status" data-voice-status>Mic ready · AI replies will be read aloud</div></div></div>`;
   setPage(`${pageHeader("AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude.")}${body}`);
 }
 
@@ -403,55 +404,113 @@ async function updateCostBudget(form) {
 }
 
 async function renderMarketplace() {
-  loadingPage("Agent Marketplace", "Install, update, and uninstall reusable agents without rebuilding the platform.");
+  loadingPage("Agent Marketplace", "Install professional AI agents in one click, then ground each one with isolated knowledge.");
   try {
-    const [templatesResult, installsResult] = await Promise.all([api.marketplaceTemplates(), api.marketplaceInstalls()]);
+    const [templatesResult, installsResult, categoriesResult, analyticsResult, recommendedResult] = await Promise.all([
+      api.marketplaceTemplates(), api.marketplaceInstalls(), api.marketplaceCategories(), api.marketplaceAnalytics(), api.marketplaceRecommended("", 12),
+    ]);
     state.marketplace = {
       templates: templatesResult.templates || [],
       installs: installsResult.installs || [],
+      categories: categoriesResult.categories || [],
+      analytics: analyticsResult || {},
+      recommended: recommendedResult.templates || [],
     };
   } catch (error) { setPage(errorState(error.message)); return; }
 
+  state.marketplaceFilters ||= { search:"", category:"" };
+  const filters = state.marketplaceFilters;
   const templates = state.marketplace?.templates || [];
   const installs = state.marketplace?.installs || [];
-  const installedByTemplate = new Map(installs.map((item) => [item.template_key, item]));
-  const categoryOrder = ["Business", "Education", "Healthcare", "E-commerce", "Travel"];
-  const categoryMeta = {
-    Business: "Customer service, sales, FAQ, and property workflows",
-    Education: "School and education operations",
-    Healthcare: "Clinic and patient administration",
-    "E-commerce": "Commerce operations and order support",
-    Travel: "Trip planning and booking assistance",
+  const categories = state.marketplace?.categories || [];
+  const analytics = state.marketplace?.analytics || {};
+  const installedByKey = new Map(installs.map((item) => [item.template_key, item]));
+  const normalizedSearch = String(filters.search || "").toLowerCase().trim();
+  const filteredTemplates = templates.filter((template) => {
+    const categoryOk = !filters.category || template.category === filters.category;
+    const text = `${template.name} ${template.category} ${template.description}`.toLowerCase();
+    const searchOk = !normalizedSearch || text.includes(normalizedSearch);
+    return categoryOk && searchOk;
+  });
+  const featured = templates.filter((item) => item.featured).slice(0, 8);
+  const trending = [...templates].sort((a,b)=>Number(b.install_count||0)-Number(a.install_count||0)).slice(0, 8);
+  const recommended = (state.marketplace?.recommended || []).slice(0, 8);
+
+  const marketplaceAgentCard = (template) => {
+    const install = installedByKey.get(template.key);
+    const installed = Boolean(install);
+    const tools = (template.tools || []).slice(0, 3).map((tool)=>`<span>${esc(String(tool).replace(/_/g," "))}</span>`).join("");
+    const starters = (template.starter_questions || []).slice(0, 2).map((q)=>`<li>${esc(q)}</li>`).join("");
+    const color = template.primary_color || "#8b7cff";
+    return `<article class="card card-hover marketplace-agent-card" style="--agent-color:${esc(color)}">
+      <div class="marketplace-agent-top"><span class="marketplace-agent-icon">${icon(template.icon || 'agents',18)}</span><div><h3>${esc(template.name)}</h3><p>${esc(template.category)}</p></div></div>
+      <p class="marketplace-agent-desc">${esc(template.description)}</p>
+      <div class="marketplace-agent-meta"><span>★ ${Number(template.rating || 0).toFixed(1)}</span><span>${formatNumber(template.install_count || 0)} installs</span><span>v${esc(template.version || '1.0.0')}</span></div>
+      <div class="marketplace-tool-tags">${tools || '<span>knowledge base</span><span>prompt</span><span>workflow</span>'}</div>
+      ${starters ? `<ul class="marketplace-starters">${starters}</ul>` : ''}
+      <div class="marketplace-agent-actions"><span class="status-badge ${installed ? 'active' : 'ready'}">${installed ? 'Installed' : 'Available'}</span><div>${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-action="marketplace-install" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div>
+    </article>`;
   };
 
-  const templateCard = (template) => {
-    const install = installedByTemplate.get(template.key);
-    const installed = !!install;
-    return `<article class="card card-hover marketplace-card"><div class="card-head"><div><h3>${esc(template.name)}</h3><span class="subtle" style="font-size:9px">${esc(template.category)} · v${esc(template.version || '1.0.0')}</span></div>${statusBadge(template.status || 'active', template.status || 'active')}</div><p>${esc(template.description)}</p><div class="marketplace-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">${installed ? `<span class="status-badge active">Installed</span><span class="status-badge ${esc(install.bot_status || 'active')}">${esc(install.bot_status || 'active')}</span>` : `<span class="status-badge ready">Available</span>`}</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center"><div class="subtle mono" style="font-size:8px">${installed ? `Bot: ${esc(install.bot_name || '')}` : `Template: ${esc(template.key)}`}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-action="marketplace-install" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div></article>`;
-  };
-
-  const categorySections = categoryOrder.map((category) => {
-    const rows = templates.filter((template) => template.category === category);
-    return `<section class="card" style="margin-top:16px"><div class="card-head"><div><h3>${esc(category)}</h3><span class="subtle" style="font-size:9px">${esc(categoryMeta[category] || '')}</span></div><span class="status-badge active">${formatNumber(rows.length)} templates</span></div>${rows.length ? `<div class="grid grid-2" style="padding:16px">${rows.map(templateCard).join('')}</div>` : emptyState("No templates", "No templates are available in this category.")}</section>`;
-  }).join('');
-
+  const categoryCards = categories.map((category) => `<button class="marketplace-category-card ${filters.category===category.name?'active':''}" data-marketplace-category="${esc(category.name)}" style="--category-color:${esc(category.color || '#8b7cff')}"><span>${icon(category.icon || 'agents',18)}</span><strong>${esc(category.name)}</strong><small>${formatNumber(category.template_count || 0)} agents</small></button>`).join("");
   const installedRows = installs.map((item) => `<tr><td><span class="table-title">${esc(item.template_name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(item.template_key)} · ${esc(item.template_version || '1.0.0')}</div></td><td>${esc(item.template_category || 'Business')}</td><td>${statusBadge(item.bot_status || 'inactive', item.bot_status || 'inactive')}</td><td>${esc(item.bot_name || '—')}</td><td>${relativeTime(item.installed_at)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="button" data-marketplace-update="${esc(item.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(item.id)}">Uninstall</button></div></td></tr>`).join('');
 
-  setPage(`${pageHeader("Agent Marketplace","Install reusable agents like apps, then update or uninstall them per tenant.",`<span class="status-badge active">${formatNumber(templates.length)} templates</span>`)}<div class="grid grid-4">${metricCard("Templates",formatNumber(templates.length),"Reusable agent blueprints","agents")}${metricCard("Installed",formatNumber(installs.length),"Tenant agent installs","dashboard")}${metricCard("Active installs",formatNumber(installs.filter((item) => item.bot_status === 'active').length),"Currently enabled","observability")}${metricCard("Categories",formatNumber(categoryOrder.length),"Business, Education, Healthcare, E-commerce, Travel","knowledge")}</div>${categorySections}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Installed agents</h3><span class="subtle" style="font-size:9px">Manage tenant-specific agent installs</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Category</th><th>Status</th><th>Bot</th><th>Installed</th><th>Action</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("No installed agents","Install a template from the marketplace to create the first reusable agent.")}</div>`);
+  const actions = `<div class="marketplace-controls"><label class="search-box marketplace-search">${icon('search',15)}<input data-marketplace-search value="${esc(filters.search)}" placeholder="Search 100+ agents"></label><select class="select" data-marketplace-category-select><option value="">All categories</option>${categories.map((cat)=>`<option value="${esc(cat.name)}" ${filters.category===cat.name?'selected':''}>${esc(cat.name)}</option>`).join('')}</select><button class="button" data-marketplace-clear>Clear</button></div>`;
+  const hero = `<section class="marketplace-hero"><div><span class="eyebrow">AGENT STORE</span><h2>Shopify-style app store for BotNesia agents</h2><p>Install a ready-to-use professional agent, add isolated knowledge, and let Supervisor Routing choose the best specialist behind BotNesia Assistant.</p></div><div class="marketplace-hero-stats"><strong>${formatNumber(analytics.template_count || templates.length)}</strong><span>Professional templates</span><strong>${formatNumber(analytics.category_count || categories.length)}</strong><span>Categories</span></div></section>`;
+  const metrics = `<div class="grid grid-4">${metricCard("Templates",formatNumber(analytics.template_count || templates.length),"Professional agent catalog","marketplace")}${metricCard("Installed",formatNumber(analytics.installed_count || installs.length),"One-click tenant installs","agents")}${metricCard("Avg rating",Number(analytics.average_rating || 0).toFixed(2),"Marketplace quality score","analytics")}${metricCard("Total installs",formatNumber(analytics.total_install_count || 0),"Popularity across templates","dashboard")}</div>`;
+  const featuredSection = featured.length ? `<section class="marketplace-section"><div class="section-head"><div><h3>Featured agents</h3><p>Best starting points for most businesses</p></div><span class="status-badge active">${featured.length} featured</span></div><div class="marketplace-agent-grid">${featured.map(marketplaceAgentCard).join('')}</div></section>` : '';
+  const recommendedSection = recommended.length ? `<section class="marketplace-section"><div class="section-head"><div><h3>Recommended agents</h3><p>General AI, Supervisor, and high-utility templates</p></div></div><div class="marketplace-agent-grid compact">${recommended.map(marketplaceAgentCard).join('')}</div></section>` : '';
+  const trendingSection = trending.length ? `<section class="marketplace-section"><div class="section-head"><div><h3>Trending agents</h3><p>Sorted by install counter and popularity</p></div></div><div class="marketplace-agent-grid compact">${trending.map(marketplaceAgentCard).join('')}</div></section>` : '';
+  const catalogSection = `<section class="marketplace-section"><div class="section-head"><div><h3>Agent catalog</h3><p>${formatNumber(filteredTemplates.length)} matching templates. Knowledge, prompt, and FAQ stay isolated per installed agent.</p></div></div>${filteredTemplates.length ? `<div class="marketplace-agent-grid">${filteredTemplates.map(marketplaceAgentCard).join('')}</div>` : emptyState("No matching agents","Try another search or category filter.")}</section>`;
+
+  setPage(`${pageHeader("Agent Marketplace","Choose an agent, install it in one click, then add agent-specific knowledge.",actions)}${hero}${metrics}<section class="marketplace-section"><div class="section-head"><div><h3>Categories</h3><p>Browse by business function and industry</p></div></div><div class="marketplace-category-grid"><button class="marketplace-category-card ${!filters.category?'active':''}" data-marketplace-category=""><span>${icon('marketplace',18)}</span><strong>All categories</strong><small>${formatNumber(templates.length)} agents</small></button>${categoryCards}</div></section>${featuredSection}${recommendedSection}${trendingSection}${catalogSection}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Installed agents</h3><span class="subtle" style="font-size:9px">Manage tenant-specific installs</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Category</th><th>Status</th><th>Bot</th><th>Installed</th><th>Action</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("No installed agents","Install a template to create the first reusable AI agent.")}</div>`);
 }
 
 async function renderKnowledge() {
-  loadingPage("Knowledge Base","Manage trusted source documents used to ground AI answers.");
-  if (!state.selectedBotId) { setPage(pageHeader("Knowledge Base","Ground agents with company documents.") + emptyState("No agent available","Create an agent before uploading knowledge.")); return; }
-  try { state.documents = await api.documents(state.selectedBotId); }
-  catch (error) { setPage(errorState(error.message)); return; }
+  loadingPage("Knowledge Seeder","Manage trusted source documents and URL ingestion queues.");
+  if (!state.selectedBotId) { setPage(pageHeader("Knowledge Seeder","Ground agents with company documents and trusted URLs.") + emptyState("No agent available","Create an agent before uploading knowledge.")); return; }
+  const filters = state.knowledgeFilters || { status:"", category:"", agent_id:"", search:"" };
+  try {
+    const [docs, sourceResult, seedStatus] = await Promise.all([
+      api.documents(state.selectedBotId),
+      api.knowledgeSources({ bot_id:state.selectedBotId, status:filters.status, category:filters.category, agent_id:filters.agent_id, search:filters.search, limit:100 }),
+      api.knowledgeSeedStatus({ bot_id:state.selectedBotId }),
+    ]);
+    state.documents = docs;
+    state.knowledgeSources = sourceResult.sources || [];
+    state.knowledgeStats = sourceResult.stats || {};
+    state.knowledgeSeedStatus = seedStatus || {};
+  } catch (error) { setPage(errorState(error.message)); return; }
   const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
-  const rows = state.documents.map((doc) => {
+  const stats = state.knowledgeStats || {};
+  const seedStatus = state.knowledgeSeedStatus || {};
+  const categories = [...new Set([...(seedStatus.per_category||[]).map((s)=>s.category), ...state.knowledgeSources.map((s)=>s.category)].filter(Boolean))].sort();
+  const agents = [...new Set([...(seedStatus.per_agent||[]).map((s)=>s.agent_id), ...state.knowledgeSources.map((s)=>s.agent_type)].filter(Boolean))].sort();
+  const categoryOptions = `<option value="">All categories</option>` + categories.map((cat)=>`<option value="${esc(cat)}" ${filters.category===cat?'selected':''}>${esc(cat)}</option>`).join("");
+  const agentOptions = `<option value="">All agents</option>` + agents.map((agent)=>`<option value="${esc(agent)}" ${filters.agent_id===agent?'selected':''}>${esc(agent.replace(/_/g,' '))}</option>`).join("");
+  const statusOptions = ["","pending","crawling","indexed","failed","skipped"].map((status)=>`<option value="${esc(status)}" ${filters.status===status?'selected':''}>${status?esc(status):'All status'}</option>`).join("");
+  const sourceRows = state.knowledgeSources.map((src) => {
+    const failed = src.status === 'failed';
+    const actions = `${failed?`<button class="button" data-retry-source="${esc(src.id)}">Retry</button>`:''}<button class="button button-danger" data-delete-source="${esc(src.id)}">Delete</button>`;
+    return `<tr><td><span class="table-title">${esc(src.title || src.url)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px;max-width:460px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(src.url)}</div>${src.error_message?`<div class="subtle" style="margin-top:4px;color:var(--danger)">${esc(src.error_message)}</div>`:''}</td><td>${esc(src.category || '-')}</td><td>${statusBadge(src.status,src.status)}</td><td>${esc(src.priority || 'normal')}</td><td>${formatDate(src.last_crawled_at || src.created_at)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">${actions}</div></td></tr>`;
+  }).join("");
+  const docRows = state.documents.slice(0,8).map((doc) => {
     const sourceLabel = doc.source_type === 'url' ? 'Website URL' : 'File upload';
     const sourceInfo = doc.source_url ? `<div class="subtle mono" style="font-size:8px;margin-top:3px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(doc.source_url)}</div>` : '';
-    return `<tr><td><div style="display:flex;align-items:flex-start;gap:10px"><span class="activity-symbol">KB</span><div><span class="table-title">${esc(doc.filename)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(doc.id).slice(0,12)} · ${esc(sourceLabel)}</div>${sourceInfo}</div></div></td><td>${formatFileSize(doc.file_size)}</td><td>${formatNumber(doc.chunk_count)}</td><td>${statusBadge(doc.status,doc.status)}</td><td>${formatDate(doc.created_at)}</td><td><button class="button button-danger" data-delete-document="${esc(doc.id)}">Delete</button></td></tr>`;
+    return `<tr><td><span class="table-title">${esc(doc.filename)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(sourceLabel)}</div>${sourceInfo}</td><td>${formatNumber(doc.chunk_count)}</td><td>${statusBadge(doc.status,doc.status)}</td><td><button class="button button-danger" data-delete-document="${esc(doc.id)}">Delete</button></td></tr>`;
   }).join("");
-  setPage(`${pageHeader("Knowledge Base","Upload product docs, policies, FAQs, websites, and playbooks for retrieval-grounded answers.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Upload document<input type="file" data-document-upload accept=".pdf,.docx,.txt,.csv,.md,.markdown" hidden></label><form data-kb-url-form style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input class="input" name="title" placeholder="Judul opsional" style="min-width:180px"><input class="input" name="url" placeholder="https://example.com/kb" style="min-width:240px" required><button class="button button-primary" type="submit">${icon('link',14)} Upload URL</button></form></div>`)}<div class="grid grid-3" style="margin-bottom:16px">${metricCard("Documents",formatNumber(state.documents.length),"Connected to selected agent","knowledge")}${metricCard("Knowledge chunks",formatNumber(state.documents.reduce((n,d)=>n+(d.chunk_count||0),0)),"Searchable retrieval units","analytics")}${metricCard("Ready sources",formatNumber(state.documents.filter(d=>d.status==='ready').length),"Available to AI","agents","trend-up")}</div><div class="card"><div class="card-head"><div><h3>Source library</h3><span class="subtle" style="font-size:9px">PDF, DOCX, TXT, Markdown, CSV, and website URLs</span></div></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Size</th><th>Chunks</th><th>Status</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No knowledge sources","Upload a document or website URL to ground this agent with company information.",`<label class="button button-primary">Upload first document<input type="file" data-document-upload hidden></label>`)}</div>`);
+  const seedAgents = ["travel_agent","ecommerce_agent","clinic_agent","school_agent","sales_agent","property_agent","faq_agent","customer_service_agent","botnesia_business"];
+  const seedButtons = seedAgents.map((agent)=>`<button class="button" data-seed-agent="${agent}">${esc(agent.replace(/_/g,' '))}</button>`).join("");
+  const agentStatusRows = (seedStatus.per_agent || []).slice(0, 20).map((row)=>`<tr><td><span class="table-title">${esc(String(row.agent_id||'unknown').replace(/_/g,' '))}</span></td><td>${formatNumber(row.total)}</td><td>${formatNumber(row.pending)}</td><td>${formatNumber(row.crawling)}</td><td>${formatNumber(row.indexed)}</td><td>${formatNumber(row.failed)}</td></tr>`).join("");
+  setPage(`${pageHeader("Knowledge Seeder","Import trusted URL seeds per agent, crawl in a throttled background queue, and monitor indexing status.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Upload document<input type="file" data-document-upload accept=".pdf,.docx,.txt,.csv,.md,.markdown" hidden></label></div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Total URLs",formatNumber(stats.total),"Queued for selected agent","knowledge")}${metricCard("Pending",formatNumber(stats.pending),"Waiting for crawler","observability")}${metricCard("Crawling",formatNumber(stats.crawling),"Current batch","refresh")}${metricCard("Failed",formatNumber(stats.failed),"Retry failed in batch","learning",stats.failed?'trend-down':'')}</div>
+  <div class="grid grid-2" style="margin-bottom:16px">
+    <div class="card"><div class="card-head"><div><h3>Bulk URL Importer</h3><span class="subtle">One URL per line. Optional category is auto-set to custom.</span></div></div><form data-bulk-url-form class="card-body" style="display:grid;gap:10px"><textarea class="input" name="urls" rows="8" placeholder="https://platform.openai.com/docs\nhttps://docs.python.org/3"></textarea><div style="display:flex;gap:8px;justify-content:flex-end"><button class="button button-primary" type="submit">${icon('link',14)} Import URLs</button></div></form></div>
+    <div class="card"><div class="card-head"><div><h3>Agent Knowledge Seeder</h3><span class="subtle">Import seed JSON without crawling everything at once.</span></div></div><div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-seed-marketplace>${icon('marketplace',14)} Seed Marketplace 1000</button><button class="button" data-retry-failed-sources>${icon('refresh',14)} Retry failed</button><button class="button" data-seed-general>${icon('knowledge',14)} General AI</button><button class="button" data-seed-all-agents>All agent seeds</button>${seedButtons}</div></div>
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>URL per Agent</h3><span class="subtle">Marketplace knowledge isolation by agent_id</span></div></div>${agentStatusRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Total</th><th>Pending</th><th>Crawling</th><th>Indexed</th><th>Failed</th></tr></thead><tbody>${agentStatusRows}</tbody></table></div>`:emptyState("No agent URL queue","Seed marketplace URLs to see per-agent status.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Source Status Tracking</h3><span class="subtle">Tenant and agent isolated URL ingestion queue</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" data-source-search value="${esc(filters.search||'')}" placeholder="Search URL" style="min-width:180px"><select class="select" data-source-status>${statusOptions}</select><select class="select" data-source-agent>${agentOptions}</select><select class="select" data-source-category>${categoryOptions}</select><button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button></div></div>${sourceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>URL</th><th>Category</th><th>Status</th><th>Priority</th><th>Updated</th><th></th></tr></thead><tbody>${sourceRows}</tbody></table></div>`:emptyState("No seeded URLs","Import URLs manually or use the seed buttons to populate this agent.")}</div>
+  <div class="card"><div class="card-head"><div><h3>Indexed Document Library</h3><span class="subtle">Latest processed documents and URL pages</span></div></div>${docRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Chunks</th><th>Status</th><th></th></tr></thead><tbody>${docRows}</tbody></table></div>`:emptyState("No indexed documents","Crawler output appears here after a source is indexed.")}</div>`);
 }
 
 async function renderKnowledgeBuilder() {
@@ -490,6 +549,123 @@ async function renderKnowledgeBuilder() {
   <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Generated FAQ</h3><span class="subtle" style="font-size:9px">${overview.faqs?.suggested||0} suggested · ${overview.faqs?.approved||0} approved · ${overview.faqs?.rejected||0} rejected</span></div></div>${faqRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>FAQ</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${faqRows}</tbody></table></div>`:emptyState("Belum ada FAQ","FAQ hasil AI akan muncul di sini setelah dokumen diproses.")}</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Generated SOP</h3><span class="subtle" style="font-size:9px">${overview.sops?.suggested||0} suggested · ${overview.sops?.approved||0} approved · ${overview.sops?.rejected||0} rejected</span></div></div>${sopRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>SOP</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${sopRows}</tbody></table></div>`:emptyState("Belum ada SOP","SOP hasil AI akan muncul di sini setelah dokumen diproses.")}</div>
   <div class="card"><div class="card-head"><h3>Missing topics</h3></div><div class="card-body" style="padding:16px">${missingTopics}</div></div>`);
+}
+
+async function renderMultimedia() {
+  loadingPage("Multimedia Studio", "Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX.");
+  const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
+  try {
+    const result = await api.imagesHistory({ bot_id: state.selectedBotId || undefined, limit: 24 });
+    state.multimedia.history = result.items || [];
+  } catch (error) { state.multimedia.history = []; }
+
+  const mm = state.multimedia;
+  const imagePreview = mm.lastImage
+    ? `<div class="card-body" style="display:grid;gap:8px"><img src="${esc(mm.lastImage.image_url)}" alt="Generated" style="max-width:100%;border-radius:8px;border:1px solid var(--border)"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="subtle">Provider: ${esc(mm.lastImage.provider)} · ${mm.lastImage.generation_time}s</span><a class="button" href="${esc(mm.lastImage.image_url)}" target="_blank" rel="noopener" download>${icon('upload',14)} Download</a></div></div>`
+    : "";
+  const analyzePreview = mm.lastAnalysis
+    ? `<div class="card-body"><div style="white-space:pre-wrap;font-size:12px;line-height:1.6">${esc(mm.lastAnalysis.answer)}</div></div>`
+    : "";
+  const documentPreview = mm.lastDocument
+    ? `<div class="card-body"><a class="button button-primary" href="${esc(mm.lastDocument.file_url)}" target="_blank" rel="noopener" download>${icon('upload',14)} Download ${esc(mm.lastDocument.format.toUpperCase())}: ${esc(mm.lastDocument.title)}</a></div>`
+    : "";
+
+  const historyItems = mm.history.map((item) => {
+    if (item.kind === "analyze") {
+      return `<div class="card" style="padding:10px"><span class="status-badge active">Analyze</span><p class="subtle" style="margin-top:6px;font-size:10px">${esc(item.prompt || '')}</p><span class="subtle mono" style="font-size:8px">${formatDate(item.created_at,{hour:'2-digit',minute:'2-digit'})}</span></div>`;
+    }
+    return `<div class="card" style="padding:10px"><img src="${esc(item.image_url)}" alt="" style="width:100%;border-radius:6px;aspect-ratio:1/1;object-fit:cover"><p class="subtle" style="margin-top:6px;font-size:10px;max-height:36px;overflow:hidden">${esc(item.prompt || '')}</p><span class="subtle mono" style="font-size:8px">${esc(item.provider)} · ${formatDate(item.created_at,{hour:'2-digit',minute:'2-digit'})}</span></div>`;
+  }).join("");
+
+  setPage(`${pageHeader("Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX.",`<select class="select" data-multimedia-bot><option value="">Semua agent</option>${options}</select>`)}
+  <div class="grid grid-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-head"><div><h3>${icon('multimedia',16)} Generate Image</h3><span class="subtle">OpenAI · Google Imagen · Replicate · Stability AI · Fal.ai</span></div></div>
+      <form data-multimedia-image-form class="card-body" style="display:grid;gap:10px">
+        <textarea class="input" name="prompt" rows="3" placeholder="Contoh: Buat logo restoran modern" required></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input class="input" name="style" placeholder="Style (opsional, contoh: minimalist)" style="flex:1;min-width:160px">
+          <select class="select" name="size"><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024</option><option value="1024x1536">1024x1536</option></select>
+          <select class="select" name="provider"><option value="">Default provider</option><option value="replicate">Replicate</option><option value="openai">OpenAI</option><option value="google_imagen">Google Imagen</option><option value="stability">Stability AI</option><option value="fal">Fal.ai</option></select>
+        </div>
+        <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${mm.generating?'disabled':''}>${icon('send',14)} ${mm.generating?'Generating...':'Generate Image'}</button></div>
+      </form>
+      ${imagePreview}
+    </div>
+    <div class="card">
+      <div class="card-head"><div><h3>${icon('chat',16)} Analyze Image (Vision AI)</h3><span class="subtle">Deskripsi, OCR, analisis UI/dashboard, atau baca invoice/dokumen</span></div></div>
+      <form data-multimedia-analyze-form class="card-body" style="display:grid;gap:10px">
+        <input class="input" type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+        <input class="input" name="question" placeholder="Pertanyaan (opsional, contoh: ada teks apa di gambar ini?)">
+        <select class="select" name="mode"><option value="describe">Deskripsikan gambar</option><option value="ocr">Baca teks (OCR)</option><option value="ui_analysis">Analisis UI/Dashboard</option><option value="document">Baca invoice/dokumen</option></select>
+        <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${mm.analyzing?'disabled':''}>${icon('send',14)} ${mm.analyzing?'Analyzing...':'Analyze Image'}</button></div>
+      </form>
+      ${analyzePreview}
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head"><div><h3>${icon('knowledge',16)} Generate Document</h3><span class="subtle">PDF · DOCX · XLSX · PPTX — AI menyusun outline otomatis dari permintaanmu</span></div></div>
+    <form data-multimedia-document-form class="card-body" style="display:grid;gap:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="select" name="format"><option value="pdf">PDF</option><option value="docx">DOCX (Word)</option><option value="xlsx">XLSX (Excel)</option><option value="pptx">PPTX (PowerPoint)</option></select>
+      </div>
+      <textarea class="input" name="prompt" rows="3" placeholder="Contoh: Buat laporan penjualan bulan ini dalam bentuk tabel" required></textarea>
+      <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${mm.generatingDoc?'disabled':''}>${icon('send',14)} ${mm.generatingDoc?'Generating...':'Generate Document'}</button></div>
+    </form>
+    ${documentPreview}
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Image History</h3><span class="subtle">Hasil generate &amp; analisis terbaru</span></div>
+    ${historyItems ? `<div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">${historyItems}</div>` : emptyState("Belum ada riwayat","Generate atau analisis gambar untuk mulai mengisi riwayat di sini.")}
+  </div>`);
+}
+
+async function generateMultimediaImage(form) {
+  const data = Object.fromEntries(new FormData(form));
+  state.multimedia.generating = true;
+  await renderMultimedia();
+  try {
+    const result = await api.imagesGenerate({
+      prompt: data.prompt, style: data.style || "", size: data.size || "1024x1024",
+      provider: data.provider || "", bot_id: state.selectedBotId || null,
+    });
+    state.multimedia.lastImage = result;
+    toast("Gambar berhasil dibuat.", "success");
+  } catch (error) { toast(error.message, "error"); }
+  state.multimedia.generating = false;
+  await renderMultimedia();
+}
+
+async function analyzeMultimediaImage(form) {
+  const fd = new FormData(form);
+  const file = fd.get("file");
+  if (!file || !file.size) { toast("Pilih gambar dulu.", "error"); return; }
+  state.multimedia.analyzing = true;
+  await renderMultimedia();
+  try {
+    const result = await api.imagesAnalyze(file, {
+      question: fd.get("question") || "", mode: fd.get("mode") || "describe", botId: state.selectedBotId || null,
+    });
+    state.multimedia.lastAnalysis = result;
+    toast("Analisis gambar selesai.", "success");
+  } catch (error) { toast(error.message, "error"); }
+  state.multimedia.analyzing = false;
+  await renderMultimedia();
+}
+
+async function generateMultimediaDocument(form) {
+  const data = Object.fromEntries(new FormData(form));
+  state.multimedia.generatingDoc = true;
+  await renderMultimedia();
+  try {
+    const result = await api.documentsGenerate({
+      format: data.format, prompt: data.prompt, bot_id: state.selectedBotId || null,
+    });
+    state.multimedia.lastDocument = result;
+    toast("Dokumen berhasil dibuat.", "success");
+  } catch (error) { toast(error.message, "error"); }
+  state.multimedia.generatingDoc = false;
+  await renderMultimedia();
 }
 
 const WF_CATEGORY_META = {
@@ -1297,7 +1473,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1345,6 +1521,29 @@ async function uploadFaqCsv(input) {
   try { const result = await api.importFaqCsv(state.selectedBotId,file); toast(`${result.imported} FAQ diimpor ke knowledge base.`,"success"); await renderKnowledgeBuilder(); }
   catch(error){ toast(error.message,"error"); }
   finally { input.value = ""; }
+}
+
+async function bulkImportKnowledgeUrls(form) {
+  const text = String(new FormData(form).get("urls") || "");
+  const urls = text.split(/\r?\n/).map((line)=>line.trim()).filter(Boolean).map((url)=>({ url, category:"custom", priority:"normal", agent:"custom", language:"id", trusted:false }));
+  if (!urls.length) return toast("Masukkan minimal satu URL.", "error");
+  const button = form.querySelector('button[type="submit"]'); if(button) button.disabled = true;
+  try { const result = await api.bulkKnowledgeUrls(state.selectedBotId, urls, true); form.reset(); toast(`${result.imported} URL masuk queue, ${result.skipped_duplicate} duplicate dilewati.`, "success"); await renderKnowledge(); }
+  catch(error){ toast(error.message,"error"); }
+  finally { if(button) button.disabled = false; }
+}
+
+async function seedKnowledge(kind) {
+  try {
+    let result;
+    if (kind === "marketplace") result = await api.seedMarketplaceKnowledge(state.selectedBotId, false, false);
+    else if (kind === "general") result = await api.seedKnowledgeGeneral(state.selectedBotId, true);
+    else if (kind === "all") result = await api.seedKnowledgeAgents(state.selectedBotId, true);
+    else result = await api.seedKnowledgeAgent(kind, state.selectedBotId, true);
+    const imported = result.imported ?? Object.values(result.results || {}).reduce((n,item)=>n+(item.imported||0),0);
+    toast(`${imported} URL seed masuk queue. Crawler background dijadwalkan terbatas.`, "success");
+    await renderKnowledge();
+  } catch(error) { toast(error.message,"error"); }
 }
 
 async function regenerateKb(docId) {
@@ -1412,7 +1611,8 @@ async function sendPlayground(form) {
       }
     }
     messages.querySelector("[data-thinking]")?.remove();
-    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div>${feedbackControls(result.message_id,result.session_id)}</div></div>`);
+    const imageHtml = result.image_url ? `<img src="${esc(result.image_url)}" alt="Generated" style="max-width:280px;border-radius:8px;display:block;margin-bottom:8px">` : "";
+    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${imageHtml}${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div>${feedbackControls(result.message_id,result.session_id)}</div></div>`);
     if (preparedSpeech) {
       speak(result.answer, container, preparedSpeech).catch((error) => voiceStatus(container, `Suara gagal: ${error.message}`));
     }
@@ -1423,6 +1623,32 @@ async function sendPlayground(form) {
     delete form.dataset.sending;
     if (submitButton) submitButton.disabled = false;
     input.focus();
+    messages.scrollTop = messages.scrollHeight;
+  }
+}
+
+async function uploadChatImage(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const form = input.closest("form");
+  const container = form?.closest(".chat-page") || document;
+  const messages = container.querySelector("#playground-messages");
+  if (!messages) { input.value = ""; return; }
+  const textarea = form?.elements?.message;
+  const question = textarea?.value.trim() || "";
+  const localUrl = URL.createObjectURL(file);
+  messages.insertAdjacentHTML("beforeend", `<div class="message user"><div class="message-bubble"><img src="${esc(localUrl)}" alt="" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px">${esc(question || "Analisis gambar ini")}</div></div><div class="message" data-thinking><div class="message-bubble"><span class="thinking"><i></i><i></i><i></i></span></div></div>`);
+  if (textarea) textarea.value = "";
+  messages.scrollTop = messages.scrollHeight;
+  try {
+    const result = await api.imagesAnalyze(file, { question, mode: "describe", botId: state.selectedBotId });
+    messages.querySelector("[data-thinking]")?.remove();
+    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${renderMarkdown(result.answer)}<div class="message-meta">Vision AI</div></div></div>`);
+  } catch (error) {
+    messages.querySelector("[data-thinking]")?.remove();
+    messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble" style="color:var(--red)">${esc(error.message)}</div></div>`);
+  } finally {
+    input.value = "";
     messages.scrollTop = messages.scrollHeight;
   }
 }
@@ -1453,6 +1679,9 @@ document.addEventListener("click", async (event) => {
   if(traceTarget){ await openObservabilityTrace(traceTarget.dataset.observabilityTrace); return; }
   const viewSources=event.target.closest("[data-view-sources]");
   if(viewSources){ await openMessageSources(viewSources.dataset.viewSources); return; }
+  const marketplaceCategory=event.target.closest("[data-marketplace-category]");
+  if(marketplaceCategory){ state.marketplaceFilters ||= { search:"", category:"" }; state.marketplaceFilters.category=marketplaceCategory.dataset.marketplaceCategory || ""; await renderMarketplace(); return; }
+  if(event.target.closest("[data-marketplace-clear]")){ state.marketplaceFilters={ search:"", category:"" }; await renderMarketplace(); return; }
   const routeTarget=event.target.closest("[data-route]");
   if(routeTarget){ location.hash=routeTarget.dataset.route; return; }
   const agentTarget=event.target.closest("[data-agent-id]");
@@ -1524,6 +1753,13 @@ document.addEventListener("click", async (event) => {
   if(action==="refresh-channel-health"){ try{ await api.channelStatus(true); toast("Channel health refreshed.","success"); if(state.route==="channels") await renderChannels(); }catch(error){toast(error.message,"error");} }
   if(action==="submit-connect-channel") await submitConnectChannel();
   const deleteDoc=event.target.closest("[data-delete-document]"); if(deleteDoc && confirm("Delete this knowledge document?")){ try{ await api.deleteDocument(state.selectedBotId,deleteDoc.dataset.deleteDocument); toast("Document deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} }
+  const retrySource=event.target.closest("[data-retry-source]"); if(retrySource){ try{ await api.retryKnowledgeSource(retrySource.dataset.retrySource); toast("Retry dijadwalkan.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} return; }
+  const deleteSource=event.target.closest("[data-delete-source]"); if(deleteSource && confirm("Delete this URL source?")){ try{ await api.deleteKnowledgeSource(deleteSource.dataset.deleteSource); toast("URL source deleted.","success"); await renderKnowledge(); }catch(error){toast(error.message,"error");} return; }
+  if(event.target.closest("[data-seed-marketplace]")){ await seedKnowledge("marketplace"); return; }
+  if(event.target.closest("[data-retry-failed-sources]")){ try{ const result=await api.retryFailedKnowledgeSources({ bot_id:state.selectedBotId, agent_id:state.knowledgeFilters?.agent_id || null, category:state.knowledgeFilters?.category || null, crawl:false }); toast(`${result.retried} failed URL dikembalikan ke pending.`, "success"); await renderKnowledge(); }catch(error){ toast(error.message,"error"); } return; }
+  if(event.target.closest("[data-seed-general]")){ await seedKnowledge("general"); return; }
+  if(event.target.closest("[data-seed-all-agents]")){ await seedKnowledge("all"); return; }
+  const seedAgent=event.target.closest("[data-seed-agent]"); if(seedAgent){ await seedKnowledge(seedAgent.dataset.seedAgent); return; }
   const kbRegenerate=event.target.closest("[data-kb-regenerate]"); if(kbRegenerate){ await regenerateKb(kbRegenerate.dataset.kbRegenerate); return; }
   const kbFaqActionTarget=event.target.closest("[data-kb-faq-action]"); if(kbFaqActionTarget){ await kbFaqAction(kbFaqActionTarget.dataset.kbFaqId,kbFaqActionTarget.dataset.kbFaqAction); return; }
   const kbFaqEdit=event.target.closest("[data-kb-faq-edit]"); if(kbFaqEdit){ await editKbFaq(kbFaqEdit.dataset.kbFaqEdit); return; }
@@ -1592,7 +1828,11 @@ document.addEventListener("submit", async (event) => {
   if(event.target.id==="agent-detail-form"){ event.preventDefault(); await submitAgentDetail(event.target); }
   if(event.target.matches("[data-playground-form]")){ event.preventDefault(); await sendPlayground(event.target); }
   if(event.target.matches("[data-kb-url-form]")){ event.preventDefault(); await uploadKnowledgeUrl(event.target); }
+  if(event.target.matches("[data-bulk-url-form]")){ event.preventDefault(); await bulkImportKnowledgeUrls(event.target); }
   if(event.target.matches("[data-cost-budget-form]")){ event.preventDefault(); await updateCostBudget(event.target); }
+  if(event.target.matches("[data-multimedia-image-form]")){ event.preventDefault(); await generateMultimediaImage(event.target); }
+  if(event.target.matches("[data-multimedia-analyze-form]")){ event.preventDefault(); await analyzeMultimediaImage(event.target); }
+  if(event.target.matches("[data-multimedia-document-form]")){ event.preventDefault(); await generateMultimediaDocument(event.target); }
 });
 
 document.addEventListener("change", async (event) => {
@@ -1603,11 +1843,17 @@ document.addEventListener("change", async (event) => {
   if(event.target.matches("[data-routing-logs-bot]")){ state.selectedBotId=event.target.value; await renderRoutingLogs(); }
   if(event.target.matches("[data-observability-days]")) await renderObservability(event.target.value);
   if(event.target.matches("[data-knowledge-bot]")){ state.selectedBotId=event.target.value; await renderKnowledge(); }
+  if(event.target.matches("[data-source-status]")){ state.knowledgeFilters.status=event.target.value; await renderKnowledge(); }
+  if(event.target.matches("[data-source-category]")){ state.knowledgeFilters.category=event.target.value; await renderKnowledge(); }
+  if(event.target.matches("[data-source-agent]")){ state.knowledgeFilters.agent_id=event.target.value; await renderKnowledge(); }
   if(event.target.matches("[data-document-upload]")) await uploadDocument(event.target);
+  if(event.target.matches("[data-marketplace-category-select]")){ state.marketplaceFilters ||= { search:"", category:"" }; state.marketplaceFilters.category=event.target.value; await renderMarketplace(); }
   if(event.target.matches("[data-knowledge-builder-bot]")){ state.selectedBotId=event.target.value; await renderKnowledgeBuilder(); }
   if(event.target.matches("[data-faq-import]")) await uploadFaqCsv(event.target);
   if(event.target.matches("[data-workflow-builder-bot]")){ state.selectedBotId=event.target.value; state.wfWorkflow=null; state.wfExecution=null; await renderWorkflowBuilder(); }
   if(event.target.matches("[data-wf-field]") && state.wfWorkflow){ state.wfWorkflow[event.target.dataset.wfField]=event.target.value; }
+  if(event.target.matches("[data-multimedia-bot]")){ state.selectedBotId=event.target.value; await renderMultimedia(); }
+  if(event.target.matches("[data-chat-image-upload]")) await uploadChatImage(event.target);
 });
 
 document.addEventListener("input", (event) => {
@@ -1616,6 +1862,14 @@ document.addEventListener("input", (event) => {
     const form=event.target.closest("#wf-node-config-form");
     const node=(state.wfWorkflow.nodes||[]).find((n)=>n.id===form?.dataset.wfNodeId);
     if(node){ node.config=node.config||{}; node.config[event.target.dataset.wfConfigField]=event.target.value; }
+  }
+  if(event.target.matches("[data-source-search]")){
+    clearTimeout(state.sourceSearchTimer);
+    state.sourceSearchTimer=setTimeout(async()=>{ state.knowledgeFilters.search=event.target.value; await renderKnowledge(); },350);
+  }
+  if(event.target.matches("[data-marketplace-search]")){
+    clearTimeout(state.marketplaceSearchTimer);
+    state.marketplaceSearchTimer=setTimeout(async()=>{ state.marketplaceFilters ||= { search:"", category:"" }; state.marketplaceFilters.search=event.target.value; await renderMarketplace(); },250);
   }
   if(event.target.matches("[data-conversation-search]")){
     const query=event.target.value.toLowerCase(); els(".conversation-row").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(query));

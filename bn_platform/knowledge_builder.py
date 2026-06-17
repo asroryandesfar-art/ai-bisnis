@@ -1,8 +1,6 @@
 """Auto Knowledge Builder — dashboard untuk hasil AI generation per bot:
 ringkasan/kategori/tag/intent dokumen, FAQ & SOP hasil AI (review/approve),
 dan Knowledge Quality Score (completeness, redundancy, coverage, missing topics)."""
-from __future__ import annotations
-
 import asyncio
 import json
 import uuid

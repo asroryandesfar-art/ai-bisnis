@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS plans (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Phase 3 Multimodal: kuota image generation per paket (-1 = unlimited)
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_image_generations_per_month INT NOT NULL DEFAULT 10;
+
 CREATE TABLE IF NOT EXISTS subscriptions (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id              UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -448,13 +451,25 @@ CREATE TABLE IF NOT EXISTS tenant_template_installs (
 
 CREATE INDEX IF NOT EXISTS idx_installs_org ON tenant_template_installs(org_id);
 
-CREATE OR REPLACE VIEW agent_templates AS
+DROP VIEW IF EXISTS agent_templates;
+CREATE VIEW agent_templates AS
 SELECT
     id,
+    key AS agent_id,
+    key,
     name,
     description,
     category,
     version,
+    icon,
+    primary_color AS color,
+    tools,
+    knowledge_sources,
+    starter_questions,
+    visibility,
+    rating,
+    popularity_score,
+    install_count,
     CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
 FROM marketplace_templates;
 
@@ -546,6 +561,14 @@ VALUES
  ('enterprise', 'Enterprise', 0,       0,        -1,    -1, -1, -1, -1,
   '{"description": "Untuk perusahaan besar, agency, SaaS multi-cabang, dan white label reseller.", "highlights": ["Unlimited AI Agents", "Unlimited Conversations", "Multi Tenant", "White Label", "API Access", "Custom Domain", "Dedicated Support", "Custom Integration", "SLA Perusahaan", "Advanced Security", "Audit Log", "SSO (Single Sign-On)"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": true, "multi_tenant": true, "white_label": true, "custom_domain": true, "dedicated_support": true, "custom_integration": true, "sla": true, "advanced_security": true, "audit_log": true, "sso": true, "custom_pricing": true}', 4)
 ON CONFLICT (key) DO NOTHING;
+
+-- Kuota image generation per paket (UPDATE terpisah karena ON CONFLICT DO NOTHING
+-- di atas tidak menyentuh baris yang sudah ada dari migrasi sebelumnya).
+UPDATE plans SET max_image_generations_per_month = 10  WHERE key = 'free';
+UPDATE plans SET max_image_generations_per_month = 50  WHERE key = 'starter';
+UPDATE plans SET max_image_generations_per_month = 200 WHERE key = 'pro';
+UPDATE plans SET max_image_generations_per_month = 500 WHERE key = 'business';
+UPDATE plans SET max_image_generations_per_month = -1  WHERE key = 'enterprise';
 
 -- Katalog permission (dipakai bn_platform/rbac.py — harus sinkron dgn PERMISSIONS const)
 INSERT INTO permissions (key, category, description) VALUES
@@ -908,3 +931,16 @@ CREATE TABLE IF NOT EXISTS ai_improvement_recommendations (
 CREATE INDEX IF NOT EXISTS idx_air_org      ON ai_improvement_recommendations(org_id, status, severity);
 CREATE INDEX IF NOT EXISTS idx_air_category ON ai_improvement_recommendations(org_id, category, status);
 CREATE INDEX IF NOT EXISTS idx_air_bot      ON ai_improvement_recommendations(bot_id);
+
+-- Global Meta asset routing registry. A Page/Instagram asset can belong to one
+-- active tenant route, preventing cross-tenant webhook delivery.
+CREATE TABLE IF NOT EXISTS meta_asset_routes (
+    channel_type  TEXT NOT NULL,
+    external_id   TEXT NOT NULL,
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id        UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    connection_id UUID REFERENCES channel_connections(id) ON DELETE SET NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (channel_type, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_meta_asset_routes_org ON meta_asset_routes(org_id, channel_type);

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
@@ -19,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from base import BaseAgent, AgentResult
+
+logger = logging.getLogger(__name__)
 
 
 # ─── DATA CLASSES ─────────────────────────────────────────────
@@ -402,20 +405,29 @@ Ekstrak fakta BARU atau UPDATE fakta yang sudah ada dalam format JSON. Untuk "su
 gabungkan ringkasan sebelumnya dengan informasi baru dari turn ini menjadi satu ringkasan
 kumulatif (jangan hanya meringkas turn ini saja)."""
 
-        raw = await self._call_llm(
+        output = await self._call_llm_json(
             [{"role": "user", "content": prompt}],
             temperature=0.1,
+            default={"facts_to_store": [], "summary": "", "forget_keys": []},
         )
-
-        try:
-            text = raw.strip()
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            output = json.loads(text)
-        except Exception:
-            output = {"facts_to_store": [], "summary": "", "forget_keys": []}
+        if output.pop("_llm_unavailable", False):
+            logger.warning(
+                "Memory write deferred because the LLM provider is unavailable "
+                "(conversation_id=%s, org_id=%s)",
+                conv_id,
+                org_id,
+            )
+            return AgentResult(
+                agent=self.name,
+                success=True,
+                output={
+                    "skipped": True,
+                    "reason": "Memory write deferred: LLM provider unavailable after retries",
+                    "facts_stored": 0,
+                    "facts_deleted": 0,
+                },
+                latency_ms=0,
+            )
 
         # Simpan fakta ke store
         stored_count = 0

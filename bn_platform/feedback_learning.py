@@ -1,6 +1,4 @@
 """Tenant-scoped user feedback analytics and actionable AI learning queue."""
-from __future__ import annotations
-
 from typing import Annotated, Awaitable, Callable
 
 import asyncpg

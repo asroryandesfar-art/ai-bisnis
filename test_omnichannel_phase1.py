@@ -11,7 +11,8 @@ from bn_platform.channels import (
     WhatsAppConnector,
 )
 from bn_platform.channels.models import ChannelType
-from bn_platform.omnichannel import build_omnichannel_router
+from bn_platform.omnichannel import build_omnichannel_router, platform_channel_config
+from bn_platform.config import cfg as platform_cfg
 
 ROOT = Path(__file__).resolve().parent
 
@@ -73,6 +74,31 @@ def test_router_exposes_required_channel_api():
     routes = {(method, route.path) for route in router.routes for method in getattr(route, "methods", set())}
     for expected in (("GET", "/channels"), ("POST", "/channels/connect"), ("POST", "/channels/disconnect"), ("GET", "/channels/status"), ("GET", "/channels/analytics")):
         assert expected in routes
+
+
+def test_platform_channel_credentials_come_from_environment(monkeypatch):
+    monkeypatch.setattr(platform_cfg, "telegram_bot_token", "platform-telegram")
+    monkeypatch.setattr(platform_cfg, "instagram_access_token", "platform-instagram")
+    monkeypatch.setattr(platform_cfg, "instagram_account_id", "ig-account")
+    monkeypatch.setattr(platform_cfg, "facebook_page_access_token", "platform-facebook")
+    monkeypatch.setattr(platform_cfg, "facebook_page_id", "fb-page")
+
+    telegram, telegram_id = platform_channel_config(ChannelType.TELEGRAM)
+    instagram, instagram_id = platform_channel_config(ChannelType.INSTAGRAM)
+    facebook, facebook_id = platform_channel_config(ChannelType.FACEBOOK)
+
+    assert telegram == {"bot_token": "platform-telegram"}
+    assert telegram_id is None
+    assert instagram == {"access_token": "platform-instagram", "instagram_account_id": "ig-account"}
+    assert instagram_id == "ig-account"
+    assert facebook == {"access_token": "platform-facebook", "page_id": "fb-page"}
+    assert facebook_id == "fb-page"
+
+
+def test_platform_channel_config_rejects_missing_operator_secret(monkeypatch):
+    monkeypatch.setattr(platform_cfg, "telegram_bot_token", "")
+    with pytest.raises(ValueError, match="TELEGRAM_BOT_TOKEN"):
+        platform_channel_config(ChannelType.TELEGRAM)
 
 
 def test_widget_and_agent_channel_sanitization_are_wired():

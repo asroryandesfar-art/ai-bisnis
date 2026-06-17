@@ -395,6 +395,30 @@ def test_memory_run_stores_cumulative_summary(monkeypatch, tmp_path):
     )
 
 
+def test_memory_run_defers_write_when_llm_is_unavailable(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(memory_agent_module, "_global_store", None)
+
+    async def unavailable(self, messages, temperature=0.2, max_tokens=512, default=None):
+        return {**(default or {}), "_llm_unavailable": True}
+
+    monkeypatch.setattr(BaseAgent, "_call_llm_json", unavailable)
+    agent = MemoryAgent(api_key="test-key", persist_path=str(tmp_path / "memory.json"))
+    result = asyncio.run(agent.run({
+        "user_message": "Ingat nama saya Budi",
+        "bot_response": "Baik, Budi.",
+        "messages": [],
+        "org_id": "org-1",
+        "bot_id": "bot-1",
+        "conversation_id": "conv-429",
+        "_memory_user_id": "user-1",
+    }))
+
+    assert result.success is True
+    assert result.output["skipped"] is True
+    assert "provider unavailable" in result.output["reason"]
+    assert "Memory write deferred" in caplog.text
+
+
 # ─── 6. Routing heuristik untuk 10 pertanyaan wajib ────────────
 
 def test_heuristic_routing_for_mandatory_questions():

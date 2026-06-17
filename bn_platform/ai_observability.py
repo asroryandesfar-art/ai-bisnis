@@ -17,9 +17,19 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
     ):
         org_id = user["org_id"]
         totals = await pool.fetchrow(
-            """SELECT
+            """WITH windowed AS (
+                   SELECT *
+                   FROM agent_executions
+                   WHERE tenant_id=$1 AND created_at >= NOW() - make_interval(days => $2::int)
+               ),
+               latest AS (
+                   SELECT DISTINCT ON (agent_name) agent_name, status
+                   FROM windowed
+                   ORDER BY agent_name, execution_start DESC
+               )
+               SELECT
                    COUNT(*) FILTER (WHERE status='running' AND execution_start >= NOW() - INTERVAL '5 minutes') AS active_agents,
-                   COUNT(*) FILTER (WHERE status='error') AS failed_agents,
+                   (SELECT COUNT(*) FROM latest WHERE status='error') AS failed_agents,
                    COALESCE(AVG(duration_ms) FILTER (WHERE status <> 'running'), 0)::float AS average_latency_ms,
                    COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
                    COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
@@ -28,20 +38,32 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
                        NULLIF(COUNT(*) FILTER (WHERE status <> 'running'), 0), 0)::float AS success_rate,
                    COALESCE(100.0 * COUNT(*) FILTER (WHERE status='error') /
                        NULLIF(COUNT(*) FILTER (WHERE status <> 'running'), 0), 0)::float AS error_rate
-               FROM agent_executions
-               WHERE tenant_id=$1 AND created_at >= NOW() - make_interval(days => $2::int)""",
+               FROM windowed""",
             org_id, days,
         )
         agents = await pool.fetch(
-            """SELECT agent_name,
+            """WITH windowed AS (
+                   SELECT *
+                   FROM agent_executions
+                   WHERE tenant_id=$1 AND created_at >= NOW() - make_interval(days => $2::int)
+               ),
+               latest AS (
+                   SELECT DISTINCT ON (agent_name)
+                          agent_name, status AS last_status, error_message AS last_error
+                   FROM windowed
+                   ORDER BY agent_name, execution_start DESC
+               )
+               SELECT w.agent_name,
                       COUNT(*)::int AS executions,
-                      COUNT(*) FILTER (WHERE status='error')::int AS failures,
-                      COALESCE(AVG(duration_ms),0)::float AS average_latency_ms,
-                      COALESCE(SUM(total_tokens),0)::bigint AS total_tokens,
-                      MAX(execution_start) AS last_seen_at
-               FROM agent_executions
-               WHERE tenant_id=$1 AND created_at >= NOW() - make_interval(days => $2::int)
-               GROUP BY agent_name
+                      COUNT(*) FILTER (WHERE w.status='error')::int AS failures,
+                      COALESCE(AVG(w.duration_ms),0)::float AS average_latency_ms,
+                      COALESCE(SUM(w.total_tokens),0)::bigint AS total_tokens,
+                      MAX(w.execution_start) AS last_seen_at,
+                      l.last_status,
+                      l.last_error
+               FROM windowed w
+               JOIN latest l ON l.agent_name=w.agent_name
+               GROUP BY w.agent_name, l.last_status, l.last_error
                ORDER BY executions DESC, agent_name""",
             org_id, days,
         )
