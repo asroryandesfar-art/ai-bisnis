@@ -92,6 +92,37 @@ def build_cost_intelligence_router(*, get_pool: Callable, get_current_user: Call
                GROUP BY task_complexity, routed_model ORDER BY requests DESC""",
             org_id,
         )
+
+        # Cost Control: per-tenant image generation + storage usage, per-agent
+        # latency/success rate — komposisi dari tabel yang sudah ada
+        # (image_generations, documents, agent_executions), bukan pipeline baru.
+        image_usage = await pool.fetchrow(
+            """SELECT COUNT(*)::int AS monthly_count,
+                      COALESCE(SUM(estimated_cost),0)::float AS monthly_cost
+               FROM image_generations
+               WHERE org_id=$1 AND kind='generate' AND status='completed'
+                 AND created_at >= DATE_TRUNC('month', NOW())""",
+            org_id,
+        )
+        storage_usage = await pool.fetchrow(
+            """SELECT COALESCE(SUM(file_size),0)::bigint AS document_bytes,
+                      COUNT(*)::int AS document_count
+               FROM documents WHERE org_id=$1""",
+            org_id,
+        )
+        agent_performance = await pool.fetch(
+            """SELECT agent_name,
+                      COUNT(*)::int AS calls,
+                      ROUND(AVG(duration_ms)::numeric, 0) AS avg_latency_ms,
+                      ROUND(
+                          (COUNT(*) FILTER (WHERE status='success')::numeric
+                           / GREATEST(COUNT(*), 1)) * 100, 1
+                      ) AS success_rate_pct
+               FROM agent_executions
+               WHERE tenant_id=$1 AND created_at >= DATE_TRUNC('month', NOW())
+               GROUP BY agent_name ORDER BY calls DESC""",
+            org_id,
+        )
         return {
             "currency": "USD",
             "monthly_cost": monthly_cost,
@@ -110,6 +141,9 @@ def build_cost_intelligence_router(*, get_pool: Callable, get_current_user: Call
             "cost_by_conversation": [dict(row) for row in by_conversation],
             "daily_costs": [dict(row) for row in daily],
             "model_routing": [dict(row) for row in routing],
+            "image_generation_usage": dict(image_usage) if image_usage else {"monthly_count": 0, "monthly_cost": 0.0},
+            "storage_usage": dict(storage_usage) if storage_usage else {"document_bytes": 0, "document_count": 0},
+            "agent_performance": [dict(row) for row in agent_performance],
         }
 
     @router.put("/budget")
