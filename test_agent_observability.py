@@ -1,6 +1,7 @@
 import asyncio
 
 from agent_observability import add_token_usage, observe_agent, trace_request
+from bn_platform.ai_observability import build_ai_observability_router
 
 
 class FakePool:
@@ -65,3 +66,32 @@ def test_observability_routes_are_mounted():
     paths = {getattr(route, "path", "") for route in main.app.routes}
     assert "/api/observability/summary" in paths
     assert "/api/observability/traces/{trace_id}" in paths
+
+
+class SummaryPool:
+    def __init__(self):
+        self.queries = []
+
+    async def fetchrow(self, sql, *args):
+        self.queries.append(sql)
+        return {"active_agents": 0, "failed_agents": 0}
+
+    async def fetch(self, sql, *args):
+        self.queries.append(sql)
+        return []
+
+
+def test_observability_health_uses_latest_execution_status():
+    pool = SummaryPool()
+    router = build_ai_observability_router(
+        get_pool=lambda: pool,
+        get_current_user=lambda: {"org_id": "org-1"},
+    )
+    endpoint = next(route.endpoint for route in router.routes if route.path.endswith("/summary"))
+
+    result = asyncio.run(endpoint(days=7, user={"org_id": "org-1"}, pool=pool))
+
+    assert result["metrics"]["failed_agents"] == 0
+    assert "SELECT DISTINCT ON (agent_name)" in pool.queries[0]
+    assert "status AS last_status" in pool.queries[1]
+    assert "COUNT(*) FILTER (WHERE w.status='error')" in pool.queries[1]

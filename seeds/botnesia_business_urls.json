@@ -1,0 +1,4002 @@
+[
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/getting-started",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/setup",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/admin",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/owner",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/limits",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/plans",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/trial",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/upgrade",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/downgrade",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/invoice",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/payment",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/cancel",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/reactivate",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/whatsapp-cloud-api",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/telegram-bot",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/website-widget",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/gmail",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/instagram",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/knowledge-upload",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/url-seeder",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/faq-import",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/agent-template",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/customer-service-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/sales-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/travel-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/clinic-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/school-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/property-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/ecommerce-agent",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/security",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/rbac",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/audit-log",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/api-key",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/webhook",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/analytics",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/handoff",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/billing",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/subscription",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/overview/support",
+    "category": "botnesia_business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/getting-started",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/setup",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/admin",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/owner",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/limits",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/plans",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/trial",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/upgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/downgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/invoice",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/payment",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/cancel",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/reactivate",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/whatsapp-cloud-api",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/telegram-bot",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/website-widget",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/gmail",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/instagram",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/knowledge-upload",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/url-seeder",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/faq-import",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/agent-template",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/customer-service-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/sales-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/travel-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/clinic-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/school-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/property-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/ecommerce-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/security",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/rbac",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/audit-log",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/api-key",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/webhook",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/analytics",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/handoff",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/billing",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/subscription",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/pricing/support",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/getting-started",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/setup",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/admin",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/owner",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/limits",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/plans",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/trial",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/upgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/downgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/invoice",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/payment",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/cancel",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/reactivate",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/whatsapp-cloud-api",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/telegram-bot",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/website-widget",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/gmail",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/instagram",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/knowledge-upload",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/url-seeder",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/faq-import",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/agent-template",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/customer-service-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/sales-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/travel-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/clinic-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/school-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/property-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/ecommerce-agent",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/security",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/rbac",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/audit-log",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/api-key",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/webhook",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/analytics",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/handoff",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/billing",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/subscription",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/whatsapp/support",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/getting-started",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/setup",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/admin",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/owner",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/limits",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/plans",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/trial",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/upgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/botnesia/telegram/downgrade",
+    "category": "botnesia_business",
+    "priority": "normal",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/getting-started",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/guides",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/api-reference",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/developers",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/developer",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/api",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/reference",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/faq",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/faqs",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/knowledge-base",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guides",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/tutorials",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/learn",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/resources",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/blog",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/overview",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/quickstart",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/setup",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/configuration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/authentication",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/authorization",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/privacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/billing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/pricing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/account",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/users",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/teams",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/roles",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/permissions",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/api",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/webhooks",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/integrations",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/migration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/deployment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/troubleshooting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/best-practices",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/faq",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/support",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/tutorials",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/examples",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/templates",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/analytics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/reporting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/automation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/workflow",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/data",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/import",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/export",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/compliance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/refund",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/returns",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/shipping",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/payments",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/invoice",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/subscription",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/crm",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/sales",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/marketing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/customer-service",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/help-center",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/knowledge-base",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/chatbot",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/whatsapp",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/email",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/notifications",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/travel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/booking",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/hotel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/flight",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/visa",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/passport",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/insurance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/clinic",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/appointment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/patient",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/telemedicine",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/pharmacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/school",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/student",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/teacher",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/curriculum",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/assessment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/admission",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/property",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/mortgage",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/rent",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/lease",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/listing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/valuation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/indonesia",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/regulation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/tax",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/finance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/statistics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/docs/economy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/getting-started",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/overview",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/quickstart",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/setup",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/configuration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/authentication",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/authorization",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/privacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/billing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/pricing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/account",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/users",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/teams",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/roles",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/permissions",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/api",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/api-reference",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/webhooks",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/integrations",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/migration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/deployment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/troubleshooting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/best-practices",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/faq",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/support",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/guides",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/tutorials",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/examples",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/templates",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/analytics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/reporting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/automation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/workflow",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/data",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/import",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/export",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/compliance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/refund",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/returns",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/shipping",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/payments",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/invoice",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/subscription",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/crm",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/sales",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/marketing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/customer-service",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/help-center",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/knowledge-base",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/chatbot",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/whatsapp",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/email",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/notifications",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/travel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/booking",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/hotel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/flight",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/visa",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/passport",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/insurance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/clinic",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/appointment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/patient",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/telemedicine",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/pharmacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/school",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/student",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/teacher",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/curriculum",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/assessment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/admission",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/property",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/mortgage",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/rent",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/lease",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/listing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/valuation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/indonesia",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/regulation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/tax",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/finance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/statistics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/documentation/economy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/getting-started",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/overview",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/quickstart",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/setup",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/configuration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/authentication",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/authorization",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/privacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/billing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/pricing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/account",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/users",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/teams",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/roles",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/permissions",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/api",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/api-reference",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/webhooks",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/integrations",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/migration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/deployment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/troubleshooting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/best-practices",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/faq",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/support",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/guides",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/tutorials",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/examples",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/templates",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/analytics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/reporting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/automation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/workflow",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/data",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/import",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/export",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/compliance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/refund",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/returns",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/shipping",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/payments",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/invoice",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/subscription",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/crm",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/sales",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/marketing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/customer-service",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/help-center",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/knowledge-base",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/chatbot",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/whatsapp",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/email",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/notifications",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/travel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/booking",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/hotel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/flight",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/visa",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/passport",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/insurance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/clinic",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/appointment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/patient",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/telemedicine",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/pharmacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/school",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/student",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/teacher",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/curriculum",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/assessment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/admission",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/property",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/mortgage",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/rent",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/lease",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/listing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/valuation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/indonesia",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/regulation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/tax",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/finance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/statistics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/help/economy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/getting-started",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/overview",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/quickstart",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/setup",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/configuration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/authentication",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/authorization",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/privacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/billing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/pricing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/account",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/users",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/teams",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/roles",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/permissions",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/api",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/api-reference",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/webhooks",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/integrations",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/migration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/deployment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/troubleshooting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/best-practices",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/faq",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/support",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/guides",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/tutorials",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/examples",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/templates",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/analytics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/reporting",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/automation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/workflow",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/data",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/import",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/export",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/compliance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/refund",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/returns",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/shipping",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/payments",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/invoice",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/subscription",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/crm",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/sales",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/marketing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/customer-service",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/help-center",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/knowledge-base",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/chatbot",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/whatsapp",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/email",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/notifications",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/travel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/booking",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/hotel",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/flight",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/visa",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/passport",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/insurance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/clinic",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/appointment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/patient",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/telemedicine",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/pharmacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/school",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/student",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/teacher",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/curriculum",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/assessment",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/admission",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/property",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/mortgage",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/rent",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/lease",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/listing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/valuation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/indonesia",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/regulation",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/tax",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/finance",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/statistics",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/support/economy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/getting-started",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/overview",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/quickstart",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/setup",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/configuration",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/authentication",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/authorization",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/security",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/privacy",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/billing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/pricing",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/account",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/users",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/teams",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/roles",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  },
+  {
+    "url": "https://botnesia.id/guide/permissions",
+    "category": "BotNesia Business",
+    "priority": "high",
+    "agent": "botnesia_business",
+    "language": "id",
+    "trusted": true
+  }
+]

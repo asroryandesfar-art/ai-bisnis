@@ -443,13 +443,113 @@ CREATE INDEX IF NOT EXISTS idx_installs_org ON tenant_template_installs(org_id);
 
 ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS version TEXT NOT NULL DEFAULT '1.0.0';
 
-CREATE OR REPLACE VIEW agent_templates AS
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'agents';
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS tools JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS knowledge_sources JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS starter_questions JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS visibility JSONB NOT NULL DEFAULT '{"public":true,"featured":false,"recommended":true}'::jsonb;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS rating NUMERIC(3,2) NOT NULL DEFAULT 4.80;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS popularity_score INT NOT NULL DEFAULT 0;
+ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS agent_categories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    icon TEXT NOT NULL DEFAULT 'agents',
+    color TEXT NOT NULL DEFAULT '#2563EB',
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id UUID REFERENCES marketplace_templates(id) ON DELETE SET NULL,
+    agent_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'agents',
+    color TEXT NOT NULL DEFAULT '#2563EB',
+    visibility JSONB NOT NULL DEFAULT '{"public":true}'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agent_versions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    version TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    tools JSONB NOT NULL DEFAULT '[]'::jsonb,
+    starter_questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    changelog TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(agent_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS agent_installs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    template_id UUID REFERENCES marketplace_templates(id) ON DELETE SET NULL,
+    bot_id UUID REFERENCES bots(id) ON DELETE CASCADE,
+    installed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agent_ratings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+    template_id UUID REFERENCES marketplace_templates(id) ON DELETE CASCADE,
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    review TEXT,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(org_id, template_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_knowledge_sources (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+    template_id UUID REFERENCES marketplace_templates(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL DEFAULT 'url',
+    url TEXT,
+    category TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_templates_category ON marketplace_templates(category);
+CREATE INDEX IF NOT EXISTS idx_marketplace_templates_featured ON marketplace_templates(((visibility->>'featured')));
+CREATE INDEX IF NOT EXISTS idx_agent_installs_org ON agent_installs(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_ratings_template ON agent_ratings(template_id);
+
+DROP VIEW IF EXISTS agent_templates;
+CREATE VIEW agent_templates AS
 SELECT
     id,
+    key AS agent_id,
+    key,
     name,
     description,
     category,
     version,
+    icon,
+    primary_color AS color,
+    tools,
+    knowledge_sources,
+    starter_questions,
+    visibility,
+    rating,
+    popularity_score,
+    install_count,
     CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
 FROM marketplace_templates;
 
@@ -667,3 +767,95 @@ CREATE TABLE IF NOT EXISTS ai_improvement_recommendations (
 CREATE INDEX IF NOT EXISTS idx_air_org      ON ai_improvement_recommendations(org_id, status, severity);
 CREATE INDEX IF NOT EXISTS idx_air_category ON ai_improvement_recommendations(org_id, category, status);
 CREATE INDEX IF NOT EXISTS idx_air_bot      ON ai_improvement_recommendations(bot_id);
+
+
+-- ============================================================
+-- KNOWLEDGE URL SEEDER (bulk URL ingestion queue per tenant/agent)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    agent_id UUID,
+    category TEXT,
+    url TEXT NOT NULL,
+    title TEXT,
+    agent_type TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    language TEXT NOT NULL DEFAULT 'id',
+    trusted BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','crawling','indexed','failed','skipped')),
+    error_message TEXT,
+    retry_count INT NOT NULL DEFAULT 0,
+    document_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+    last_crawled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (bot_id, url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_org_bot_status ON knowledge_sources(org_id, bot_id, status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_category ON knowledge_sources(org_id, category);
+
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    agent_id UUID,
+    source_id UUID REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    embedding JSONB,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_source ON knowledge_chunks(source_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_org_bot ON knowledge_chunks(org_id, bot_id);
+
+-- ============================================================
+-- PHASE 3 MULTIMODAL — image generation/analysis + document generation
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS image_generations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'generate' CHECK (kind IN ('generate','analyze')),
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    revised_prompt TEXT NOT NULL DEFAULT '',
+    image_url TEXT,
+    size TEXT NOT NULL DEFAULT '',
+    style TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','failed')),
+    error_message TEXT,
+    estimated_cost NUMERIC(18,8) NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_gen_org_created ON image_generations(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_gen_bot ON image_generations(bot_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_gen_conv ON image_generations(conversation_id);
+
+CREATE TABLE IF NOT EXISTS generated_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    format TEXT NOT NULL CHECK (format IN ('pdf','docx','xlsx','pptx')),
+    title TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    file_url TEXT,
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','failed')),
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gen_docs_org_created ON generated_documents(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gen_docs_bot ON generated_documents(bot_id, created_at DESC);

@@ -153,9 +153,11 @@ async def fetch_source_url(url: str, timeout_s: float = 8.0) -> list[NewsItem]:
 
 
 _QUERY_FILLER = {
-    "berita", "news", "terbaru", "terkini", "hari", "ini", "update",
+    "berita", "news", "kabar", "terbaru", "terkini", "hari", "ini",
+    "kemarin", "minggu", "bulan", "sekarang", "saat", "breaking", "update",
     "headline", "artikel", "ringkas", "rangkum", "ringkasan", "summary",
     "tolong", "kasih", "berikan", "cari", "carikan", "tentang", "mengenai",
+    "apa", "apakah", "ada", "terjadi", "sedang", "di", "ke", "dari",
     "dan", "yang", "untuk", "dengan", "solusi", "solusinya", "saya", "aku",
 }
 

@@ -201,7 +201,9 @@ async def db_pop_oauth_state(
 ) -> tuple[str | None, str | None]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT org_id, redirect_uri FROM oauth_states WHERE provider=$1 AND state=$2",
+            """SELECT org_id, redirect_uri FROM oauth_states
+               WHERE provider=$1 AND state=$2
+               AND created_at >= NOW() - INTERVAL '15 minutes'""",
             provider,
             state,
         )

@@ -11,6 +11,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PlatformSettings(BaseSettings):
+    # ── Core app / Meta OAuth ──
+    app_url: str = "http://127.0.0.1:8000"
+    secret_key: str = "change-me-in-production"
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_api_version: str = "v21.0"
+    meta_oauth_redirect_uri: str = ""
+    meta_verify_token: str = ""
+
     # ── Midtrans (Snap API) — https://docs.midtrans.com/docs/snap-snap-integration-guide ──
     midtrans_server_key:    str = ""
     midtrans_client_key:    str = ""
@@ -23,6 +32,14 @@ class PlatformSettings(BaseSettings):
     # ── Telegram Bot API (Omnichannel) ──
     telegram_bot_token:     str = ""
     telegram_webhook_secret: str = ""
+
+    # ── Platform-owned Meta channels ──
+    # Pelanggan tidak memasukkan token. Operator mengelola satu akun provider
+    # untuk tiap channel melalui environment/secret deployment.
+    instagram_access_token: str = ""
+    instagram_account_id: str = ""
+    facebook_page_access_token: str = ""
+    facebook_page_id: str = ""
 
     # ── Enkripsi kredensial channel (Fernet — urlsafe base64, 32 byte) ──
     # generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

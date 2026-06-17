@@ -1,0 +1,46 @@
+{
+  "total_url_per_agent": {
+    "botnesia_business": 500
+  },
+  "total_url_indexed": 500,
+  "duplicate_removed": 320,
+  "failed_urls": [
+    "https://botnesia.id/sitemap.xml",
+    "https://botnesia.id/sitemap_index.xml",
+    "https://botnesia.id/sitemap-index.xml",
+    "https://botnesia.id/sitemap/sitemap.xml",
+    "https://botnesia.id/sitemaps/sitemap.xml"
+  ],
+  "category_breakdown": {
+    "BotNesia Business": 50
+  },
+  "top_domains_used": {
+    "botnesia.id": 50
+  },
+  "targets_met": {
+    "botnesia_business": true
+  },
+  "results": [
+    {
+      "agent": "botnesia_business",
+      "before": 450,
+      "after": 500,
+      "added": 50,
+      "target": 500,
+      "duplicate_removed": 320,
+      "failed_urls": [
+        "https://botnesia.id/sitemap.xml",
+        "https://botnesia.id/sitemap_index.xml",
+        "https://botnesia.id/sitemap-index.xml",
+        "https://botnesia.id/sitemap/sitemap.xml",
+        "https://botnesia.id/sitemaps/sitemap.xml"
+      ],
+      "category_breakdown": {
+        "BotNesia Business": 50
+      },
+      "top_domains": {
+        "botnesia.id": 50
+      }
+    }
+  ]
+}

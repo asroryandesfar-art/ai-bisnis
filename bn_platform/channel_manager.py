@@ -202,14 +202,14 @@ class ChannelManager:
                       COUNT(DISTINCT user_id)::int AS active_users,
                       COALESCE(AVG(response_time_ms) FILTER (WHERE response_time_ms IS NOT NULL),0)::numeric(12,2) AS response_time_ms,
                       COUNT(*) FILTER (WHERE (metadata->>'conversion')::boolean IS TRUE)::int AS conversions
-               FROM channel_messages WHERE tenant_id=$1 AND created_at >= NOW()-($2::text || ' days')::interval""", tenant_id, max(1, min(days, 365)),
+               FROM channel_messages WHERE tenant_id=$1 AND created_at >= NOW()-($2::int * INTERVAL '1 day')""", tenant_id, max(1, min(days, 365)),
         )
         usage = await self.pool.fetch(
             """SELECT c.channel_type AS channel, COUNT(cm.id)::int AS messages,
                       COUNT(DISTINCT cm.user_id)::int AS active_users
                FROM channels c
                LEFT JOIN channel_connections cc ON cc.channel_id=c.id AND cc.tenant_id=$1
-               LEFT JOIN channel_messages cm ON cm.connection_id=cc.id AND cm.created_at >= NOW()-($2::text || ' days')::interval
+               LEFT JOIN channel_messages cm ON cm.connection_id=cc.id AND cm.created_at >= NOW()-($2::int * INTERVAL '1 day')
                WHERE c.tenant_id=$1 GROUP BY c.channel_type ORDER BY messages DESC""", tenant_id, max(1, min(days, 365)),
         )
         total = int(summary["total_messages"] or 0)

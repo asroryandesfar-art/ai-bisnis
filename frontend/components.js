@@ -14,6 +14,7 @@ const paths = {
   knowledge:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/>',
   "kb-builder":'<path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="4"/>',
   "workflow-builder":'<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="12" r="2.5"/><circle cx="5" cy="18" r="2.5"/><path d="M7.5 6h5a3 3 0 0 1 3 3v0M7.5 18h5a3 3 0 0 0 3-3v0M16.5 9v6"/>',
+  multimedia:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 14 4-4 3 3 5-5 4 4"/><path d="M8 21h8"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
   security:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
   billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
@@ -105,7 +106,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 const navGroups = [
   ["FOUNDER", [["founder","Founder OS"]]],
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["multimedia","Multimedia Studio"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
 
@@ -131,6 +132,7 @@ const routeMeta = {
   knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"],
   "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
   "workflow-builder":["Workflow Builder","Rancang automasi AI Agent ala n8n/Zapier — trigger, condition, agent, action, dan notification"],
+  multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
   security:["Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management"],
   billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],

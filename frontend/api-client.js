@@ -88,6 +88,10 @@ export const api = {
 
   marketplaceTemplates: () => request("/api/marketplace/templates"),
   marketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}`),
+  marketplaceCategories: () => request("/api/marketplace/categories"),
+  marketplaceAnalytics: () => request("/api/marketplace/analytics"),
+  marketplaceRecommended: (q = "", limit = 12) => request(`/api/marketplace/recommended${encodeQuery({ q, limit })}`),
+  marketplaceSupervisorRoute: (message) => request("/api/marketplace/supervisor/route", { method: "POST", body: { message } }),
   marketplaceInstalls: () => request("/api/marketplace/installs"),
   installMarketplaceTemplate: (template_key, bot_name = null) => request("/api/marketplace/install", {
     method: "POST", body: { template_key, bot_name },
@@ -107,6 +111,17 @@ export const api = {
   speakText: (text) => request("/audio/speak", { method: "POST", body: { text } }),
   stopSpeech: () => request("/audio/stop", { method: "POST" }),
 
+  imagesGenerate: (body) => request("/api/images/generate", { method: "POST", body }),
+  imagesAnalyze: (file, { question = "", mode = "describe", botId = null, conversationId = null } = {}) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request(`/api/images/analyze${encodeQuery({ question, mode, bot_id: botId, conversation_id: conversationId })}`, {
+      method: "POST", body,
+    });
+  },
+  imagesHistory: (params = {}) => request(`/api/images/history${encodeQuery(params)}`),
+  documentsGenerate: (body) => request("/api/documents/generate", { method: "POST", body }),
+
   documents: (botId) => request(`/bots/${botId}/documents`),
   uploadDocument: (botId, file) => {
     const body = new FormData(); body.append("file", file);
@@ -121,6 +136,16 @@ export const api = {
     const body = new FormData(); body.append("file", file);
     return request(`/bots/${botId}/documents/faq-import`, { method: "POST", body });
   },
+  knowledgeSources: (params = {}) => request(`/api/knowledge/sources${encodeQuery(params)}`),
+  bulkKnowledgeUrls: (botId, urls, crawl = true) => request("/api/knowledge/urls/bulk", { method: "POST", body: { bot_id: botId, urls, crawl } }),
+  seedKnowledgeGeneral: (botId, crawl = true) => request("/api/knowledge/seed/general", { method: "POST", body: { bot_id: botId, crawl } }),
+  seedKnowledgeAgents: (botId, crawl = true) => request("/api/knowledge/seed/agents", { method: "POST", body: { bot_id: botId, crawl } }),
+  seedKnowledgeAgent: (agentType, botId, crawl = true) => request(`/api/knowledge/seed/${agentType}`, { method: "POST", body: { bot_id: botId, crawl } }),
+  seedMarketplaceKnowledge: (botId = null, crawl = false, installedOnly = false) => request("/api/knowledge/seed/marketplace-1000", { method: "POST", body: { bot_id: botId, crawl, installed_only: installedOnly } }),
+  knowledgeSeedStatus: (params = {}) => request(`/api/knowledge/seed/status${encodeQuery(params)}`),
+  retryFailedKnowledgeSources: (body = {}) => request("/api/knowledge/sources/retry-failed", { method: "POST", body }),
+  retryKnowledgeSource: (sourceId) => request(`/api/knowledge/sources/${sourceId}/retry`, { method: "POST" }),
+  deleteKnowledgeSource: (sourceId) => request(`/api/knowledge/sources/${sourceId}`, { method: "DELETE" }),
 
   kbOverview: (botId) => request(`/api/knowledge-builder/bots/${botId}/overview`),
   kbRegenerate: (botId, docId) => request(`/api/knowledge-builder/bots/${botId}/documents/${docId}/generate`, { method: "POST" }),

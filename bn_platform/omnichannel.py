@@ -86,6 +86,30 @@ class BroadcastReq(BaseModel):
     message: str = Field(min_length=1, max_length=10000)
 
 
+def platform_channel_config(channel: ChannelType) -> tuple[dict, str | None]:
+    if channel == ChannelType.TELEGRAM:
+        if not platform_cfg.telegram_bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN belum dikonfigurasi oleh operator")
+        return {"bot_token": platform_cfg.telegram_bot_token}, None
+    if channel == ChannelType.INSTAGRAM:
+        if not platform_cfg.instagram_access_token or not platform_cfg.instagram_account_id:
+            raise ValueError("INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_ACCOUNT_ID belum dikonfigurasi oleh operator")
+        return {
+            "access_token": platform_cfg.instagram_access_token,
+            "instagram_account_id": platform_cfg.instagram_account_id,
+        }, platform_cfg.instagram_account_id
+    if channel == ChannelType.FACEBOOK:
+        if not platform_cfg.facebook_page_access_token or not platform_cfg.facebook_page_id:
+            raise ValueError("FACEBOOK_PAGE_ACCESS_TOKEN / FACEBOOK_PAGE_ID belum dikonfigurasi oleh operator")
+        return {
+            "access_token": platform_cfg.facebook_page_access_token,
+            "page_id": platform_cfg.facebook_page_id,
+        }, platform_cfg.facebook_page_id
+    if channel == ChannelType.WEBSITE:
+        return {}, None
+    raise ValueError("WhatsApp harus dihubungkan melalui Meta Embedded Signup")
+
+
 def build_omnichannel_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, require_permission, app_url: str, route_inbound_message: RouteInboundMessage | None = None, check_limit=None) -> APIRouter:
     router = APIRouter(tags=["omnichannel"])
 
@@ -103,7 +127,16 @@ def build_omnichannel_router(*, get_pool: GetPool, get_current_user: GetCurrentU
             if not ok:
                 raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, f"Limit channel paket {detail['plan']} tercapai ({detail['used']}/{detail['limit']})")
         try:
-            connection = await manager(pool).connect_channel(tenant_id=str(user["org_id"]), bot_id=body.bot_id, channel=body.channel_type, display_name=body.display_name, external_id=body.external_id, credentials=body.credentials, config=body.config)
+            credentials, platform_external_id = platform_channel_config(body.channel_type)
+            connection = await manager(pool).connect_channel(
+                tenant_id=str(user["org_id"]),
+                bot_id=body.bot_id,
+                channel=body.channel_type,
+                display_name=body.display_name,
+                external_id=platform_external_id or body.external_id,
+                credentials=credentials,
+                config=body.config,
+            )
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
         except Exception as exc:
