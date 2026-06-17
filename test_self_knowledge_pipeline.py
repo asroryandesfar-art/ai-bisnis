@@ -344,33 +344,35 @@ def test_verification_llm_unavailable_short_circuits(monkeypatch):
 
 # ─── 5. Context memory: ringkasan percakapan kumulatif ─────────
 
-def test_conversation_summary_round_trip(tmp_path):
-    persist_path = tmp_path / "memory.json"
-    store = MemoryStore(persist_path=str(persist_path))
-    store.set_conversation_summary("conv-42", "User menanyakan harga paket Pro dan Business.")
+def test_conversation_summary_round_trip():
+    """Long-term memory kini disimpan di Postgres saat ada pool (lihat
+    test_memory_store_persistence.py untuk skenario lintas-instance via DB
+    sungguhan) -- tanpa pool (seperti di sini), MemoryStore fallback ke dict
+    in-process, jadi hanya valid dalam SATU instance store."""
+    store = MemoryStore()
+    asyncio.run(store.set_conversation_summary("conv-42", "User menanyakan harga paket Pro dan Business.", pool=None))
+    summary = asyncio.run(store.get_conversation_summary("conv-42", pool=None))
+    assert summary == "User menanyakan harga paket Pro dan Business."
 
-    store2 = MemoryStore(persist_path=str(persist_path))
-    assert store2.get_conversation_summary("conv-42") == "User menanyakan harga paket Pro dan Business."
 
-
-def test_enrich_context_injects_conversation_summary(monkeypatch, tmp_path):
+def test_enrich_context_injects_conversation_summary(monkeypatch):
     monkeypatch.setattr(memory_agent_module, "_global_store", None)
 
-    agent = MemoryAgent(api_key="test-key", persist_path=str(tmp_path / "memory.json"))
-    agent.store.set_conversation_summary("conv-99", "Diskusi sebelumnya membahas paket Pro.")
+    agent = MemoryAgent(api_key="test-key")
+    asyncio.run(agent.store.set_conversation_summary("conv-99", "Diskusi sebelumnya membahas paket Pro.", pool=None))
 
     ctx = {
         "conversation_id": "conv-99",
         "user_message": "Kalau yang Business gimana?",
         "knowledge_base_context": "",
     }
-    enriched = agent.enrich_context(ctx)
+    enriched = asyncio.run(agent.enrich_context(ctx))
 
     assert "Ringkasan percakapan sejauh ini" in enriched["knowledge_base_context"]
     assert "Diskusi sebelumnya membahas paket Pro." in enriched["knowledge_base_context"]
 
 
-def test_memory_run_stores_cumulative_summary(monkeypatch, tmp_path):
+def test_memory_run_stores_cumulative_summary(monkeypatch):
     monkeypatch.setattr(memory_agent_module, "_global_store", None)
 
     async def fake_call_llm(self, messages, temperature=0.1, max_tokens=1024, response_format=None):
@@ -378,7 +380,7 @@ def test_memory_run_stores_cumulative_summary(monkeypatch, tmp_path):
 
     monkeypatch.setattr(BaseAgent, "_call_llm", fake_call_llm)
 
-    agent = MemoryAgent(api_key="test-key", persist_path=str(tmp_path / "memory.json"))
+    agent = MemoryAgent(api_key="test-key")
     ctx = {
         "user_message": "Kalau yang Business gimana?",
         "bot_response": "Paket Business mencakup 5000 percakapan/bulan dan API access.",
@@ -390,19 +392,18 @@ def test_memory_run_stores_cumulative_summary(monkeypatch, tmp_path):
     }
     asyncio.run(agent.run(ctx))
 
-    assert agent.store.get_conversation_summary("conv-99") == (
-        "User tertarik paket Pro, lalu menanyakan paket Business."
-    )
+    summary = asyncio.run(agent.store.get_conversation_summary("conv-99", pool=None))
+    assert summary == "User tertarik paket Pro, lalu menanyakan paket Business."
 
 
-def test_memory_run_defers_write_when_llm_is_unavailable(monkeypatch, tmp_path, caplog):
+def test_memory_run_defers_write_when_llm_is_unavailable(monkeypatch, caplog):
     monkeypatch.setattr(memory_agent_module, "_global_store", None)
 
     async def unavailable(self, messages, temperature=0.2, max_tokens=512, default=None):
         return {**(default or {}), "_llm_unavailable": True}
 
     monkeypatch.setattr(BaseAgent, "_call_llm_json", unavailable)
-    agent = MemoryAgent(api_key="test-key", persist_path=str(tmp_path / "memory.json"))
+    agent = MemoryAgent(api_key="test-key")
     result = asyncio.run(agent.run({
         "user_message": "Ingat nama saya Budi",
         "bot_response": "Baik, Budi.",

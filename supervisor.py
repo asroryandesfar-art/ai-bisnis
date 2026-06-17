@@ -330,7 +330,7 @@ class SupervisorAgent:
         self.escalation_agent = EscalationAgent(**fast_kwargs)
         self.analytics_agent  = AnalyticsAgent(**fast_kwargs)
         self.trainer_agent    = TrainerAgent(**fast_kwargs)
-        self.memory_agent     = MemoryAgent(**fast_kwargs, persist_path="data/memory.json")
+        self.memory_agent     = MemoryAgent(**fast_kwargs)
 
         # Intelligence Platform — agen ringan (read-mostly di jalur realtime,
         # penulisan berat dilakukan async setelah jawaban terkirim)
@@ -371,7 +371,7 @@ class SupervisorAgent:
         errors  = []
 
         # ── STEP 0: Inject memory (profil user) ───────────────────
-        ctx = self.memory_agent.enrich_context(context)
+        ctx = await self.memory_agent.enrich_context(context)
 
         # ── STEP 0.25: Reasoning brief — intent, follow-up, identitas/perbandingan ─
         reasoning_brief = self.reasoning_controller.analyze(ctx)

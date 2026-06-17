@@ -3,24 +3,23 @@ agents/memory_agent.py — Memory Agent
 Menyimpan, mengambil, dan merangkum memori percakapan lintas sesi.
 
 Tiga lapisan memori:
-  1. Short-term  — riwayat percakapan aktif (in-memory, hilang saat restart)
-  2. Long-term   — fakta penting tentang user (persisten via file JSON / DB)
+  1. Short-term  — riwayat percakapan aktif (in-memory, hilang saat restart;
+                   riwayat lengkapnya sudah ada permanen di tabel `messages`)
+  2. Long-term   — fakta penting tentang user, disimpan di Postgres
+                   (user_memory_profiles, conversation_memory_summaries) --
+                   shared antar proses/worker, bukan file JSON lokal lagi
   3. Semantic    — embedding untuk cari memori relevan (opsional, pakai Pinecone)
 """
 from __future__ import annotations
 
-import contextlib
-import fcntl
 import json
 import hashlib
 import logging
-import os
-import tempfile
-from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+import asyncpg
 
 from base import BaseAgent, AgentResult
 
@@ -119,17 +118,26 @@ def _now() -> str:
 
 class MemoryStore:
     """
-    In-memory store dengan opsional persistensi ke file JSON.
-    Di production: ganti dengan Redis atau PostgreSQL.
+    Long-term memory (fakta user + ringkasan percakapan) disimpan di Postgres
+    (tabel user_memory_profiles / conversation_memory_summaries) ketika
+    caller menyediakan `pool` -- shared antar semua proses/worker BotNesia,
+    bukan file JSON lokal per-proses lagi. SELALU baca langsung dari DB
+    (tidak ada cache di proses ini) supaya tidak ada celah "lost update"
+    seperti yang ada di pendekatan file lama.
+
+    Kalau caller TIDAK menyediakan pool (mis. unit test ringan tanpa DB),
+    fallback ke dict in-process biasa -- berguna untuk tetap bisa dites
+    tanpa Postgres, tapi TIDAK persisten lintas proses/restart.
+
+    Short-term memory (buffer percakapan aktif) selalu in-process saja,
+    sengaja tidak persisten -- riwayat lengkapnya sudah ada permanen di
+    tabel `messages`.
     """
 
-    def __init__(self, persist_path: str | None = None):
+    def __init__(self):
         self._short: dict[str, ShortTermMemory] = {}       # conv_id → STM
-        self._long:  dict[str, UserProfile]     = {}       # user_key → UserProfile
-        self._summaries: dict[str, str]         = {}       # conv_id → ringkasan kumulatif
-        self._persist_path = Path(persist_path) if persist_path else None
-        if self._persist_path:
-            self._load()
+        self._long:  dict[str, UserProfile]     = {}       # fallback tanpa pool
+        self._summaries: dict[str, str]         = {}       # fallback tanpa pool
 
     def _user_key(self, user_id: str, org_id: str, bot_id: str) -> str:
         return hashlib.md5(f"{org_id}:{bot_id}:{user_id}".encode()).hexdigest()
@@ -151,164 +159,115 @@ class MemoryStore:
 
     # ── Long-term ───────────────────────────────────────────────
 
-    def get_profile(self, user_id: str, org_id: str, bot_id: str) -> UserProfile:
-        key = self._user_key(user_id, org_id, bot_id)
-        if key not in self._long:
-            self._long[key] = UserProfile(
-                user_id=user_id, org_id=org_id, bot_id=bot_id
-            )
-        return self._long[key]
+    async def get_profile(self, user_id: str, org_id: str, bot_id: str,
+                           pool: asyncpg.Pool | None = None) -> UserProfile:
+        if pool is None:
+            key = self._user_key(user_id, org_id, bot_id)
+            if key not in self._long:
+                self._long[key] = UserProfile(user_id=user_id, org_id=org_id, bot_id=bot_id)
+            return self._long[key]
 
-    def set_fact(self, user_id: str, org_id: str, bot_id: str,
-                 fact_key: str, value: Any, confidence: float = 1.0, source: str = "extracted"):
-        profile = self.get_profile(user_id, org_id, bot_id)
-        profile.set_fact(fact_key, value, confidence, source)
-        self._save()
+        row = await pool.fetchrow(
+            """SELECT facts, total_convs, created_at, updated_at FROM user_memory_profiles
+               WHERE org_id=$1 AND bot_id=$2 AND end_user_id=$3""",
+            org_id, bot_id, user_id,
+        )
+        profile = UserProfile(user_id=user_id, org_id=org_id, bot_id=bot_id)
+        if row:
+            facts = row["facts"]
+            if isinstance(facts, str):
+                try:
+                    facts = json.loads(facts)
+                except (TypeError, ValueError):
+                    facts = {}
+            for fk, fv in (facts or {}).items():
+                profile.facts[fk] = LongTermFact(**fv)
+            profile.total_convs = row["total_convs"]
+            profile.created_at = str(row["created_at"])
+            profile.updated_at = str(row["updated_at"])
+        return profile
+
+    async def _persist_profile(self, profile: UserProfile, pool: asyncpg.Pool | None) -> None:
+        if pool is None:
+            key = self._user_key(profile.user_id, profile.org_id, profile.bot_id)
+            self._long[key] = profile
+            return
+        facts_json = json.dumps({fk: asdict(fv) for fk, fv in profile.facts.items()})
+        await pool.execute(
+            """INSERT INTO user_memory_profiles (org_id, bot_id, end_user_id, facts, total_convs, updated_at)
+               VALUES ($1,$2,$3,$4::jsonb,$5,NOW())
+               ON CONFLICT (org_id, bot_id, end_user_id) DO UPDATE SET
+                 facts=EXCLUDED.facts, total_convs=EXCLUDED.total_convs, updated_at=NOW()""",
+            profile.org_id, profile.bot_id, profile.user_id, facts_json, profile.total_convs,
+        )
+
+    async def apply_fact_updates(self, user_id: str, org_id: str, bot_id: str, *,
+                                  facts_to_store: list[dict], forget_keys: list[str],
+                                  pool: asyncpg.Pool | None = None) -> UserProfile:
+        """Baca profil sekali, terapkan facts_to_store + forget_keys, simpan sekali --
+        menghindari beberapa round-trip read-modify-write terpisah yang bisa
+        saling menimpa (tiap get_profile() di atas selalu baca fresh dari DB)."""
+        profile = await self.get_profile(user_id, org_id, bot_id, pool=pool)
+        for fact in facts_to_store:
+            profile.set_fact(
+                fact["key"], fact["value"],
+                fact.get("confidence", 0.8), fact.get("source", "extracted"),
+            )
+        for key in forget_keys:
+            profile.facts.pop(key, None)
+        await self._persist_profile(profile, pool)
+        return profile
+
+    async def touch_profile_conv_count(self, user_id: str, org_id: str, bot_id: str,
+                                        pool: asyncpg.Pool | None = None) -> UserProfile:
+        profile = await self.get_profile(user_id, org_id, bot_id, pool=pool)
+        profile.total_convs += 1
+        await self._persist_profile(profile, pool)
+        return profile
 
     # ── Conversation summary (PROMPT 5 context memory) ─────────────
 
-    def get_conversation_summary(self, conv_id: str) -> str:
-        return self._summaries.get(conv_id, "")
+    async def get_conversation_summary(self, conv_id: str, pool: asyncpg.Pool | None = None) -> str:
+        if pool is None:
+            return self._summaries.get(conv_id, "")
+        return await pool.fetchval(
+            "SELECT summary FROM conversation_memory_summaries WHERE conversation_id=$1", conv_id,
+        ) or ""
 
-    def set_conversation_summary(self, conv_id: str, summary: str):
+    async def set_conversation_summary(self, conv_id: str, summary: str,
+                                        pool: asyncpg.Pool | None = None) -> None:
         if not conv_id or not summary:
             return
-        self._summaries[conv_id] = summary
-        self._save()
-
-    # ── Persist ─────────────────────────────────────────────────
-    #
-    # data/memory.json dibaca/ditulis oleh tiap proses Python (mis. beberapa
-    # worker uvicorn) yang masing-masing punya MemoryStore singleton sendiri
-    # di memory. Tanpa lock + merge, proses A bisa menimpa balik fact yang
-    # baru disimpan proses B (lost update) atau dua proses menulis berbarengan
-    # bisa menghasilkan file JSON yang setengah-tertulis/corrupt. Strategi:
-    # (1) kunci file lewat fcntl.flock supaya hanya satu proses yang menulis
-    #     pada satu waktu, (2) baca ulang isi file TERBARU di bawah lock lalu
-    #     gabungkan dengan state di-memory proses ini (proses ini menang untuk
-    #     key yang memang dia kelola, key lain dari proses lain dipertahankan),
-    #     (3) tulis lewat file sementara + os.replace (atomic rename POSIX)
-    #     supaya tidak pernah ada pembaca yang melihat file separuh-tertulis.
-
-    @contextlib.contextmanager
-    def _file_lock(self):
-        lock_path = self._persist_path.with_suffix(self._persist_path.suffix + ".lock")
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "w") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-    def _read_raw(self) -> dict:
-        if not self._persist_path.exists():
-            return {}
-        try:
-            return json.loads(self._persist_path.read_text())
-        except (OSError, ValueError):
-            return {}
-
-    def _atomic_write(self, data: dict) -> None:
-        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            dir=str(self._persist_path.parent), prefix=f".{self._persist_path.name}.", suffix=".tmp",
+        if pool is None:
+            self._summaries[conv_id] = summary
+            return
+        await pool.execute(
+            """INSERT INTO conversation_memory_summaries (conversation_id, summary, updated_at)
+               VALUES ($1,$2,NOW())
+               ON CONFLICT (conversation_id) DO UPDATE SET summary=EXCLUDED.summary, updated_at=NOW()""",
+            conv_id, summary,
         )
-        try:
-            with os.fdopen(fd, "w") as tmp_file:
-                tmp_file.write(json.dumps(data, ensure_ascii=False, indent=2))
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-            os.replace(tmp_name, self._persist_path)
-        except Exception:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp_name)
-            raise
-
-    def _save(self):
-        if not self._persist_path:
-            return
-        try:
-            profiles = {}
-            for k, profile in self._long.items():
-                profiles[k] = {
-                    "user_id":    profile.user_id,
-                    "org_id":     profile.org_id,
-                    "bot_id":     profile.bot_id,
-                    "total_convs": profile.total_convs,
-                    "created_at": profile.created_at,
-                    "updated_at": profile.updated_at,
-                    "facts":      {
-                        fk: asdict(fv)
-                        for fk, fv in profile.facts.items()
-                    },
-                }
-            with self._file_lock():
-                on_disk = self._read_raw()
-                if "profiles" in on_disk:
-                    disk_profiles = on_disk.get("profiles", {})
-                    disk_summaries = on_disk.get("conversation_summaries", {})
-                else:
-                    # Format file lama: profil langsung di root, tanpa summaries.
-                    disk_profiles = on_disk
-                    disk_summaries = {}
-                merged_profiles = {**disk_profiles, **profiles}
-                merged_summaries = {**disk_summaries, **self._summaries}
-                data = {
-                    "profiles": merged_profiles,
-                    "conversation_summaries": merged_summaries,
-                }
-                self._atomic_write(data)
-        except Exception as e:
-            print(f"[MemoryStore] Save error: {e}")
-
-    def _load(self):
-        if not self._persist_path or not self._persist_path.exists():
-            return
-        try:
-            with self._file_lock():
-                data = self._read_raw()
-            # Format baru: {"profiles": {...}, "conversation_summaries": {...}}.
-            # Format lama: profil langsung di root — tetap didukung untuk file lama.
-            if "profiles" in data:
-                profiles = data.get("profiles", {})
-                self._summaries = data.get("conversation_summaries", {})
-            else:
-                profiles = data
-            for k, d in profiles.items():
-                profile = UserProfile(
-                    user_id    = d["user_id"],
-                    org_id     = d["org_id"],
-                    bot_id     = d["bot_id"],
-                    total_convs = d.get("total_convs", 0),
-                    created_at = d.get("created_at", _now()),
-                    updated_at = d.get("updated_at", _now()),
-                )
-                for fk, fv in d.get("facts", {}).items():
-                    profile.facts[fk] = LongTermFact(**fv)
-                self._long[k] = profile
-            print(f"[MemoryStore] Loaded {len(self._long)} user profiles, {len(self._summaries)} conversation summaries")
-        except Exception as e:
-            print(f"[MemoryStore] Load error: {e}")
 
     def stats(self) -> dict:
         return {
-            "active_conversations": len(self._short),
-            "user_profiles":        len(self._long),
-            "total_facts":          sum(len(p.facts) for p in self._long.values()),
-            "conversation_summaries": len(self._summaries),
+            "active_conversations":  len(self._short),
+            "user_profiles_cached":  len(self._long),
+            "conversation_summaries_cached": len(self._summaries),
         }
 
 
 # ─── MEMORY AGENT ─────────────────────────────────────────────
 
-# Singleton store — shared across all instances
+# Singleton store — shared across all instances dalam satu proses. Tidak
+# menyimpan pool sendiri -- pool dilewatkan per-panggilan (lihat MemoryAgent)
+# karena store ini dibuat sebelum pool DB tersedia (saat SupervisorAgent
+# pertama kali di-construct, sebelum request pertama masuk).
 _global_store: MemoryStore | None = None
 
-def get_memory_store(persist_path: str | None = None) -> MemoryStore:
+def get_memory_store() -> MemoryStore:
     global _global_store
     if _global_store is None:
-        _global_store = MemoryStore(persist_path=persist_path)
+        _global_store = MemoryStore()
     return _global_store
 
 
@@ -356,7 +315,6 @@ Aturan:
         model: str | None = None,
         base_url: str | None = None,
         app_url: str = "https://botnesia.id",
-        persist_path: str | None = "data/memory.json",
     ):
         super().__init__(
             api_key=api_key,
@@ -364,19 +322,25 @@ Aturan:
             base_url=base_url,
             app_url=app_url,
         )
-        self.store = get_memory_store(persist_path=persist_path)
+        self.store = get_memory_store()
 
     # ── READ: inject memori ke context ──────────────────────────
 
-    def enrich_context(self, context: dict) -> dict:
+    async def enrich_context(self, context: dict) -> dict:
         """
         Panggil ini SEBELUM Supervisor.process() untuk inject memori.
         Return context yang sudah diperkaya dengan memori.
+
+        Pool DB diambil dari context["_observability_pool"] (sudah dilewatkan
+        oleh main.py /chat handler ke trace_request()/supervisor.process())
+        -- kalau tidak ada (mis. unit test ringan), fallback ke dict
+        in-process di MemoryStore (tidak persisten lintas proses).
         """
         conv_id = context.get("conversation_id", "")
         user_id = context.get("user_id") or context.get("metadata", {}).get("userId", "anonymous")
         org_id  = context.get("org_id", "")
         bot_id  = context.get("bot_id", "")
+        pool    = context.get("_observability_pool")
 
         enriched = dict(context)
 
@@ -387,7 +351,7 @@ Aturan:
 
         # 2. Long-term: inject profil user ke knowledge_base_context
         if user_id and user_id != "anonymous":
-            profile = self.store.get_profile(user_id, org_id, bot_id)
+            profile = await self.store.get_profile(user_id, org_id, bot_id, pool=pool)
             profile_ctx = profile.to_context_string()
             if profile_ctx:
                 existing_kb = enriched.get("knowledge_base_context", "")
@@ -398,7 +362,7 @@ Aturan:
         # 2.5 Ringkasan percakapan: beri kesinambungan untuk follow-up
         # (mis. "Kalau yang Pro gimana?" setelah membahas paket sebelumnya).
         if conv_id:
-            summary = self.store.get_conversation_summary(conv_id)
+            summary = await self.store.get_conversation_summary(conv_id, pool=pool)
             if summary:
                 existing_kb = enriched.get("knowledge_base_context", "")
                 enriched["knowledge_base_context"] = (
@@ -424,6 +388,7 @@ Aturan:
         org_id       = context.get("org_id", "")
         bot_id       = context.get("bot_id", "")
         conv_id      = context.get("conversation_id", "")
+        pool         = context.get("_observability_pool")
 
         # Simpan respons bot ke STM
         if bot_response and conv_id:
@@ -444,9 +409,9 @@ Aturan:
             for m in history[-8:]
         )
 
-        profile = self.store.get_profile(user_id, org_id, bot_id)
+        profile = await self.store.get_profile(user_id, org_id, bot_id, pool=pool)
         existing_facts = "\n".join(f"- {k}: {v.value}" for k, v in profile.facts.items()) or "Belum ada."
-        previous_summary = self.store.get_conversation_summary(conv_id) or "Belum ada."
+        previous_summary = await self.store.get_conversation_summary(conv_id, pool=pool) or "Belum ada."
 
         prompt = f"""Analisa percakapan berikut dan ekstrak fakta yang perlu diingat.
 
@@ -493,33 +458,28 @@ kumulatif (jangan hanya meringkas turn ini saja)."""
                 latency_ms=0,
             )
 
-        # Simpan fakta ke store
-        stored_count = 0
-        for fact in output.get("facts_to_store", []):
-            if fact.get("key") and fact.get("value") is not None:
-                self.store.set_fact(
-                    user_id    = user_id,
-                    org_id     = org_id,
-                    bot_id     = bot_id,
-                    fact_key   = fact["key"],
-                    value      = fact["value"],
-                    confidence = fact.get("confidence", 0.8),
-                    source     = fact.get("source", "extracted"),
-                )
-                stored_count += 1
-
-        # Hapus fakta yang diminta
-        for key in output.get("forget_keys", []):
-            if key in profile.facts:
-                del profile.facts[key]
+        # Simpan fakta baru + hapus fakta yang diminta dalam satu read-modify-write
+        # (apply_fact_updates membaca profil fresh sendiri, jangan pakai `profile`
+        # di atas yang sudah dibaca sebelum prompt LLM dikirim -- bisa stale).
+        facts_to_store = [
+            f for f in output.get("facts_to_store", [])
+            if f.get("key") and f.get("value") is not None
+        ]
+        forget_keys = output.get("forget_keys", [])
+        if facts_to_store or forget_keys:
+            profile = await self.store.apply_fact_updates(
+                user_id, org_id, bot_id,
+                facts_to_store=facts_to_store, forget_keys=forget_keys, pool=pool,
+            )
+        stored_count = len(facts_to_store)
 
         # Simpan ringkasan kumulatif percakapan untuk follow-up berikutnya
         new_summary = (output.get("summary") or "").strip()
         if new_summary and conv_id:
-            self.store.set_conversation_summary(conv_id, new_summary)
+            await self.store.set_conversation_summary(conv_id, new_summary, pool=pool)
 
-        # Update counter
-        profile.total_convs += 1
+        # Update counter (read-modify-write fresh, lalu jadikan ini acuan untuk output)
+        profile = await self.store.touch_profile_conv_count(user_id, org_id, bot_id, pool=pool)
 
         return AgentResult(
             agent   = self.name,
