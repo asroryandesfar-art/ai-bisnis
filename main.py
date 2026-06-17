@@ -106,6 +106,7 @@ import image_providers
 import vision_engine
 import document_generator
 import storage_backend
+import kb_embeddings
 from finance_fetcher import (
     build_crypto_market_context,
     build_stock_market_context,
@@ -4963,11 +4964,14 @@ async def _retrieve_chunks(
     if not rows:
         return []
 
-    query_vec = _text_to_embedding(q)
+    query_vec, query_model = await _generate_kb_embedding(q)
     query_tokens = _tokenize_text(q)
     scored: list[tuple[float, dict]] = []
     for row in rows:
-        score = _score_kb_candidate(query_tokens, query_vec, row.get("content") or "", row.get("embedding"))
+        score = _score_kb_candidate(
+            query_tokens, query_vec, row.get("content") or "", row.get("embedding"),
+            query_model=query_model, chunk_model=row.get("model"),
+        )
         if score > 0:
             scored.append((score, row))
 
@@ -5010,6 +5014,18 @@ def _chunk_text(text: str, size: int = 350) -> list[str]:
     return [" ".join(words[i:i + size]).strip() for i in range(0, len(words), size)]
 
 
+async def _generate_kb_embedding(text: str, dim: int | None = None) -> tuple[list[float], str]:
+    """Embedding semantik sungguhan (OpenAI) kalau OPENAI_API_KEY terisi,
+    fallback ke hash lokal kalau tidak/API gagal. Model tag dikembalikan
+    supaya _score_kb_candidate tahu kapan dua vektor sebanding (provider sama)."""
+    dim = int(dim or cfg.kb_embedding_dim or KB_EMBED_DIM)
+    if cfg.openai_api_key:
+        vec = await kb_embeddings.generate_openai_embedding(text, cfg.openai_api_key, dim)
+        if vec is not None:
+            return vec, kb_embeddings.OPENAI_EMBEDDING_TAG
+    return _text_to_embedding(text, dim), f"hash-emb-{dim}"
+
+
 def _text_to_embedding(text: str, dim: int | None = None) -> list[float]:
     dim = int(dim or cfg.kb_embedding_dim or KB_EMBED_DIM)
     dim = max(32, min(1024, dim))
@@ -5040,7 +5056,15 @@ def _cosine_similarity(a: list[float] | None, b: list[float] | None) -> float:
     return float(np.dot(va, vb) / denom)
 
 
-def _score_kb_candidate(query_tokens: list[str], query_vec: list[float], content: str, embedding: object) -> float:
+def _score_kb_candidate(
+    query_tokens: list[str],
+    query_vec: list[float],
+    content: str,
+    embedding: object,
+    *,
+    query_model: str | None = None,
+    chunk_model: str | None = None,
+) -> float:
     content_lower = (content or "").lower()
     keyword_hits = sum(1 for t in query_tokens if t in content_lower)
     kw_score = keyword_hits / max(1, len(query_tokens))
@@ -5054,7 +5078,11 @@ def _score_kb_candidate(query_tokens: list[str], query_vec: list[float], content
             embedding = json.loads(embedding)
         except (TypeError, ValueError):
             embedding = None
-    if isinstance(embedding, list):
+    # Chunk lama (hash) dan baru (OpenAI) hidup di vector space berbeda
+    # walau dimensinya sama — bandingkan model tag dulu, kalau beda jangan
+    # hitung cosine similarity-nya (akan jadi angka tak bermakna), cukup
+    # andalkan keyword match untuk baris itu sampai chunk-nya di-reindex.
+    if isinstance(embedding, list) and (not query_model or not chunk_model or query_model == chunk_model):
         emb_score = _cosine_similarity(query_vec, embedding)
     return (emb_score * 0.78) + (kw_score * 0.22)
 
@@ -5156,7 +5184,7 @@ async def _store_chunk_embeddings(
     if not chunk_rows:
         return
     for chunk_id, chunk_text in chunk_rows:
-        embedding = _text_to_embedding(chunk_text)
+        embedding, model_tag = await _generate_kb_embedding(chunk_text)
         await conn.execute(
             """INSERT INTO doc_chunk_embeddings (chunk_id, org_id, embedding, model)
                VALUES ($1,$2,$3,$4)
@@ -5167,7 +5195,7 @@ async def _store_chunk_embeddings(
             chunk_id,
             org_id,
             json.dumps(embedding),  # asyncpg tidak auto-encode list -> JSONB
-            f"hash-emb-{cfg.kb_embedding_dim or KB_EMBED_DIM}",
+            model_tag,
         )
 
 
@@ -5186,7 +5214,7 @@ async def _fetch_kb_candidates(
     where_sql = " AND ".join(where)
     sql = f"""
         SELECT c.id, c.content, c.document_id, c.chunk_index, c.created_at,
-               d.filename, d.source_type, d.source_url, e.embedding
+               d.filename, d.source_type, d.source_url, e.embedding, e.model
         FROM doc_chunks c
         JOIN documents d ON d.id = c.document_id
         LEFT JOIN doc_chunk_embeddings e ON e.chunk_id = c.id
