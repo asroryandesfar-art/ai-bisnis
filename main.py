@@ -4493,7 +4493,14 @@ async def chat(
     ]
 
     # 6. RAG: cari chunks relevan dari knowledge base
+    _kb_started = time.perf_counter()
     relevant_chunks = await _retrieve_chunks(pool, bot["org_id"], body.message, bot_id=bot_id)
+    _kb_ms = (time.perf_counter() - _kb_started) * 1000
+    if _kb_ms > KB_RETRIEVAL_LATENCY_BUDGET_MS:
+        logger.warning(
+            "Knowledge retrieval melebihi budget %sms: %.1fms (org_id=%s, bot_id=%s, conv_id=%s, chunks=%s)",
+            KB_RETRIEVAL_LATENCY_BUDGET_MS, _kb_ms, bot["org_id"], bot_id, conv_id, len(relevant_chunks),
+        )
 
     # 7. Bangun system prompt
     system = _build_system_prompt(bot["system_prompt"], relevant_chunks, bot["language"])
@@ -4904,6 +4911,10 @@ async def _retrieve_chunks(
 
 
 KB_EMBED_DIM = 256
+
+# Performance target dari spec: knowledge retrieval wajib < 500ms. Cuma
+# di-log saat MELANGGAR target supaya tidak membanjiri log pada jalur cepat.
+KB_RETRIEVAL_LATENCY_BUDGET_MS = 500
 
 
 def _tokenize_text(text: str) -> list[str]:

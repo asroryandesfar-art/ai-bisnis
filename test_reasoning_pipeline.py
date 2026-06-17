@@ -224,7 +224,12 @@ def test_supervisor_pro_mode_simple_query_skips_pipeline(monkeypatch):
 
     assert result.reasoning_mode_used == "standard"
     assert result.plan is None
-    assert call_count["json"] == 3
+    # "Halo, harga paket berapa?" is also heuristic_complexity()=="simple", so
+    # the Socratic/First-Principle/Devil's-Advocate deep-reasoning engines are
+    # now skipped too (performance optimization: these used to run
+    # unconditionally on every turn, adding ~13s+ of sequential LLM calls to
+    # trivial messages) — zero extra JSON calls, not 3.
+    assert call_count["json"] == 0
     assert "socratic_reasoning_engine" in result.agent_results
     assert "first_principle_agent" in result.agent_results
     assert "devil_advocate_agent" in result.agent_results

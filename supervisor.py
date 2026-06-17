@@ -5,7 +5,9 @@ Koordinator utama: routing, orkestrasi paralel, agregasi hasil.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,7 +36,14 @@ from web_search_agent import format_web_search_context, WEB_SEARCH_BLOCK
 from agent_observability import observe_agent, trace_request
 import handoff_guard
 
+logger = logging.getLogger("supervisor")
+
 MAX_RETRIES = 2
+
+# Performance target dari spec: routing (route_intent, deterministic/no-IO)
+# wajib < 300ms. Cuma di-log saat MELANGGAR target supaya tidak membanjiri
+# log pada jalur cepat (yang seharusnya hampir selalu sub-millisecond).
+ROUTING_LATENCY_BUDGET_MS = 300
 
 _GREETING_RE = re.compile(
     r"^\s*(halo+|hai+|hi+|hello+|hey+|pagi|siang|sore|malam|selamat\s+\w+|"
@@ -367,6 +376,20 @@ class SupervisorAgent:
         # ── STEP 0.25: Reasoning brief — intent, follow-up, identitas/perbandingan ─
         reasoning_brief = self.reasoning_controller.analyze(ctx)
         ctx["_reasoning_brief"] = reasoning_brief
+
+        # ── STEP 0.26: Gating jalur reasoning berat ────────────────────────
+        # heuristic_complexity() (intent_classifier.py) didesain untuk memutuskan
+        # "butuh full reasoning pipeline atau cukup jalur cepat", tapi sebelumnya
+        # hanya dipakai untuk eskalasi reasoning_mode="pro". Socratic/First-
+        # Principle/Devil's-Advocate (3 LLM call tambahan + 1 lagi jika devil's
+        # advocate minta revisi) berjalan TANPA gating ini di setiap giliran —
+        # itulah sebabnya pesan sederhana ("Apa itu Bitcoin?", "Halo, apa kabar?")
+        # bisa makan >13 detik meski tidak butuh penalaran mendalam (target
+        # performa: chat response < 3 detik). Pesan yang terdeteksi "simple"
+        # melewati ketiga engine ini; "complex"/ambigu tetap lewat semua seperti
+        # sebelumnya — tidak ada fitur yang dihapus, hanya tidak dipanggil saat
+        # jelas-jelas tidak relevan.
+        _deep_reasoning_needed = heuristic_complexity(context.get("user_message", "")) != "simple"
         style_guidance = reasoning_brief.get("style_guidance")
         if style_guidance:
             existing_kb = (ctx.get("knowledge_base_context") or "").strip()
@@ -423,7 +446,11 @@ class SupervisorAgent:
             }
 
         # ── STEP 0.5: Socratic reflection wajib sebelum routing/jawaban ─
-        socratic_result = await self.socratic_engine.safe_run(ctx)
+        # (di-skip untuk pesan "simple" — lihat STEP 0.26)
+        if _deep_reasoning_needed:
+            socratic_result = await self.socratic_engine.safe_run(ctx)
+        else:
+            socratic_result = AgentResult(agent="socratic_reasoning_engine", success=True, output={}, latency_ms=0)
         if not socratic_result.success:
             errors.append(f"socratic_reasoning_engine: {socratic_result.error}")
         socratic_review = socratic_result.output or {}
@@ -478,7 +505,11 @@ class SupervisorAgent:
             }
 
         # ── STEP 1.25: Decompose dari first principles sebelum draft ──
-        first_principle_result = await self.first_principle_agent.safe_run(ctx)
+        # (di-skip untuk pesan "simple" — lihat STEP 0.26)
+        if _deep_reasoning_needed:
+            first_principle_result = await self.first_principle_agent.safe_run(ctx)
+        else:
+            first_principle_result = AgentResult(agent="first_principle_agent", success=True, output={}, latency_ms=0)
         if not first_principle_result.success:
             errors.append(f"first_principle_agent: {first_principle_result.error}")
         first_principle_analysis = first_principle_result.output or {}
@@ -522,6 +553,10 @@ class SupervisorAgent:
 
         async def challenge_draft(answer: str) -> str:
             nonlocal devil_advocate_review, devil_revision_applied, devil_result
+            # (di-skip untuk pesan "simple" — lihat STEP 0.26; devil_result tetap
+            # default kosong yang sudah di-declare di atas)
+            if not _deep_reasoning_needed:
+                return answer
             review_context = {
                 **ctx,
                 "bot_response": answer,
@@ -833,6 +868,7 @@ class SupervisorAgent:
         # ── Intent Router (Supervisor Agent layer) ────────────────────────
         # Jalankan setelah esc_out tersedia (trigger_factors, urgency, dll).
         text_intent = intent_from_text(context.get("user_message", ""))
+        _routing_started = time.perf_counter()
         intent_routing = route_intent(
             user_message=context.get("user_message", ""),
             reasoning_brief=reasoning_brief,
@@ -844,6 +880,14 @@ class SupervisorAgent:
             cs_confidence=cs_confidence,
             llm_unavailable=llm_unavailable,
         )
+        _routing_ms = (time.perf_counter() - _routing_started) * 1000
+        if _routing_ms > ROUTING_LATENCY_BUDGET_MS:
+            logger.warning(
+                "Routing melebihi budget %sms: %.1fms (org_id=%s, conv_id=%s, intent=%s)",
+                ROUTING_LATENCY_BUDGET_MS, _routing_ms,
+                context.get("org_id"), context.get("conversation_id"),
+                intent_routing.get("intent"),
+            )
 
         total_ms = int((time.monotonic() - t_start) * 1000)
 
