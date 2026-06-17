@@ -191,7 +191,13 @@ CREATE TABLE IF NOT EXISTS payment_history (
 
 CREATE INDEX IF NOT EXISTS idx_payhist_org     ON payment_history(org_id);
 CREATE INDEX IF NOT EXISTS idx_payhist_invoice ON payment_history(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_payhist_provtx  ON payment_history(provider, provider_transaction_id);
+-- idx_payhist_provtx dulu non-unique -- webhook retry dari Midtrans/Xendit yang
+-- datang bersamaan bisa lolos check-then-act di aplikasi dan keduanya INSERT,
+-- dobel-hitung di payment_history/revenue_intel. DROP dulu supaya "IF NOT EXISTS"
+-- di bawah tidak diam-diam skip upgrade ke UNIQUE pada DB yang sudah punya index lama.
+DROP INDEX IF EXISTS idx_payhist_provtx;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payhist_provtx ON payment_history(provider, provider_transaction_id)
+    WHERE provider_transaction_id IS NOT NULL;
 
 -- ============================================================
 -- 3. HUMAN HANDOFF QUEUE
