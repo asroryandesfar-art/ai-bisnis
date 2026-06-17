@@ -154,8 +154,8 @@ def build_workflow_builder_router(
 
         row = await pool.fetchrow(
             """UPDATE workflows SET name=$1, description=$2, trigger_type=$3, nodes=$4, edges=$5, updated_at=NOW()
-               WHERE id=$6 RETURNING *""",
-            name, description, trigger_type, json.dumps(nodes), json.dumps(edges), workflow_id,
+               WHERE id=$6 AND org_id=$7 RETURNING *""",
+            name, description, trigger_type, json.dumps(nodes), json.dumps(edges), workflow_id, org_id,
         )
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
@@ -177,8 +177,8 @@ def build_workflow_builder_router(
 
         row = await pool.fetchrow(
             """UPDATE workflows SET status='published', published_at=NOW(), updated_at=NOW()
-               WHERE id=$1 RETURNING *""",
-            workflow_id,
+               WHERE id=$1 AND org_id=$2 RETURNING *""",
+            workflow_id, org_id,
         )
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
@@ -196,8 +196,8 @@ def build_workflow_builder_router(
         org_id = user["org_id"]
         wf = await _get_workflow(pool, workflow_id, org_id)
         row = await pool.fetchrow(
-            "UPDATE workflows SET status='draft', updated_at=NOW() WHERE id=$1 RETURNING *",
-            workflow_id,
+            "UPDATE workflows SET status='draft', updated_at=NOW() WHERE id=$1 AND org_id=$2 RETURNING *",
+            workflow_id, org_id,
         )
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
@@ -214,7 +214,7 @@ def build_workflow_builder_router(
     ):
         org_id = user["org_id"]
         wf = await _get_workflow(pool, workflow_id, org_id)
-        await pool.execute("DELETE FROM workflows WHERE id=$1", workflow_id)
+        await pool.execute("DELETE FROM workflows WHERE id=$1 AND org_id=$2", workflow_id, org_id)
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
             action="delete", resource_type="workflow", resource_id=workflow_id,
