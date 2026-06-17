@@ -25,6 +25,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from .config import cfg as platform_cfg
+from .observability import record_audit_log_failure
 
 logger = logging.getLogger("bn_platform.security")
 
@@ -130,7 +131,11 @@ async def write_audit_log(pool: asyncpg.Pool, *, org_id: str | None, actor_user_
             ip_address, user_agent, meta_json,
         )
     except Exception:
-        logger.exception("Gagal menulis audit log (action=%s resource=%s)", action, resource_type)
+        record_audit_log_failure()
+        logger.exception(
+            "Gagal menulis audit log (action=%s resource_type=%s resource_id=%s org_id=%s actor_user_id=%s)",
+            action, resource_type, resource_id, org_id, actor_user_id,
+        )
 
 
 async def list_audit_logs(pool: asyncpg.Pool, *, org_id: str, action: str | None = None,
