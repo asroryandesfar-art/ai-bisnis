@@ -536,6 +536,12 @@ async def startup():
     global _gmail_poll_task, _gmail_poll_stop
     global _intelligence_learning_task, _intelligence_learning_stop
     global _meta_refresh_task, _meta_refresh_stop
+
+    if cfg.meta_app_id and not (cfg.meta_app_secret or "").strip():
+        print("[WARN] META_APP_ID terisi tapi META_APP_SECRET kosong -- "
+              "webhook /webhooks/meta akan menolak SEMUA request (fail-closed) "
+              "sampai META_APP_SECRET diisi di .env")
+
     try:
         await _replicate_image_queue.start()
         logger.info("Replicate image queue aktif (workers=%s)", cfg.replicate_image_workers)
@@ -3183,21 +3189,26 @@ async def meta_webhook_verify(request: Request):
 @app.post("/webhooks/meta", include_in_schema=False)
 async def meta_webhook_receive(request: Request):
     body_bytes = await request.body()
+
+    # X-Hub-Signature-256 (HMAC-SHA256) WAJIB diverifikasi -- sebelumnya cek
+    # ini di-skip total kalau META_APP_SECRET kosong (fail-open: siapa pun
+    # bisa POST payload palsu dan memicu auto-reply WhatsApp/FB/IG atas nama
+    # tenant manapun yang ke-resolve dari payload). Tanpa secret terkonfigurasi,
+    # tolak semua request -- operator harus isi META_APP_SECRET dulu sebelum
+    # channel Meta benar-benar live, bukan diam-diam menerima tanpa autentikasi.
+    app_secret = (cfg.meta_app_secret or "").strip()
+    if not app_secret:
+        logger.error("META_APP_SECRET belum dikonfigurasi -- webhook Meta ditolak (fail-closed).")
+        raise HTTPException(503, "Meta webhook belum dikonfigurasi di server ini")
+    sig = (request.headers.get("X-Hub-Signature-256") or "").strip()
+    expected = "sha256=" + hmac.new(app_secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+    if not (sig and hmac.compare_digest(sig, expected)):
+        raise HTTPException(403, "Invalid signature")
+
     try:
         payload = json.loads(body_bytes.decode("utf-8") or "{}")
     except Exception:
         payload = {}
-
-    # Optional security: verify X-Hub-Signature-256 (HMAC-SHA256) if META_APP_SECRET is set.
-    if (cfg.meta_app_secret or "").strip():
-        sig = (request.headers.get("X-Hub-Signature-256") or "").strip()
-        expected = "sha256=" + hmac.new(
-            cfg.meta_app_secret.encode("utf-8"),
-            body_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-        if not (sig and hmac.compare_digest(sig, expected)):
-            raise HTTPException(403, "Invalid signature")
     # Best-effort log payload.
     try:
         p = Path("data/meta_webhooks.log")
