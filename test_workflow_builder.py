@@ -387,10 +387,48 @@ def _build_router(pool, **kwargs):
     def get_agent_config():
         return {"api_key": ""}
 
+    def require_permission(_permission_key):
+        return get_current_user
+
     return build_workflow_builder_router(
         get_pool=get_pool, get_current_user=get_current_user,
-        get_agent_config=get_agent_config, **kwargs,
+        get_agent_config=get_agent_config, require_permission=require_permission, **kwargs,
     )
+
+
+def test_router_gates_every_route_with_bots_read_or_write_permission():
+    """Sebelumnya semua route di workflow_builder.py cuma Depends(get_current_user)
+    -- role apa pun (termasuk yang tanpa hak bots.write) bisa create/update/
+    delete/publish workflow atau test-run-nya dengan trigger_payload bebas
+    (lihat fix #3 enqueue_handoff -- jalur exploit konkretnya). require_permission(key)
+    dievaluasi saat build_workflow_builder_router() dipanggil (default arg di
+    signature route), jadi ini bisa diverifikasi tanpa perlu trigger resolusi
+    Depends FastAPI sungguhan."""
+    requested_keys = []
+
+    def recording_require_permission(key):
+        requested_keys.append(key)
+        async def _checker(user=None, pool=None):
+            return user
+        return _checker
+
+    async def get_pool():
+        return RouterFakePool()
+
+    async def get_current_user():
+        return {"org_id": "org-1", "id": "user-1"}
+
+    build_workflow_builder_router(
+        get_pool=get_pool, get_current_user=get_current_user,
+        get_agent_config=lambda: {"api_key": ""},
+        require_permission=recording_require_permission,
+    )
+
+    # 6 endpoint mutasi (create/update/publish/unpublish/delete/test)
+    assert requested_keys.count("bots.write") == 6
+    # 5 endpoint baca (node-catalog/list/get/list-executions/get-execution)
+    assert requested_keys.count("bots.read") == 5
+    assert set(requested_keys) == {"bots.read", "bots.write"}
 
 
 def test_node_catalog_endpoint():

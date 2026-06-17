@@ -63,6 +63,7 @@ def build_workflow_builder_router(
     get_pool: GetPool,
     get_current_user: GetCurrentUser,
     get_agent_config: GetAgentConfig,
+    require_permission,
     enqueue_handoff_fn=None,
 ) -> APIRouter:
     router = APIRouter(prefix="/workflow-builder", tags=["workflow-builder"])
@@ -80,13 +81,13 @@ def build_workflow_builder_router(
         return _row_with_jsonb(dict(row), ["nodes", "edges"])
 
     @router.get("/node-catalog")
-    async def node_catalog(user: Annotated[dict, Depends(get_current_user)]):
+    async def node_catalog(user: Annotated[dict, Depends(require_permission("bots.read"))]):
         return {"categories": NODE_CATALOG}
 
     @router.get("/bots/{bot_id}/workflows")
     async def list_workflows(
         bot_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.read"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -104,7 +105,7 @@ def build_workflow_builder_router(
     async def create_workflow(
         bot_id: str,
         body: WorkflowCreateRequest,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -129,7 +130,7 @@ def build_workflow_builder_router(
     @router.get("/workflows/{workflow_id}")
     async def get_workflow(
         workflow_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.read"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         return await _get_workflow(pool, workflow_id, user["org_id"])
@@ -138,7 +139,7 @@ def build_workflow_builder_router(
     async def update_workflow(
         workflow_id: str,
         body: WorkflowUpdateRequest,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -167,7 +168,7 @@ def build_workflow_builder_router(
     @router.post("/workflows/{workflow_id}/publish")
     async def publish_workflow(
         workflow_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -190,7 +191,7 @@ def build_workflow_builder_router(
     @router.post("/workflows/{workflow_id}/unpublish")
     async def unpublish_workflow(
         workflow_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -209,7 +210,7 @@ def build_workflow_builder_router(
     @router.delete("/workflows/{workflow_id}")
     async def delete_workflow(
         workflow_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -226,7 +227,7 @@ def build_workflow_builder_router(
     async def test_workflow(
         workflow_id: str,
         body: WorkflowTestRequest,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
@@ -253,7 +254,7 @@ def build_workflow_builder_router(
     @router.get("/workflows/{workflow_id}/executions")
     async def list_executions(
         workflow_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.read"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
         limit: int = 20,
     ):
@@ -271,7 +272,7 @@ def build_workflow_builder_router(
     @router.get("/executions/{execution_id}")
     async def get_execution(
         execution_id: str,
-        user: Annotated[dict, Depends(get_current_user)],
+        user: Annotated[dict, Depends(require_permission("bots.read"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
