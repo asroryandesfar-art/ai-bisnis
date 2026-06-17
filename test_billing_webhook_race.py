@@ -74,51 +74,61 @@ async def _seed_org_and_invoice(pool: asyncpg.Pool, *, plan_key: str, amount_idr
     return {"org_id": org_id, "invoice": invoice}
 
 
+async def _delete_org(pool: asyncpg.Pool, org_id: str) -> None:
+    """Hapus persis org ini (ON DELETE CASCADE membawa invoice/subscription/
+    payment_history-nya) -- by exact id, bukan pattern, supaya tidak pernah
+    menyentuh baris lain di DB dev yang sama."""
+    await pool.execute("DELETE FROM organizations WHERE id=$1", org_id)
+
+
 def test_concurrent_midtrans_webhook_retries_only_mark_paid_once(monkeypatch):
     async def body(pool):
         import bn_platform.billing as billing_module
         monkeypatch.setattr(billing_module, "midtrans_verify_signature", lambda **kw: True)
 
         seed = await _seed_org_and_invoice(pool, plan_key="starter", amount_idr=99000)
-        order_id = seed["invoice"]["invoice_number"]
+        try:
+            order_id = seed["invoice"]["invoice_number"]
 
-        dispatch_calls = []
-        async def fake_dispatch(org_id, event, data, pool):
-            dispatch_calls.append((org_id, event, data))
+            dispatch_calls = []
+            async def fake_dispatch(org_id, event, data, pool):
+                dispatch_calls.append((org_id, event, data))
 
-        async def fake_dep():
-            return None
+            async def fake_dep():
+                return None
 
-        router = build_billing_router(
-            get_pool=fake_dep, get_current_user=fake_dep,
-            require_permission=lambda key: fake_dep, dispatch_webhook=fake_dispatch,
-        )
-        handler = _get_route_endpoint(router, "/billing/webhooks/midtrans")
+            router = build_billing_router(
+                get_pool=fake_dep, get_current_user=fake_dep,
+                require_permission=lambda key: fake_dep, dispatch_webhook=fake_dispatch,
+            )
+            handler = _get_route_endpoint(router, "/billing/webhooks/midtrans")
 
-        payload = {
-            "order_id": order_id, "status_code": "200", "gross_amount": "99000.00",
-            "signature_key": "irrelevant-mocked", "transaction_status": "settlement",
-            "transaction_id": "tx-fixed-123", "payment_type": "bank_transfer",
-        }
+            payload = {
+                "order_id": order_id, "status_code": "200", "gross_amount": "99000.00",
+                "signature_key": "irrelevant-mocked", "transaction_status": "settlement",
+                "transaction_id": f"tx-{uuid.uuid4()}", "payment_type": "bank_transfer",
+            }
 
-        results = await asyncio.gather(
-            handler(_FakeRequest(payload), pool),
-            handler(_FakeRequest(payload), pool),
-        )
-        assert all(r == {"ok": True} for r in results)
+            results = await asyncio.gather(
+                handler(_FakeRequest(payload), pool),
+                handler(_FakeRequest(payload), pool),
+            )
+            assert all(r == {"ok": True} for r in results)
 
-        payment_rows = await pool.fetch(
-            "SELECT * FROM payment_history WHERE invoice_id=$1", seed["invoice"]["id"],
-        )
-        assert len(payment_rows) == 1
+            payment_rows = await pool.fetch(
+                "SELECT * FROM payment_history WHERE invoice_id=$1", seed["invoice"]["id"],
+            )
+            assert len(payment_rows) == 1
 
-        invoice_row = await pool.fetchrow("SELECT status FROM invoices WHERE id=$1", seed["invoice"]["id"])
-        assert invoice_row["status"] == "paid"
+            invoice_row = await pool.fetchrow("SELECT status FROM invoices WHERE id=$1", seed["invoice"]["id"])
+            assert invoice_row["status"] == "paid"
 
-        sub_row = await pool.fetchrow("SELECT status FROM subscriptions WHERE org_id=$1", seed["org_id"])
-        assert sub_row["status"] == "active"
+            sub_row = await pool.fetchrow("SELECT status FROM subscriptions WHERE org_id=$1", seed["org_id"])
+            assert sub_row["status"] == "active"
 
-        assert len(dispatch_calls) == 1
+            assert len(dispatch_calls) == 1
+        finally:
+            await _delete_org(pool, seed["org_id"])
 
     _run(body)
 
@@ -129,23 +139,27 @@ def test_unique_index_rejects_duplicate_provider_transaction_id_directly(monkeyp
     di-skip oleh ON CONFLICT, bukan gagal/exception, dan bukan baris baru."""
     async def body(pool):
         seed = await _seed_org_and_invoice(pool, plan_key="starter", amount_idr=99000)
-        from bn_platform.billing import _mark_invoice_paid
+        try:
+            from bn_platform.billing import _mark_invoice_paid
+            dup_tx_id = f"dup-tx-{uuid.uuid4()}"
 
-        invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", seed["invoice"]["id"]))
-        await _mark_invoice_paid(
-            pool, invoice, provider="midtrans", provider_tx_id="dup-tx-456",
-            payment_method="bank_transfer", raw_payload={},
-        )
-        # Panggil lagi dengan provider_tx_id yang sama -- harus no-op, tidak exception.
-        invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", seed["invoice"]["id"]))
-        await _mark_invoice_paid(
-            pool, invoice, provider="midtrans", provider_tx_id="dup-tx-456",
-            payment_method="bank_transfer", raw_payload={},
-        )
+            invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", seed["invoice"]["id"]))
+            await _mark_invoice_paid(
+                pool, invoice, provider="midtrans", provider_tx_id=dup_tx_id,
+                payment_method="bank_transfer", raw_payload={},
+            )
+            # Panggil lagi dengan provider_tx_id yang sama -- harus no-op, tidak exception.
+            invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", seed["invoice"]["id"]))
+            await _mark_invoice_paid(
+                pool, invoice, provider="midtrans", provider_tx_id=dup_tx_id,
+                payment_method="bank_transfer", raw_payload={},
+            )
 
-        rows = await pool.fetch(
-            "SELECT * FROM payment_history WHERE provider='midtrans' AND provider_transaction_id='dup-tx-456'",
-        )
-        assert len(rows) == 1
+            rows = await pool.fetch(
+                "SELECT * FROM payment_history WHERE provider='midtrans' AND provider_transaction_id=$1", dup_tx_id,
+            )
+            assert len(rows) == 1
+        finally:
+            await _delete_org(pool, seed["org_id"])
 
     _run(body)

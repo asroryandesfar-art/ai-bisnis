@@ -61,19 +61,44 @@ class FakePool:
 
 
 def test_enqueue_reopens_resolved_handoff_and_sets_conversation_flag():
-    row = {"id": "handoff-1", "conversation_id": "conversation-1", "status": "waiting"}
-    pool = FakePool([row])
+    ownership_row = {"id": "conversation-1"}
+    insert_row = {"id": "handoff-1", "conversation_id": "conversation-1", "status": "waiting"}
+    pool = FakePool([ownership_row, insert_row])
 
     result = asyncio.run(enqueue_handoff(
         pool, org_id="tenant-1", conversation_id="conversation-1",
         reason="ai_error", priority="high",
     ))
 
-    insert_sql = next(sql for kind, sql, _ in pool.calls if kind == "fetchrow")
+    fetchrow_calls = [(sql, args) for kind, sql, args in pool.calls if kind == "fetchrow"]
+    ownership_sql, ownership_args = fetchrow_calls[0]
+    assert "FROM conversations" in ownership_sql and "org_id" in ownership_sql
+    assert ownership_args == ("conversation-1", "tenant-1")
+
+    insert_sql = fetchrow_calls[1][0]
     assert "status IN ('resolved','cancelled')" in insert_sql
     assert "assigned_agent_id" in insert_sql
     assert result["status"] == "waiting"
-    assert any("handoff_needed=TRUE" in sql for kind, sql, _ in pool.calls if kind == "execute")
+    handoff_needed_calls = [(sql, args) for kind, sql, args in pool.calls if kind == "execute" and "handoff_needed=TRUE" in sql]
+    assert len(handoff_needed_calls) == 1
+    assert handoff_needed_calls[0][1] == ("conversation-1", "tenant-1")
+
+
+def test_enqueue_rejects_conversation_belonging_to_a_different_org():
+    """Caller salah pasangkan org_id/conversation_id (mis. lewat workflow
+    test-run yang trigger_payload-nya user-controlled) -- enqueue_handoff
+    harus menolak, tidak menulis baris human_queue ATAU mengubah conversation
+    milik org lain."""
+    pool = FakePool([None])  # ownership check tidak menemukan baris yang cocok
+
+    result = asyncio.run(enqueue_handoff(
+        pool, org_id="tenant-1", conversation_id="conversation-belongs-to-other-org",
+        reason="ai_error", priority="high",
+    ))
+
+    assert result is None
+    assert len(pool.calls) == 1  # cuma ownership check, tidak ada INSERT/UPDATE apa pun
+    assert pool.calls[0][0] == "fetchrow"
 
 
 def test_human_reply_requires_assignment_and_is_attributed_to_agent():
