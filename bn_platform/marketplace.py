@@ -335,6 +335,49 @@ async def marketplace_analytics(pool: asyncpg.Pool, org_id: str) -> dict:
     }
 
 
+async def agent_health_report(pool: asyncpg.Pool) -> dict:
+    """Audit kualitas seluruh 100+ agent marketplace: prompt valid, category
+    valid (ada di agent_categories), knowledge attached (knowledge_sources
+    tidak kosong), starter_questions tidak kosong, dan agent aktif."""
+    rows = await pool.fetch(
+        """SELECT key, category, name, system_prompt, knowledge_sources,
+                  starter_questions, is_active
+             FROM marketplace_templates ORDER BY name"""
+    )
+    valid_categories = {
+        r["name"] for r in await pool.fetch("SELECT name FROM agent_categories WHERE is_active=TRUE")
+    }
+
+    agents_with_issues = []
+    issue_counts: Counter = Counter()
+    for row in rows:
+        issues: list[str] = []
+        if not (row["system_prompt"] or "").strip():
+            issues.append("missing_prompt")
+        if valid_categories and row["category"] not in valid_categories:
+            issues.append("invalid_category")
+        if not _json_value(row["knowledge_sources"], []):
+            issues.append("no_knowledge_sources")
+        if not _json_value(row["starter_questions"], []):
+            issues.append("no_starter_questions")
+        if not row["is_active"]:
+            issues.append("inactive")
+        if issues:
+            agents_with_issues.append({"key": row["key"], "name": row["name"], "issues": issues})
+            issue_counts.update(issues)
+
+    total = len(rows)
+    healthy = total - len(agents_with_issues)
+    return {
+        "total_agents": total,
+        "healthy_agents": healthy,
+        "agents_with_issues_count": len(agents_with_issues),
+        "health_score_pct": round((healthy / total) * 100, 1) if total else 0.0,
+        "issue_summary": dict(issue_counts),
+        "agents_with_issues": agents_with_issues,
+    }
+
+
 def _score_template_for_query(template: dict, query: str) -> float:
     if not query:
         return float(template.get("popularity_score") or 0) / 1000
@@ -466,5 +509,12 @@ def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         _user: Annotated[dict, Depends(get_current_user)],
     ):
         return await supervisor_route(pool, str(body.get("message") or ""))
+
+    @router.get("/health")
+    async def get_agent_health(
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        _user: Annotated[dict, Depends(get_current_user)],
+    ):
+        return await agent_health_report(pool)
 
     return router
