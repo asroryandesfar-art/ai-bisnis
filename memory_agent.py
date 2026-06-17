@@ -9,10 +9,13 @@ Tiga lapisan memori:
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import hashlib
 import logging
 import os
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -174,6 +177,53 @@ class MemoryStore:
         self._save()
 
     # ── Persist ─────────────────────────────────────────────────
+    #
+    # data/memory.json dibaca/ditulis oleh tiap proses Python (mis. beberapa
+    # worker uvicorn) yang masing-masing punya MemoryStore singleton sendiri
+    # di memory. Tanpa lock + merge, proses A bisa menimpa balik fact yang
+    # baru disimpan proses B (lost update) atau dua proses menulis berbarengan
+    # bisa menghasilkan file JSON yang setengah-tertulis/corrupt. Strategi:
+    # (1) kunci file lewat fcntl.flock supaya hanya satu proses yang menulis
+    #     pada satu waktu, (2) baca ulang isi file TERBARU di bawah lock lalu
+    #     gabungkan dengan state di-memory proses ini (proses ini menang untuk
+    #     key yang memang dia kelola, key lain dari proses lain dipertahankan),
+    #     (3) tulis lewat file sementara + os.replace (atomic rename POSIX)
+    #     supaya tidak pernah ada pembaca yang melihat file separuh-tertulis.
+
+    @contextlib.contextmanager
+    def _file_lock(self):
+        lock_path = self._persist_path.with_suffix(self._persist_path.suffix + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _read_raw(self) -> dict:
+        if not self._persist_path.exists():
+            return {}
+        try:
+            return json.loads(self._persist_path.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _atomic_write(self, data: dict) -> None:
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(self._persist_path.parent), prefix=f".{self._persist_path.name}.", suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w") as tmp_file:
+                tmp_file.write(json.dumps(data, ensure_ascii=False, indent=2))
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+            os.replace(tmp_name, self._persist_path)
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
+            raise
 
     def _save(self):
         if not self._persist_path:
@@ -193,12 +243,22 @@ class MemoryStore:
                         for fk, fv in profile.facts.items()
                     },
                 }
-            data = {
-                "profiles": profiles,
-                "conversation_summaries": self._summaries,
-            }
-            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
-            self._persist_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            with self._file_lock():
+                on_disk = self._read_raw()
+                if "profiles" in on_disk:
+                    disk_profiles = on_disk.get("profiles", {})
+                    disk_summaries = on_disk.get("conversation_summaries", {})
+                else:
+                    # Format file lama: profil langsung di root, tanpa summaries.
+                    disk_profiles = on_disk
+                    disk_summaries = {}
+                merged_profiles = {**disk_profiles, **profiles}
+                merged_summaries = {**disk_summaries, **self._summaries}
+                data = {
+                    "profiles": merged_profiles,
+                    "conversation_summaries": merged_summaries,
+                }
+                self._atomic_write(data)
         except Exception as e:
             print(f"[MemoryStore] Save error: {e}")
 
@@ -206,7 +266,8 @@ class MemoryStore:
         if not self._persist_path or not self._persist_path.exists():
             return
         try:
-            data = json.loads(self._persist_path.read_text())
+            with self._file_lock():
+                data = self._read_raw()
             # Format baru: {"profiles": {...}, "conversation_summaries": {...}}.
             # Format lama: profil langsung di root — tetap didukung untuk file lama.
             if "profiles" in data:
