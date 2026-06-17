@@ -343,7 +343,7 @@ class RouterFakePool:
             }
             return self.workflow
         if "UPDATE workflows SET name=" in q and "RETURNING" in q:
-            name, description, trigger_type, nodes_json, edges_json, workflow_id = args
+            name, description, trigger_type, nodes_json, edges_json, workflow_id, _org_id = args
             self.workflow.update({
                 "name": name, "description": description, "trigger_type": trigger_type,
                 "nodes": nodes_json, "edges": edges_json,
@@ -436,6 +436,12 @@ def test_create_get_update_workflow_roundtrip():
     assert updated["name"] == "Renamed"
     assert updated["nodes"][0]["id"] == "trg"
 
+    # Defense-in-depth: the UPDATE statement itself must scope by org_id, not
+    # just the _get_workflow() ownership check that runs before it.
+    update_call = next(c for c in pool.calls if c[0] == "fetchrow" and "UPDATE workflows SET name=" in c[1])
+    assert "org_id" in update_call[1]
+    assert update_call[2][-1] == "org-1"
+
 
 def test_publish_requires_trigger_node():
     workflow = {
@@ -466,10 +472,16 @@ def test_publish_and_unpublish_workflow():
     publish_handler = _route(router, "/workflows/{workflow_id}/publish", "POST")
     published = asyncio.run(publish_handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert published["status"] == "published"
+    publish_call = next(c for c in pool.calls if c[0] == "fetchrow" and "status='published'" in c[1])
+    assert "org_id" in publish_call[1]
+    assert publish_call[2] == ("wf-1", "org-1")
 
     unpublish_handler = _route(router, "/workflows/{workflow_id}/unpublish", "POST")
     unpublished = asyncio.run(unpublish_handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert unpublished["status"] == "draft"
+    unpublish_call = next(c for c in pool.calls if c[0] == "fetchrow" and "status='draft'" in c[1])
+    assert "org_id" in unpublish_call[1]
+    assert unpublish_call[2] == ("wf-1", "org-1")
 
 
 def test_delete_workflow():
@@ -483,7 +495,11 @@ def test_delete_workflow():
     handler = _route(router, "/workflows/{workflow_id}", "DELETE")
     result = asyncio.run(handler(workflow_id="wf-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool))
     assert result == {"deleted": True}
-    assert any("DELETE FROM workflows" in c[1] for c in pool.calls if c[0] == "execute")
+    delete_call = next(c for c in pool.calls if c[0] == "execute" and "DELETE FROM workflows" in c[1])
+    # Defense-in-depth: the DELETE itself must scope by org_id, not just the
+    # _get_workflow() ownership check that runs before it.
+    assert "org_id" in delete_call[1]
+    assert delete_call[2] == ("wf-1", "org-1")
 
 
 def test_test_workflow_requires_trigger_node():

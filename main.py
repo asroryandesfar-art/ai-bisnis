@@ -5299,16 +5299,16 @@ async def get_analytics(
                (WHERE c.handoff_needed)              AS handoff_count
            FROM conversations c
            LEFT JOIN messages m ON m.conversation_id = c.id
-           WHERE c.bot_id=$1 AND c.started_at >= $2""",
-        bot_id, since,
+           WHERE c.bot_id=$1 AND c.org_id=$2 AND c.started_at >= $3""",
+        bot_id, user["org_id"], since,
     )
 
     # Volume harian
     daily = await pool.fetch(
         """SELECT DATE(started_at) AS date, COUNT(*) AS convs
-           FROM conversations WHERE bot_id=$1 AND started_at >= $2
+           FROM conversations WHERE bot_id=$1 AND org_id=$2 AND started_at >= $3
            GROUP BY DATE(started_at) ORDER BY date""",
-        bot_id, since,
+        bot_id, user["org_id"], since,
     )
 
     # Top pertanyaan
@@ -5316,9 +5316,9 @@ async def get_analytics(
         """SELECT m.content, COUNT(*) AS frequency
            FROM messages m
            JOIN conversations c ON c.id = m.conversation_id
-           WHERE c.bot_id=$1 AND m.role='user' AND m.created_at >= $2
+           WHERE c.bot_id=$1 AND c.org_id=$2 AND m.role='user' AND m.created_at >= $3
            GROUP BY m.content ORDER BY frequency DESC LIMIT 10""",
-        bot_id, since,
+        bot_id, user["org_id"], since,
     )
 
     return {
