@@ -70,6 +70,7 @@ from pydantic_settings import BaseSettings
 from supervisor import SupervisorAgent
 from knowledge_builder_agent import KnowledgeBuilderAgent
 import knowledge_seeder
+import tool_registry
 from rate_limiter import RateLimiter, LimitStatus
 from integrations_store import (
     get_integrations,
@@ -5011,17 +5012,38 @@ def _extract_web_text(html_text: str, max_chars: int = 16000) -> str:
 
 
 async def _fetch_website_text(url: str, timeout_s: float = 15.0) -> str:
+    """Ambil teks halaman web untuk knowledge base. SSRF-safe: setiap URL
+    (termasuk tujuan redirect) divalidasi via tool_registry._validate_url()
+    (tolak host privat/loopback/link-local/metadata cloud) sebelum di-fetch
+    — sebelumnya endpoint ini fetch URL apa pun yang dikirim tenant tanpa
+    validasi sama sekali (follow_redirects=True tanpa cek ulang tujuan)."""
     url = (url or "").strip()
     if not url:
         return ""
+    ok, _reason = tool_registry._validate_url(url)
+    if not ok:
+        return ""
     headers = {"User-Agent": "BotNesia/1.0 (+knowledge-base)"}
-    async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=False, headers=headers) as client:
         try:
-            res = await client.get(url)
-            res.raise_for_status()
-            text = _extract_web_text(res.text, max_chars=16000)
-            if len(text) >= 300:
-                return text
+            current_url = url
+            for _ in range(5):
+                res = await client.get(current_url)
+                if res.is_redirect:
+                    location = res.headers.get("location")
+                    if not location:
+                        break
+                    next_url = urllib.parse.urljoin(current_url, location)
+                    ok, _reason = tool_registry._validate_url(next_url)
+                    if not ok:
+                        return ""
+                    current_url = next_url
+                    continue
+                res.raise_for_status()
+                text = _extract_web_text(res.text, max_chars=16000)
+                if len(text) >= 300:
+                    return text
+                break
         except Exception:
             pass
         try:

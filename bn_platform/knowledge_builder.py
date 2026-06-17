@@ -80,6 +80,82 @@ async def _unpublish_from_kb(conn: asyncpg.Connection, chunk_id: str | None) -> 
         await conn.execute("DELETE FROM doc_chunks WHERE id=$1", chunk_id)
 
 
+async def knowledge_health_report(pool: asyncpg.Pool, *, org_id: str, bot_id: str | None = None) -> dict:
+    """Audit kesehatan knowledge base dari sisi ingestion: total/indexed/failed
+    URL, URL duplikat, chunk kosong, dan quality score (rata-rata
+    kb_quality_reports.overall_score yang sudah dihitung knowledge_builder_agent).
+    Berbeda dari overview() di atas (yang fokus per-dokumen untuk satu bot) —
+    fungsi ini bisa lintas-bot (bot_id=None) untuk audit org-wide."""
+    bot_filter = "AND bot_id=$2" if bot_id else ""
+    params: list = [org_id] + ([bot_id] if bot_id else [])
+
+    totals = await pool.fetchrow(
+        f"""SELECT
+              COUNT(*) FILTER (WHERE source_type='url')::int               AS total_urls,
+              COUNT(*) FILTER (WHERE source_type='url' AND status='ready')::int  AS indexed_urls,
+              COUNT(*) FILTER (WHERE source_type='url' AND status='failed')::int AS failed_urls,
+              COUNT(*)::int                                                 AS total_documents,
+              COUNT(*) FILTER (WHERE status='ready')::int                  AS indexed_documents,
+              COUNT(*) FILTER (WHERE status='failed')::int                 AS failed_documents
+            FROM documents WHERE org_id=$1 {bot_filter}""",
+        *params,
+    )
+
+    dup_rows = await pool.fetch(
+        f"""SELECT source_url, COUNT(*)::int AS count
+              FROM documents
+             WHERE org_id=$1 {bot_filter} AND source_type='url' AND source_url IS NOT NULL
+             GROUP BY source_url HAVING COUNT(*) > 1
+             ORDER BY COUNT(*) DESC""",
+        *params,
+    )
+
+    empty_chunks = await pool.fetchval(
+        f"""SELECT COUNT(*)::int FROM doc_chunks c
+              JOIN documents d ON d.id = c.document_id
+             WHERE d.org_id=$1 {bot_filter}
+               AND (TRIM(c.content) = '' OR c.token_count = 0)""",
+        *params,
+    )
+
+    failed_detail = await pool.fetch(
+        f"""SELECT id, filename, source_url, kb_error, error_msg
+              FROM documents
+             WHERE org_id=$1 {bot_filter} AND status='failed'
+             ORDER BY created_at DESC LIMIT 50""",
+        *params,
+    )
+
+    quality_row = await pool.fetchrow(
+        f"""SELECT ROUND(AVG(overall_score)::numeric, 1) AS overall_score,
+                   COUNT(DISTINCT document_id)::int AS documents_scored
+              FROM kb_quality_reports WHERE org_id=$1 {bot_filter}""",
+        *params,
+    )
+
+    totals_dict = dict(totals)
+    quality_score = (
+        float(quality_row["overall_score"]) if quality_row["overall_score"] is not None else None
+    )
+
+    return {
+        "org_id": org_id,
+        "bot_id": bot_id,
+        "total_urls": totals_dict["total_urls"],
+        "indexed_urls": totals_dict["indexed_urls"],
+        "failed_urls": totals_dict["failed_urls"],
+        "total_documents": totals_dict["total_documents"],
+        "indexed_documents": totals_dict["indexed_documents"],
+        "failed_documents": totals_dict["failed_documents"],
+        "duplicate_urls": [dict(r) for r in dup_rows],
+        "duplicate_url_count": len(dup_rows),
+        "empty_chunks": empty_chunks,
+        "failed_documents_detail": [dict(r) for r in failed_detail],
+        "quality_score": quality_score,
+        "quality_documents_scored": quality_row["documents_scored"],
+    }
+
+
 def build_knowledge_builder_router(
     *,
     get_pool: GetPool,
@@ -407,5 +483,15 @@ def build_knowledge_builder_router(
             seen.add(doc_id)
             reports.append(_row_with_jsonb(dict(row), ["missing_topics", "duplicate_groups"]))
         return {"reports": reports}
+
+    @router.get("/health")
+    async def health(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        bot_id: str | None = None,
+    ):
+        if bot_id:
+            await _get_bot(pool, bot_id, user["org_id"])
+        return await knowledge_health_report(pool, org_id=user["org_id"], bot_id=bot_id)
 
     return router

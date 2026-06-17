@@ -60,6 +60,15 @@ def url_fingerprint(url: str) -> str:
 
 
 def is_valid_url(url: str) -> bool:
+    """Validasi syntax URL (scheme+netloc) saja — TIDAK melakukan resolusi
+    DNS di sini secara sengaja, karena dipakai juga untuk validasi file seed
+    statis terpercaya (ribuan URL bawaan marketplace) di mana pengecekan DNS
+    langsung di tempat akan lambat & rapuh (tergantung jaringan saat test/
+    startup). Proteksi SSRF yang sesungguhnya (tolak host privat/loopback/
+    link-local/metadata cloud, termasuk re-validasi setiap hop redirect)
+    ditegakkan di titik fetch sungguhan: main.py::_fetch_website_text(), yang
+    dipakai oleh SEMUA jalur ingestion URL (single URL, bulk, seeder
+    background crawler) lewat _process_document_sync()."""
     try:
         p = urlparse(url)
         return p.scheme in ("http", "https") and bool(p.netloc)
