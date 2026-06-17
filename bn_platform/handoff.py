@@ -4,17 +4,21 @@ bn_platform/handoff.py — Human Handoff Queue
 Memutuskan kapan percakapan harus dialihkan dari AI ke agent manusia, lalu
 mengelola antreannya (assign, prioritas, SLA, resolusi).
 
-Kebijakan global: AI TIDAK PERNAH menawarkan handoff ke manusia kecuali
-salah satu dari ini benar — user secara eksplisit minta bicara dengan
-manusia, ada indikasi legal/refund/akun yang butuh staf (AI tidak punya
-akses), atau user marah dan EscalationAgent menilai urgency-nya
-high/critical. Keputusan ini dibuat SATU KALI oleh Intent Router
-(`supervisor.py::route_intent`) dan diekspos sebagai
-`SupervisorResult.intent_routing["allow_human_handoff"]` — fungsi
-`evaluate_handoff_trigger` di bawah ini HANYA menerjemahkan keputusan itu
-(plus backstop friction_points) menjadi prioritas antrean, dan TIDAK
-menduplikasi/menge-derive ulang trigger-nya sendiri (confidence rendah,
-"AI tidak tahu", atau error internal BUKAN alasan untuk handoff).
+Kebijakan global (NEVER OFFER HUMAN HANDOFF UNLESS USER REQUESTS IT): AI
+TIDAK PERNAH menawarkan handoff ke manusia kecuali salah satu dari 5
+kategori di `handoff_guard.py` benar — permintaan eksplisit ke
+manusia/admin/supervisor, refund, legal, billing dispute, atau masalah
+kepemilikan/akses akun. Keputusan ini dibuat SATU KALI oleh Intent Router
+(`supervisor.py::route_intent`, yang memanggil `handoff_guard.is_handoff_allowed()`)
+dan diekspos sebagai `SupervisorResult.intent_routing["allow_human_handoff"]`
+— fungsi `evaluate_handoff_trigger` di bawah ini HANYA menerjemahkan
+keputusan itu menjadi prioritas antrean, dan TIDAK menduplikasi/menge-derive
+ulang trigger-nya sendiri. confidence rendah, "AI tidak tahu", error
+internal, user marah, urgency tinggi, atau banyak friction point BERTURUT-TURUT
+TANPA salah satu dari 5 kategori itu BUKAN alasan untuk handoff — termasuk
+backstop "heavy_complaint" yang DIHAPUS karena melanggar aturan ini (AI wajib
+solve/explain/recommend/clarify dulu, bukan langsung handoff hanya karena
+banyak friction point).
 
 Prioritas SLA (lihat bn_platform/config.py):
   urgent  -> respon dlm HANDOFF_SLA_MINUTES_URGENT menit (default 15)
@@ -68,28 +72,22 @@ def evaluate_handoff_trigger(*, allow_human_handoff: bool,
     Return (should_handoff, reason, priority).
 
     `allow_human_handoff` (dari Intent Router, lihat
-    `supervisor.py::route_intent`) adalah satu-satunya sumber kebenaran untuk
-    "apakah user boleh ditawarkan handoff ke manusia" — true HANYA untuk
-    permintaan eksplisit, indikasi legal/refund/akun perlu staf, atau user
-    marah & EscalationAgent menilai urgency-nya high/critical.
+    `supervisor.py::route_intent` -> `handoff_guard.is_handoff_allowed()`)
+    adalah satu-satunya sumber kebenaran untuk "apakah user boleh ditawarkan
+    handoff ke manusia" — true HANYA untuk salah satu dari 5 kategori di
+    `handoff_guard.py` (permintaan eksplisit manusia/admin/supervisor,
+    refund, legal, billing dispute, account ownership).
 
-    confidence rendah, AI menjawab "tidak tahu", dan error internal yang
-    TIDAK menggagalkan jawaban BUKAN alasan untuk menawarkan handoff — dan
-    TIDAK lagi diperiksa di sini.
+    confidence rendah, AI menjawab "tidak tahu", error internal, user marah,
+    urgency tinggi, dan banyak friction point (`friction_points`, diterima
+    untuk kompatibilitas pemanggil lama tapi TIDAK DIPAKAI lagi sebagai
+    trigger) BUKAN alasan untuk menawarkan handoff.
     """
-    friction_points = friction_points or []
-
     if allow_human_handoff:
         priority = _URGENCY_TO_PRIORITY.get((escalation_urgency or "medium").lower(), "medium")
         if priority == "low":
             priority = "medium"
         return True, handoff_reason or "handoff_requested", priority
-
-    # Banyak friction point berturut -> AI tidak mampu menyelesaikan, meski
-    # tidak ada pemicu eksplisit (catch-all yang masih sejalan dengan
-    # "AI lacks ability to resolve, user needs staff").
-    if len(friction_points) >= 3:
-        return True, "heavy_complaint", "medium"
 
     return False, "", "low"
 
