@@ -441,13 +441,22 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         if body.provider == "local":
             if not platform_cfg.local_billing_enabled:
                 raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Billing lokal dinonaktifkan")
-            invoice = dict(await pool.fetchrow("SELECT * FROM invoices WHERE id=$1", invoice["id"]))
-            await _mark_invoice_paid(
-                pool, invoice, provider="manual",
-                provider_tx_id=f"local-{invoice['invoice_number']}",
-                payment_method="local-development",
-                raw_payload={"mode": "local", "approved_by": user.get("email")},
-            )
+            # Sama seperti webhook Midtrans/Xendit: bungkus update invoice ->
+            # payment_history -> activate_subscription -> audit log dalam satu
+            # transaction supaya atomik. Kalau salah satu langkah gagal di
+            # tengah (mis. activate_subscription raise), tidak ada state
+            # setengah-jadi (invoice ke-mark paid tapi subscription belum aktif).
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    invoice = dict(await conn.fetchrow(
+                        "SELECT * FROM invoices WHERE id=$1 FOR UPDATE", invoice["id"],
+                    ))
+                    await _mark_invoice_paid(
+                        conn, invoice, provider="manual",
+                        provider_tx_id=f"local-{invoice['invoice_number']}",
+                        payment_method="local-development",
+                        raw_payload={"mode": "local", "approved_by": user.get("email")},
+                    )
             return {
                 "requires_payment": False,
                 "local": True,
