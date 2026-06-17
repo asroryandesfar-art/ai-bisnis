@@ -4479,8 +4479,13 @@ async def chat(
     except HTTPException:
         raise
     except Exception:
-        # Jangan sampai rate limiter crash chat
-        pass
+        # Jangan sampai rate limiter crash chat -- tapi tetap log supaya
+        # operator tahu rate limiting diam-diam tidak aktif untuk request ini,
+        # bukan cuma "tidak ada apa-apa" di log.
+        logger.exception(
+            "Rate limiter gagal, request dilanjutkan TANPA rate limiting org=%s bot=%s",
+            bot["org_id"], bot_id,
+        )
 
     # 2. Cek quota percakapan bulan ini (Phase 2: gunakan check_limit dari subscriptions/plans)
     if _platform_check_limit:

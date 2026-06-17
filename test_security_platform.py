@@ -25,7 +25,9 @@ from bn_platform.security import (
     list_security_events,
     run_security_scan,
     build_security_router,
+    write_audit_log,
 )
+from bn_platform.observability import metrics_snapshot
 
 
 # ─── Helpers ────────────────────────────────────────────────────
@@ -354,3 +356,24 @@ def test_security_dashboard_aggregates_summary():
     assert result["audit_logs"] == audit_logs
     assert result["security_events"] == security_events
     assert result["api_keys"] == api_keys
+
+
+def test_write_audit_log_failure_is_counted_and_does_not_raise():
+    """write_audit_log() must stay fail-open (caller flows must not crash if
+    audit_logs insert fails), but the failure needs to be visible somewhere
+    other than a log line that's easy to miss -- it's now counted in the
+    bn_audit_log_failures_total Prometheus counter, surfaced via
+    metrics_snapshot()/system_health."""
+    class _BoomPool:
+        async def execute(self, sql, *args):
+            raise RuntimeError("simulated DB failure")
+
+    before = metrics_snapshot()["audit_log_failures_total"]
+
+    asyncio.run(write_audit_log(
+        _BoomPool(), org_id="org-1", actor_user_id="user-1", actor_email="owner@x.com",
+        action="update", resource_type="bot", resource_id="bot-1",
+    ))
+
+    after = metrics_snapshot()["audit_log_failures_total"]
+    assert after == before + 1

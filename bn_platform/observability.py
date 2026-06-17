@@ -90,6 +90,10 @@ AI_REQUEST_DURATION = Histogram(
 DB_POOL_SIZE = Gauge("bn_db_pool_size", "Ukuran connection pool database saat ini")
 DB_POOL_IN_USE = Gauge("bn_db_pool_in_use", "Jumlah koneksi database yang sedang dipakai")
 
+AUDIT_LOG_FAILURES_TOTAL = Counter(
+    "bn_audit_log_failures_total", "Total kegagalan menulis audit_logs (gagal-tapi-tetap-lanjut)",
+)
+
 
 # ============================================================
 # MIDDLEWARE — instrumentasi otomatis tiap request
@@ -159,6 +163,13 @@ def record_db_pool_stats(*, size: int, in_use: int) -> None:
     DB_POOL_IN_USE.set(in_use)
 
 
+def record_audit_log_failure() -> None:
+    """Panggil dari write_audit_log()'s except-block. Audit log gagal tulis tidak
+    boleh menggagalkan operasi utama (fail-open), tapi harus tetap terlihat di
+    /system-health & Prometheus, bukan cuma baris log yang mudah terlewat."""
+    AUDIT_LOG_FAILURES_TOTAL.inc()
+
+
 def _collect_total(metric) -> float:
     """Jumlahkan semua sample numerik suatu Counter/Gauge prometheus_client
     (lintas semua kombinasi label), abaikan timestamp `_created` bawaan Counter."""
@@ -185,6 +196,7 @@ def metrics_snapshot() -> dict:
         "ai_requests_total": int(_collect_total(AI_REQUESTS_TOTAL)),
         "db_pool_size": int(_collect_total(DB_POOL_SIZE)),
         "db_pool_in_use": int(_collect_total(DB_POOL_IN_USE)),
+        "audit_log_failures_total": int(_collect_total(AUDIT_LOG_FAILURES_TOTAL)),
     }
 
 
