@@ -3424,6 +3424,9 @@ async def create_bot(
     user=Depends(get_current_user),
     pool=Depends(get_pool),
 ):
+    if _platform_require_permission:
+        await _platform_require_permission("bots.write")(user=user, pool=pool)
+
     # Cek limit plan (Phase 2: gunakan check_limit dari subscriptions/plans)
     if _platform_check_limit:
         ok, detail = await _platform_check_limit(pool, user["org_id"], "agents")
@@ -3491,6 +3494,9 @@ async def update_bot(
     user=Depends(get_current_user),
     pool=Depends(get_pool),
 ):
+    if _platform_require_permission:
+        await _platform_require_permission("bots.write")(user=user, pool=pool)
+
     row = await pool.fetchrow(
         "SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, user["org_id"]
     )
@@ -5842,6 +5848,7 @@ try:
         build_workflow_builder_router(
             get_pool=get_pool, get_current_user=get_current_user,
             get_agent_config=get_workflow_agent_config,
+            require_permission=require_permission,
             enqueue_handoff_fn=_platform_enqueue_handoff,
         ),
         prefix="/api",
