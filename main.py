@@ -3446,6 +3446,10 @@ async def update_bot(
 
 # ─── ROUTE: DOCUMENTS ─────────────────────────────────────────
 
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20MB — cukup untuk dokumen knowledge base wajar
+_ALLOWED_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".csv", ".md", ".markdown", ".txt")
+
+
 @app.post("/bots/{bot_id}/documents", status_code=201)
 async def upload_document(
     bot_id: str,
@@ -3460,6 +3464,13 @@ async def upload_document(
     )
     if not bot:
         raise HTTPException(404, "Bot tidak ditemukan")
+
+    filename_l = (file.filename or "").lower()
+    if not filename_l.endswith(_ALLOWED_DOCUMENT_EXTENSIONS):
+        raise HTTPException(
+            400,
+            f"Tipe file tidak didukung. Format yang didukung: {', '.join(_ALLOWED_DOCUMENT_EXTENSIONS)}.",
+        )
 
     # Cek limit dokumen
     if _platform_check_limit:
@@ -3481,6 +3492,11 @@ async def upload_document(
             raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
 
     contents = await file.read()
+    if len(contents) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(
+            413,
+            f"Ukuran file melebihi batas {MAX_DOCUMENT_BYTES // (1024*1024)}MB.",
+        )
     doc_id   = str(uuid.uuid4())
 
     # Simpan metadata ke DB
