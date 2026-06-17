@@ -202,6 +202,7 @@ _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, acti
 _platform_create_session = None  # (pool, user_id, org_id, ip_address, user_agent, expires_at) → {"id","is_suspicious"}
 _platform_touch_session = None   # (pool, session_id) → bool (False jika revoked/expired)
 _platform_revoke_session = None  # (pool, session_id, org_id, reason) → dict|None
+_platform_require_permission = None  # (permission_key) → async checker(user=, pool=) -> dict, raises 403
 
 # Multi-agent supervisor singleton (cloud-only)
 _supervisor_cloud: SupervisorAgent | None = None
@@ -1688,6 +1689,9 @@ async def update_org_plan(
     user=Depends(get_current_user),
     pool=Depends(get_pool),
 ):
+    if _platform_require_permission:
+        await _platform_require_permission("billing.manage")(user=user, pool=pool)
+
     plan = (body.plan or "").strip().lower()
     if plan not in _PLAN_LIMITS:
         raise HTTPException(400, "Plan tidak valid (starter/growth/scale)")
@@ -5698,6 +5702,7 @@ try:
     require_permission = make_permission_checker(
         get_current_user=get_current_user, get_pool=get_pool,
     )
+    _platform_require_permission = require_permission
 
     # ── 3. Adapter: pesan masuk Telegram → pipeline chat existing ─
     async def _route_inbound_platform_message(
