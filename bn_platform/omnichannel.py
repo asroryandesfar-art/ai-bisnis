@@ -203,9 +203,9 @@ def build_omnichannel_router(*, get_pool: GetPool, get_current_user: GetCurrentU
 
     @router.post("/webhooks/channels/{channel}/{connection_id}", include_in_schema=False)
     async def channel_webhook(channel: ChannelType, connection_id: str, request: Request, pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
-        if platform_cfg.telegram_webhook_secret and channel == ChannelType.TELEGRAM:
-            provided = request.headers.get("x-telegram-bot-api-secret-token")
-            if provided != platform_cfg.telegram_webhook_secret:
+        if channel == ChannelType.TELEGRAM:
+            provided = request.headers.get("x-telegram-bot-api-secret-token") or ""
+            if not await manager(pool).verify_webhook_secret(connection_id=connection_id, provided=provided):
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Webhook secret tidak valid")
         payload = await request.json()
         try:

@@ -46,7 +46,12 @@ class ChannelManager:
         connector_config = dict(config or {})
         connector_config["external_id"] = external_id or ""
         connector_config["webhook_url"] = f"{self.app_url}/api/webhooks/channels/{channel_type.value}/{connection_id}"
-        connector_config["webhook_secret"] = self.webhook_secret
+        # Telegram cuma mengirim header X-Telegram-Bot-Api-Secret-Token kalau
+        # secret_token diisi saat setWebhook -- tanpa TELEGRAM_WEBHOOK_SECRET
+        # di env, webhook jadi tidak diverifikasi sama sekali. Generate
+        # per-koneksi secara otomatis supaya webhook selalu terverifikasi
+        # walau operator tidak set env var.
+        connector_config["webhook_secret"] = self.webhook_secret or secrets.token_urlsafe(32)
         connector_config["webhook_verify_token"] = str(connector_config.get("webhook_verify_token") or connection_id)
         connector = build_connector(channel_type, tenant_id=tenant_id, connection_id=connection_id, credentials=credentials, config=connector_config)
 
@@ -182,6 +187,17 @@ class ChannelManager:
         credentials = self._decrypt_credentials(connection.get("credentials"))
         expected = str(config.get("webhook_verify_token") or credentials.get("webhook_verify_token") or "")
         return str(connection.get("channel_type")) if expected and secrets.compare_digest(expected, str(verify_token)) else None
+
+    async def verify_webhook_secret(self, *, connection_id: str, provided: str) -> bool:
+        """Cek X-Telegram-Bot-Api-Secret-Token terhadap secret yang disimpan
+        per-koneksi saat connect_channel() -- bukan satu secret global, jadi
+        tetap aman walau TELEGRAM_WEBHOOK_SECRET env var tidak diisi."""
+        connection = await self._get_connection(connection_id)
+        if not connection:
+            return False
+        config = self._json(connection.get("config"))
+        expected = str(config.get("webhook_secret") or "")
+        return bool(expected) and secrets.compare_digest(expected, str(provided or ""))
 
     async def list_connections(self, tenant_id: str) -> list[dict[str, Any]]:
         rows = await self.pool.fetch(
