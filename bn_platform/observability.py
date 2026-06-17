@@ -159,6 +159,35 @@ def record_db_pool_stats(*, size: int, in_use: int) -> None:
     DB_POOL_IN_USE.set(in_use)
 
 
+def _collect_total(metric) -> float:
+    """Jumlahkan semua sample numerik suatu Counter/Gauge prometheus_client
+    (lintas semua kombinasi label), abaikan timestamp `_created` bawaan Counter."""
+    total = 0.0
+    for family in metric.collect():
+        for sample in family.samples:
+            if sample.name.endswith("_created"):
+                continue
+            total += sample.value
+    return total
+
+
+def metrics_snapshot() -> dict:
+    """Ringkasan numerik dari metrik Prometheus yang sudah terkumpul di proses ini,
+    untuk endpoint dashboard JSON (mis. /system-health) yang tidak ingin parsing
+    format teks dari /metrics. Hanya membaca counter/gauge yang sudah ada di atas —
+    tidak menambah metrik baru."""
+    http_requests = _collect_total(HTTP_REQUESTS_TOTAL)
+    http_errors = _collect_total(HTTP_ERRORS_TOTAL)
+    return {
+        "http_requests_total": int(http_requests),
+        "http_errors_total": int(http_errors),
+        "http_error_rate_pct": round((http_errors / http_requests) * 100, 2) if http_requests else 0.0,
+        "ai_requests_total": int(_collect_total(AI_REQUESTS_TOTAL)),
+        "db_pool_size": int(_collect_total(DB_POOL_SIZE)),
+        "db_pool_in_use": int(_collect_total(DB_POOL_IN_USE)),
+    }
+
+
 # ============================================================
 # /metrics ENDPOINT & WIRING
 # ============================================================

@@ -17,34 +17,52 @@ class BudgetUpdate(BaseModel):
     monthly_budget_usd: float = Field(ge=0, le=1_000_000_000)
 
 
+async def monthly_cost_health(pool, *, org_id: str) -> dict:
+    """Biaya bulanan + status budget satu tenant — dipakai oleh endpoint
+    /cost-intelligence/summary dan oleh komposisi /system-health, supaya
+    dua tempat itu tidak menduplikasi query yang sama."""
+    totals = await pool.fetchrow(
+        """SELECT
+               COALESCE(SUM(estimated_cost) FILTER (
+                   WHERE created_at >= DATE_TRUNC('month', NOW())), 0)::float AS monthly_cost,
+               COALESCE(SUM(estimated_cost) FILTER (
+                   WHERE created_at >= DATE_TRUNC('day', NOW())), 0)::float AS daily_cost,
+               COALESCE(SUM(token_count) FILTER (
+                   WHERE created_at >= DATE_TRUNC('month', NOW())), 0)::bigint AS monthly_tokens,
+               COUNT(*) FILTER (
+                   WHERE created_at >= DATE_TRUNC('month', NOW()))::int AS monthly_calls
+           FROM cost_records WHERE tenant_id=$1""",
+        org_id,
+    )
+    budget_row = await pool.fetchrow(
+        "SELECT monthly_budget_usd::float AS monthly_budget_usd FROM tenant_cost_budgets WHERE tenant_id=$1",
+        org_id,
+    )
+    monthly_cost = float((totals or {}).get("monthly_cost") or 0)
+    monthly_budget = float((budget_row or {}).get("monthly_budget_usd") or 0)
+    now = datetime.now(timezone.utc)
+    days_in_month = monthrange(now.year, now.month)[1]
+    projected_cost = monthly_cost / max(1, now.day) * days_in_month
+    return {
+        "monthly_cost": monthly_cost,
+        "daily_cost": float((totals or {}).get("daily_cost") or 0),
+        "projected_monthly_cost": projected_cost,
+        "monthly_tokens": int((totals or {}).get("monthly_tokens") or 0),
+        "monthly_calls": int((totals or {}).get("monthly_calls") or 0),
+        "budget": {
+            "monthly_budget_usd": monthly_budget,
+            **budget_status(monthly_cost, monthly_budget),
+        },
+    }
+
+
 def build_cost_intelligence_router(*, get_pool: Callable, get_current_user: Callable) -> APIRouter:
     router = APIRouter(prefix="/cost-intelligence", tags=["cost-intelligence"])
 
     @router.get("/summary")
     async def summary(user=Depends(get_current_user), pool=Depends(get_pool)):
         org_id = user["org_id"]
-        totals = await pool.fetchrow(
-            """SELECT
-                   COALESCE(SUM(estimated_cost) FILTER (
-                       WHERE created_at >= DATE_TRUNC('month', NOW())), 0)::float AS monthly_cost,
-                   COALESCE(SUM(estimated_cost) FILTER (
-                       WHERE created_at >= DATE_TRUNC('day', NOW())), 0)::float AS daily_cost,
-                   COALESCE(SUM(token_count) FILTER (
-                       WHERE created_at >= DATE_TRUNC('month', NOW())), 0)::bigint AS monthly_tokens,
-                   COUNT(*) FILTER (
-                       WHERE created_at >= DATE_TRUNC('month', NOW()))::int AS monthly_calls
-               FROM cost_records WHERE tenant_id=$1""",
-            org_id,
-        )
-        budget_row = await pool.fetchrow(
-            "SELECT monthly_budget_usd::float AS monthly_budget_usd FROM tenant_cost_budgets WHERE tenant_id=$1",
-            org_id,
-        )
-        monthly_cost = float((totals or {}).get("monthly_cost") or 0)
-        monthly_budget = float((budget_row or {}).get("monthly_budget_usd") or 0)
-        now = datetime.now(timezone.utc)
-        days_in_month = monthrange(now.year, now.month)[1]
-        projected_cost = monthly_cost / max(1, now.day) * days_in_month
+        cost_health = await monthly_cost_health(pool, org_id=org_id)
 
         async def grouped(column: str, limit: int = 20):
             allowed = {"agent_name", "model_name", "channel", "conversation_id"}
@@ -125,15 +143,7 @@ def build_cost_intelligence_router(*, get_pool: Callable, get_current_user: Call
         )
         return {
             "currency": "USD",
-            "monthly_cost": monthly_cost,
-            "daily_cost": float((totals or {}).get("daily_cost") or 0),
-            "projected_monthly_cost": projected_cost,
-            "monthly_tokens": int((totals or {}).get("monthly_tokens") or 0),
-            "monthly_calls": int((totals or {}).get("monthly_calls") or 0),
-            "budget": {
-                "monthly_budget_usd": monthly_budget,
-                **budget_status(monthly_cost, monthly_budget),
-            },
+            **cost_health,
             "cost_by_tenant": [dict(tenant)] if tenant else [],
             "cost_by_agent": [dict(row) for row in by_agent],
             "cost_by_model": [dict(row) for row in by_model],
