@@ -82,7 +82,13 @@ def test_update_and_uninstall_use_existing_install():
     })
     updated = asyncio.run(update_install(update_pool, org_id="org-1", user_id="user-1", install_id="install-1", bot_name=None))
     assert updated["template_version"] == "1.0.1"
-    assert any("UPDATE bots" in sql for kind, sql, _ in update_pool.calls if kind == "fetchrow")
+    update_bot_calls = [(sql, args) for kind, sql, args in update_pool.calls if kind == "fetchrow" and "UPDATE bots" in sql]
+    assert update_bot_calls
+    # Defense-in-depth: _sync_bot_from_template's UPDATE bots must be scoped
+    # by org_id too, not just rely on install_id ownership having been
+    # checked earlier (_fetch_install) -- "org-1" must appear in the params.
+    assert "org-1" in update_bot_calls[0][1]
+    assert "AND org_id=" in update_bot_calls[0][0]
 
     uninstall_pool = FakePool(fetchrow_map={
         "FROM tenant_template_installs": [install_row],
@@ -90,7 +96,10 @@ def test_update_and_uninstall_use_existing_install():
     })
     result = asyncio.run(uninstall_install(uninstall_pool, org_id="org-1", user_id="user-1", install_id="install-1"))
     assert result["status"] == "inactive"
-    assert any("status='inactive'" in sql for kind, sql, _ in uninstall_pool.calls if kind == "fetchrow")
+    uninstall_bot_calls = [(sql, args) for kind, sql, args in uninstall_pool.calls if kind == "fetchrow" and "status='inactive'" in sql]
+    assert uninstall_bot_calls
+    assert "AND org_id=" in uninstall_bot_calls[0][0]
+    assert "org-1" in uninstall_bot_calls[0][1]
 
 
 def test_marketplace_routes_and_schema_contract_are_present():

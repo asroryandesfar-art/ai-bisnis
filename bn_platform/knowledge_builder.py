@@ -75,9 +75,9 @@ async def _publish_to_kb(
     return chunk_id
 
 
-async def _unpublish_from_kb(conn: asyncpg.Connection, chunk_id: str | None) -> None:
+async def _unpublish_from_kb(conn: asyncpg.Connection, *, org_id: str, chunk_id: str | None) -> None:
     if chunk_id:
-        await conn.execute("DELETE FROM doc_chunks WHERE id=$1", chunk_id)
+        await conn.execute("DELETE FROM doc_chunks WHERE id=$1 AND org_id=$2", chunk_id, org_id)
 
 
 async def knowledge_health_report(pool: asyncpg.Pool, *, org_id: str, bot_id: str | None = None) -> dict:
@@ -337,8 +337,8 @@ def build_knowledge_builder_router(
                 row = await conn.fetchrow(
                     """UPDATE kb_generated_faqs
                        SET question=$1, answer=$2, category=$3, status=$4, updated_at=NOW()
-                       WHERE id=$5 RETURNING *""",
-                    question, answer, category, new_status, faq_id,
+                       WHERE id=$5 AND org_id=$6 RETURNING *""",
+                    question, answer, category, new_status, faq_id, org_id,
                 )
                 row = dict(row)
                 if new_status == "approved" and not row["chunk_id"]:
@@ -348,13 +348,13 @@ def build_knowledge_builder_router(
                         store_chunk_embeddings=store_chunk_embeddings,
                     )
                     await conn.execute(
-                        "UPDATE kb_generated_faqs SET chunk_id=$1 WHERE id=$2", chunk_id, faq_id
+                        "UPDATE kb_generated_faqs SET chunk_id=$1 WHERE id=$2 AND org_id=$3", chunk_id, faq_id, org_id,
                     )
                     row["chunk_id"] = chunk_id
                 elif new_status != "approved" and row["chunk_id"]:
-                    await _unpublish_from_kb(conn, row["chunk_id"])
+                    await _unpublish_from_kb(conn, org_id=org_id, chunk_id=row["chunk_id"])
                     await conn.execute(
-                        "UPDATE kb_generated_faqs SET chunk_id=NULL WHERE id=$1", faq_id
+                        "UPDATE kb_generated_faqs SET chunk_id=NULL WHERE id=$1 AND org_id=$2", faq_id, org_id,
                     )
                     row["chunk_id"] = None
 
@@ -424,8 +424,8 @@ def build_knowledge_builder_router(
                 row = await conn.fetchrow(
                     """UPDATE kb_generated_sops
                        SET title=$1, steps=$2::jsonb, category=$3, status=$4, updated_at=NOW()
-                       WHERE id=$5 RETURNING *""",
-                    title, json.dumps(steps), category, new_status, sop_id,
+                       WHERE id=$5 AND org_id=$6 RETURNING *""",
+                    title, json.dumps(steps), category, new_status, sop_id, org_id,
                 )
                 row = _row_with_jsonb(dict(row), ["steps"])
                 if new_status == "approved" and not row["chunk_id"]:
@@ -436,13 +436,13 @@ def build_knowledge_builder_router(
                         store_chunk_embeddings=store_chunk_embeddings,
                     )
                     await conn.execute(
-                        "UPDATE kb_generated_sops SET chunk_id=$1 WHERE id=$2", chunk_id, sop_id
+                        "UPDATE kb_generated_sops SET chunk_id=$1 WHERE id=$2 AND org_id=$3", chunk_id, sop_id, org_id,
                     )
                     row["chunk_id"] = chunk_id
                 elif new_status != "approved" and row["chunk_id"]:
-                    await _unpublish_from_kb(conn, row["chunk_id"])
+                    await _unpublish_from_kb(conn, org_id=org_id, chunk_id=row["chunk_id"])
                     await conn.execute(
-                        "UPDATE kb_generated_sops SET chunk_id=NULL WHERE id=$1", sop_id
+                        "UPDATE kb_generated_sops SET chunk_id=NULL WHERE id=$1 AND org_id=$2", sop_id, org_id,
                     )
                     row["chunk_id"] = None
 

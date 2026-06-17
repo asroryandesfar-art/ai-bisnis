@@ -110,7 +110,10 @@ class ChannelManager:
                WHERE id=$1 AND tenant_id=$2""", connection_id, tenant_id,
         )
         if connection.get("legacy_account_id"):
-            await self.pool.execute("UPDATE channel_accounts SET is_active=FALSE WHERE id=$1", connection["legacy_account_id"])
+            await self.pool.execute(
+                "UPDATE channel_accounts SET is_active=FALSE WHERE id=$1 AND org_id=$2",
+                connection["legacy_account_id"], tenant_id,
+            )
         await self._event(tenant_id, connection_id, "connection.disconnected", {})
         await self._log(tenant_id, connection_id, "info", "disconnect", "Channel disconnected", {})
         return str(result).endswith(" 1")
@@ -134,7 +137,10 @@ class ChannelManager:
                VALUES ($1,$2,$3,$4,'outbound',$5,$6,$7,$8,$9)""",
             message_id, tenant_id, connection_id, self._provider_message_id(provider_result), user_id, message, status, latency_ms, json.dumps(metadata or {}),
         )
-        await self.pool.execute("UPDATE channel_connections SET last_activity_at=NOW(), updated_at=NOW() WHERE id=$1", connection_id)
+        await self.pool.execute(
+            "UPDATE channel_connections SET last_activity_at=NOW(), updated_at=NOW() WHERE id=$1 AND tenant_id=$2",
+            connection_id, tenant_id,
+        )
         return {"id": message_id, "status": status, "latency_ms": latency_ms, "provider": provider_result}
 
     async def receive_message(self, *, connection_id: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -256,7 +262,10 @@ class ChannelManager:
                    VALUES ($1,$2,$3,'outbound',$4,$5,$6,'sent',$7,$8)""",
                 tenant_id, connection_id, self._provider_message_id(provider_result), unified.user_id, unified.username, reply, latency_ms, json.dumps({"in_reply_to": inbound_id}),
             )
-        await self.pool.execute("UPDATE channel_connections SET last_activity_at=NOW(), updated_at=NOW() WHERE id=$1", connection_id)
+        await self.pool.execute(
+            "UPDATE channel_connections SET last_activity_at=NOW(), updated_at=NOW() WHERE id=$1 AND tenant_id=$2",
+            connection_id, tenant_id,
+        )
         await self._event(tenant_id, connection_id, "message.received", {"message_id": inbound_id, "user_id": unified.user_id})
         return {"message": self._dump_message(unified), "reply": reply, "response_time_ms": latency_ms}
 

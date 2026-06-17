@@ -105,20 +105,22 @@ async def _seed_template_faqs(pool: asyncpg.Pool, *, bot_id: str, org_id: str, t
 async def _sync_bot_from_template(
     pool: asyncpg.Pool,
     *,
+    org_id: str,
     bot_id: str,
     template: dict,
     bot_name: str | None = None,
 ) -> dict:
-    current = await pool.fetchrow("SELECT name FROM bots WHERE id=$1", bot_id)
+    current = await pool.fetchrow("SELECT name FROM bots WHERE id=$1 AND org_id=$2", bot_id, org_id)
     resolved_name = (bot_name or (current["name"] if current else None) or template["name"]).strip()
     row = await pool.fetchrow(
         """UPDATE bots
               SET name=$2, status='active', primary_color=$3, position='bottom-right',
                   greeting=$4, language='id', system_prompt=$5, temperature=0.3,
                   updated_at=NOW()
-            WHERE id=$1
+            WHERE id=$1 AND org_id=$6
          RETURNING id, name, primary_color, greeting, system_prompt, status, created_at""",
         bot_id, resolved_name, template["primary_color"], template["greeting"], template["system_prompt"],
+        org_id,
     )
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
@@ -169,6 +171,7 @@ async def install_template(pool: asyncpg.Pool, *, org_id: str, user_id: str,
     if existing:
         bot = await _sync_bot_from_template(
             pool,
+            org_id=org_id,
             bot_id=existing["bot_id"],
             template=template,
             bot_name=bot_name or existing.get("bot_name"),
@@ -253,7 +256,7 @@ async def update_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, insta
     if not template:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Template '{install['template_key']}' tidak ditemukan")
 
-    bot = await _sync_bot_from_template(pool, bot_id=install["bot_id"], template=template, bot_name=bot_name)
+    bot = await _sync_bot_from_template(pool, org_id=org_id, bot_id=install["bot_id"], template=template, bot_name=bot_name)
     await write_audit_log(
         pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="update",
         resource_type="marketplace_install", resource_id=str(install_id),
@@ -277,9 +280,9 @@ async def uninstall_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, in
     bot = await pool.fetchrow(
         """UPDATE bots
               SET status='inactive', updated_at=NOW()
-            WHERE id=$1
+            WHERE id=$1 AND org_id=$2
          RETURNING id, name, status, primary_color, greeting, system_prompt, created_at""",
-        install["bot_id"],
+        install["bot_id"], org_id,
     )
     if not bot:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
