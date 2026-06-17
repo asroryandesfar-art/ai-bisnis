@@ -325,13 +325,21 @@ async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str
     await pool.execute(
         "UPDATE invoices SET status='paid', paid_at=NOW() WHERE id=$1", invoice["id"],
     )
-    await pool.execute(
+    inserted = await pool.fetchval(
         """INSERT INTO payment_history (org_id, invoice_id, provider, provider_transaction_id,
                                         amount_idr, status, payment_method, raw_payload)
-           VALUES ($1,$2,$3,$4,$5,'paid',$6,$7)""",
+           VALUES ($1,$2,$3,$4,$5,'paid',$6,$7)
+           ON CONFLICT (provider, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL
+           DO NOTHING
+           RETURNING id""",
         invoice["org_id"], invoice["id"], provider, provider_tx_id,
         invoice["amount_idr"], payment_method, json.dumps(raw_payload or {}),
     )
+    if inserted is None:
+        # Provider sudah pernah kirim notifikasi paid dengan provider_transaction_id
+        # yang sama (retry) -- payment_history sudah punya baris ini, jangan
+        # aktivasi subscription/audit log dobel.
+        return
     meta = invoice.get("metadata") or {}
     if isinstance(meta, str):
         try:
@@ -533,23 +541,34 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
                                           gross_amount=gross_amount, signature_key=signature):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Signature tidak valid")
 
-        invoice = await pool.fetchrow("SELECT * FROM invoices WHERE invoice_number=$1", order_id)
-        if not invoice:
-            return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
-        invoice = dict(invoice)
+        just_paid = False
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # FOR UPDATE mengunci baris invoice sampai transaksi ini commit --
+                # notifikasi retry Midtrans yang datang bersamaan akan menunggu di
+                # sini, lalu melihat status sudah 'paid' dan tidak mengaktivasi
+                # subscription dua kali (sebelumnya invoice di-SELECT tanpa lock,
+                # jadi dua request bisa lolos cek status='paid' bersamaan).
+                invoice = await conn.fetchrow(
+                    "SELECT * FROM invoices WHERE invoice_number=$1 FOR UPDATE", order_id,
+                )
+                if not invoice:
+                    return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
+                invoice = dict(invoice)
 
-        if transaction_status in ("settlement", "capture") and invoice["status"] != "paid":
-            await _mark_invoice_paid(
-                pool, invoice, provider="midtrans",
-                provider_tx_id=str(payload.get("transaction_id", "")),
-                payment_method=payload.get("payment_type"),
-                raw_payload=payload,
-            )
-            if dispatch_webhook:
-                await dispatch_webhook(invoice["org_id"], "subscription.activated",
-                                       {"invoice_number": order_id, "provider": "midtrans"}, pool)
-        elif transaction_status in ("expire", "cancel", "deny"):
-            await pool.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+                if transaction_status in ("settlement", "capture") and invoice["status"] != "paid":
+                    await _mark_invoice_paid(
+                        conn, invoice, provider="midtrans",
+                        provider_tx_id=str(payload.get("transaction_id", "")),
+                        payment_method=payload.get("payment_type"),
+                        raw_payload=payload,
+                    )
+                    just_paid = True
+                elif transaction_status in ("expire", "cancel", "deny"):
+                    await conn.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+        if just_paid and dispatch_webhook:
+            await dispatch_webhook(invoice["org_id"], "subscription.activated",
+                                   {"invoice_number": order_id, "provider": "midtrans"}, pool)
         return {"ok": True}
 
     # ── Webhook: Xendit Invoice Callback ────────────────────────
@@ -563,23 +582,29 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         external_id = str(payload.get("external_id", ""))
         xendit_status = str(payload.get("status", "")).upper()
 
-        invoice = await pool.fetchrow("SELECT * FROM invoices WHERE invoice_number=$1", external_id)
-        if not invoice:
-            return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
-        invoice = dict(invoice)
+        just_paid = False
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                invoice = await conn.fetchrow(
+                    "SELECT * FROM invoices WHERE invoice_number=$1 FOR UPDATE", external_id,
+                )
+                if not invoice:
+                    return {"ok": True, "note": "invoice tidak ditemukan, diabaikan"}
+                invoice = dict(invoice)
 
-        if xendit_status == "PAID" and invoice["status"] != "paid":
-            await _mark_invoice_paid(
-                pool, invoice, provider="xendit",
-                provider_tx_id=str(payload.get("id", "")),
-                payment_method=payload.get("payment_method") or payload.get("payment_channel"),
-                raw_payload=payload,
-            )
-            if dispatch_webhook:
-                await dispatch_webhook(invoice["org_id"], "subscription.activated",
-                                       {"invoice_number": external_id, "provider": "xendit"}, pool)
-        elif xendit_status in ("EXPIRED", "FAILED"):
-            await pool.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+                if xendit_status == "PAID" and invoice["status"] != "paid":
+                    await _mark_invoice_paid(
+                        conn, invoice, provider="xendit",
+                        provider_tx_id=str(payload.get("id", "")),
+                        payment_method=payload.get("payment_method") or payload.get("payment_channel"),
+                        raw_payload=payload,
+                    )
+                    just_paid = True
+                elif xendit_status in ("EXPIRED", "FAILED"):
+                    await conn.execute("UPDATE invoices SET status='void', voided_at=NOW() WHERE id=$1", invoice["id"])
+        if just_paid and dispatch_webhook:
+            await dispatch_webhook(invoice["org_id"], "subscription.activated",
+                                   {"invoice_number": external_id, "provider": "xendit"}, pool)
         return {"ok": True}
 
     return router
