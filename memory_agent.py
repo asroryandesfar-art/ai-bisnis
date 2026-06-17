@@ -406,7 +406,10 @@ gabungkan ringkasan sebelumnya dengan informasi baru dari turn ini menjadi satu 
 kumulatif (jangan hanya meringkas turn ini saja)."""
 
         output = await self._call_llm_json(
-            [{"role": "user", "content": prompt}],
+            [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
             temperature=0.1,
             default={"facts_to_store": [], "summary": "", "forget_keys": []},
         )
