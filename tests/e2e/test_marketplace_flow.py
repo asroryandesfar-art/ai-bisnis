@@ -20,7 +20,7 @@ def test_install_travel_agent_template_creates_active_bot(client, registered_org
     assert data["bot"]["id"]
 
 
-def test_travel_agent_bot_answers_hotel_query_using_its_persona(client, registered_org):
+def test_travel_agent_bot_answers_hotel_query_using_its_persona(client, registered_org, chat_user_meta):
     install = client.post(
         "/api/marketplace/install",
         json={"template_key": "travel-agent"},
@@ -29,7 +29,7 @@ def test_travel_agent_bot_answers_hotel_query_using_its_persona(client, register
     assert install.status_code == 201, install.text
     bot_id = install.json()["bot"]["id"]
 
-    resp = client.post(f"/chat/{bot_id}", json={"message": "Carikan hotel terbaik di Gresik"})
+    resp = client.post(f"/chat/{bot_id}", json={"message": "Carikan hotel terbaik di Gresik", "user_meta": chat_user_meta})
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert isinstance(data["answer"], str) and data["answer"].strip()

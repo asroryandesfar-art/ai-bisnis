@@ -54,3 +54,13 @@ def bot(client, registered_org):
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["bot_id"]
+
+
+@pytest.fixture()
+def chat_user_meta():
+    """/chat/{bot_id} is public and defaults to a shared 'anonymous' rate-limit
+    bucket (rate_limiter.py Layer 2: per-user) when no userId is given. With a
+    session-scoped client, every e2e test calling /chat without this would
+    collide on the same bucket and eventually get blocked — give each test
+    its own synthetic end-user, like a real distinct chat session would have."""
+    return {"userId": f"e2e-user-{uuid.uuid4()}"}

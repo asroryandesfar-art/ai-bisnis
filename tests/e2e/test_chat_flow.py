@@ -5,8 +5,8 @@ real Groq — no FakePool/mocks (see tests/e2e/conftest.py).
 """
 
 
-def test_chat_returns_real_answer_with_routing_metadata(client, bot):
-    resp = client.post(f"/chat/{bot}", json={"message": "Apa itu Bitcoin?"})
+def test_chat_returns_real_answer_with_routing_metadata(client, bot, chat_user_meta):
+    resp = client.post(f"/chat/{bot}", json={"message": "Apa itu Bitcoin?", "user_meta": chat_user_meta})
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
@@ -25,13 +25,13 @@ def test_chat_returns_real_answer_with_routing_metadata(client, bot):
     assert isinstance(data["handoff_offered"], bool)
 
 
-def test_chat_persists_messages_and_continues_session(client, bot):
-    first = client.post(f"/chat/{bot}", json={"message": "Halo, nama saya Budi"})
+def test_chat_persists_messages_and_continues_session(client, bot, chat_user_meta):
+    first = client.post(f"/chat/{bot}", json={"message": "Halo, nama saya Budi", "user_meta": chat_user_meta})
     assert first.status_code == 200, first.text
     session_id = first.json()["session_id"]
 
     second = client.post(f"/chat/{bot}", json={
-        "message": "Apa kabar?", "session_id": session_id,
+        "message": "Apa kabar?", "session_id": session_id, "user_meta": chat_user_meta,
     })
     assert second.status_code == 200, second.text
     assert second.json()["session_id"] == session_id
