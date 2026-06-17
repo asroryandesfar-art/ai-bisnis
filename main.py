@@ -4512,6 +4512,10 @@ async def chat(
     _kb_started = time.perf_counter()
     relevant_chunks = await _retrieve_chunks(pool, bot["org_id"], body.message, bot_id=bot_id)
     _kb_ms = (time.perf_counter() - _kb_started) * 1000
+    logger.info(
+        "kb_retrieval org_id=%s bot_id=%s conv_id=%s chunks=%s latency_ms=%.1f",
+        bot["org_id"], bot_id, conv_id, len(relevant_chunks), _kb_ms,
+    )
     if _kb_ms > KB_RETRIEVAL_LATENCY_BUDGET_MS:
         logger.warning(
             "Knowledge retrieval melebihi budget %sms: %.1fms (org_id=%s, bot_id=%s, conv_id=%s, chunks=%s)",
@@ -4809,6 +4813,12 @@ async def chat(
         router_intent, router_selected_agent, router_confidence,
         (handoff_reason if should_handoff else None),
         intent_routing.get("allow_human_handoff", False),
+    )
+    logger.info(
+        "chat_routing org_id=%s bot_id=%s conv_id=%s intent=%s selected_agent=%s confidence=%s "
+        "handoff_offered=%s latency_ms=%s",
+        bot["org_id"], bot_id, conv_id, router_intent, router_selected_agent, router_confidence,
+        handoff_offered, latency_ms,
     )
 
     # 10. Update stats
@@ -5586,6 +5596,7 @@ try:
     from bn_platform.knowledge_builder import build_knowledge_builder_router
     from bn_platform.workflow_builder import build_workflow_builder_router
     from bn_platform.improvement_engine import build_improvement_router
+    from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
@@ -5739,6 +5750,13 @@ try:
     )
     app.include_router(
         build_improvement_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_system_health_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
         ),
