@@ -283,6 +283,13 @@ export const api = {
   hrTraining: (employeeId) => request(`/api/hr/employees/${employeeId}/training`),
   hrRecommendTraining: (employeeId, body) => request(`/api/hr/employees/${employeeId}/training/recommend`, { method: "POST", body }),
   hrUpdateTrainingStatus: (id, status) => request(`/api/hr/training/${id}/status`, { method: "PATCH", body: { status } }),
+  opsDashboard: () => request("/api/operations/dashboard"),
+  opsAlerts: (params = {}) => request(`/api/operations/alerts${encodeQuery(params)}`),
+  opsUpdateAlert: (id, status) => request(`/api/operations/alerts/${id}`, { method: "PATCH", body: { status } }),
+  opsScan: () => request("/api/operations/scan", { method: "POST" }),
+  opsReports: (params = {}) => request(`/api/operations/reports${encodeQuery(params)}`),
+  opsGenerateReport: (report_type) => request("/api/operations/reports/generate", { method: "POST", body: { report_type } }),
+  opsReport: (id) => request(`/api/operations/reports/${id}`),
 };
 
 export async function settle(label, promise) {

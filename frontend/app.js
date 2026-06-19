@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1204,6 +1204,51 @@ async function evaluateHREmployeePrompt(employeeId) {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function renderOperations() {
+  loadingPage("Operations Center", "Tenant health, workflow & SLA monitoring, weekly/monthly report — dikelola oleh AI Workforce.");
+  let dashboard, alerts, reports;
+  try {
+    [dashboard, alerts, reports] = await Promise.all([
+      api.opsDashboard(), api.opsAlerts({ status: "open", limit: 50 }), api.opsReports({ limit: 10 }),
+    ]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.opsDashboard = dashboard; state.opsAlerts = alerts.alerts || []; state.opsReports = reports.reports || [];
+
+  const health = dashboard.health || {};
+  const healthTrend = health.label === "healthy" ? "trend-up" : (health.label === "warning" ? "default" : "trend-down");
+
+  const alertRows = state.opsAlerts.map((a) => `<tr>
+    <td>${statusBadge(a.severity, a.severity)}</td>
+    <td><span class="table-title">${esc(a.category.replace(/_/g, " "))}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(a.message)}</div></td>
+    <td>${relativeTime(a.created_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button" data-ops-alert-status="${esc(a.id)}:acknowledged">Acknowledge</button>
+      <button class="button button-primary" data-ops-alert-status="${esc(a.id)}:resolved">Resolve</button>
+    </div></td>
+  </tr>`).join("");
+
+  const reportRows = state.opsReports.map((r) => `<tr>
+    <td>${statusBadge("default", r.report_type)}</td>
+    <td>${esc((r.summary || "").slice(0, 100))}${(r.summary || "").length > 100 ? "…" : ""}</td>
+    <td>${relativeTime(r.created_at)}</td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Operations Center", "AI memonitor health tenant, workflow, dan SLA, lalu menyusun laporan — alert butuh tindak lanjut manusia (acknowledge/resolve).",
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="button" data-action="ops-scan">${icon("refresh", 14)} Run Scan</button>
+      <button class="button" data-action="ops-generate-weekly">Generate Weekly Report</button>
+      <button class="button button-primary" data-action="ops-generate-monthly">Generate Monthly Report</button>
+    </div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Health Score", `${health.score ?? "—"}`, health.label || "—", "operations", healthTrend)}
+    ${metricCard("Workflow Success Rate", `${dashboard.workflow_health?.success_rate_pct ?? "—"}%`, `${formatNumber(dashboard.workflow_health?.total_executions || 0)} eksekusi (7d)`, "operations")}
+    ${metricCard("SLA Breach Rate", `${dashboard.sla_health?.breach_rate_pct ?? "—"}%`, `${formatNumber(dashboard.sla_health?.total_handoffs || 0)} handoff (7d)`, "operations", dashboard.sla_health?.breach_rate_pct > 10 ? "trend-down" : "trend-up")}
+    ${metricCard("Open Alerts", formatNumber(state.opsAlerts.length), `${formatNumber(dashboard.open_alerts_by_severity?.critical || 0)} critical`, "operations", state.opsAlerts.length ? "trend-down" : "trend-up")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Alerts</h3></div>${alertRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Alert</th><th>Waktu</th><th></th></tr></thead><tbody>${alertRows}</tbody></table></div>` : emptyState("Tidak ada alert terbuka", "Jalankan scan untuk mendeteksi masalah operasional.")}</div>
+  <div class="card"><div class="card-head"><h3>Laporan</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada laporan", "Generate laporan weekly/monthly pertama Anda.")}</div>`);
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1712,7 +1757,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -2023,6 +2068,10 @@ document.addEventListener("click", async (event) => {
   const hrCandidateScore=event.target.closest("[data-hr-candidate-score]"); if(hrCandidateScore){ await scoreHRCandidatePrompt(hrCandidateScore.dataset.hrCandidateScore); return; }
   const hrCandidateDelete=event.target.closest("[data-hr-candidate-delete]"); if(hrCandidateDelete && confirm("Hapus kandidat ini?")){ try{ await api.hrDeleteCandidate(hrCandidateDelete.dataset.hrCandidateDelete); toast("Kandidat dihapus.","success"); await renderHR(); }catch(error){ toast(error.message,"error"); } return; }
   const hrEmployeeEvaluate=event.target.closest("[data-hr-employee-evaluate]"); if(hrEmployeeEvaluate){ await evaluateHREmployeePrompt(hrEmployeeEvaluate.dataset.hrEmployeeEvaluate); return; }
+  if(action==="ops-scan"){ try{ const result=await api.opsScan(); toast(`Scan selesai: ${result.alerts_created?.length||0} alert baru.`,"success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="ops-generate-weekly"){ try{ await api.opsGenerateReport("weekly"); toast("Weekly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="ops-generate-monthly"){ try{ await api.opsGenerateReport("monthly"); toast("Monthly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
+  const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();
   if(action==="wf-save") await saveWorkflow();
