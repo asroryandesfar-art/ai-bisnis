@@ -1,4 +1,4 @@
-const BRAND_LOGO = "/assets/brand/botnesia-official-logo.jpeg";
+const BRAND_LOGO = "/assets/brand/botnesia-clean-logo.png";
 
 const paths = {
   founder:'<path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/><path d="m3 7 6-4 6 5 7-6"/>',
@@ -114,11 +114,10 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["FOUNDER", [["founder","Founder OS"]]],
-  ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["multimedia","Multimedia Studio"],["team","Team & Tenants"],["billing","Billing"]]],
-  ["AI WORKFORCE", [["workforce-overview","Overview"],["finance","Finance Center"],["marketing","Marketing Center"],["hr","HR Center"],["operations","Operations Center"],["security","Security Center"],["executive","Executive Center"],["workforce","Workforce Orchestration"],["self-learning","Self-Learning Center"]]],
-  ["SYSTEM", [["settings","Settings"]]],
+  ["BUSINESS", [["dashboard","Dashboard"],["conversations","Inbox"],["handoffs","Customers"],["marketing","Sales"],["marketing","Marketing"],["finance","Finance"]]],
+  ["AI WORKFORCE", [["agents","Supervisor"],["marketing","Sales Agent"],["marketing","Marketing Agent"],["finance","Finance Agent"],["executive","Executive Agent"]]],
+  ["OPERATIONS", [["analytics","Analytics"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"]]],
+  ["SETTINGS", [["team","Team"],["billing","Billing"],["channels","Integrations"]]],
 ];
 
 export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
@@ -129,12 +128,12 @@ export function sidebar({ route, org, user, counts = {}, founderAccess = false }
 
 const routeMeta = {
   founder:["Founder Operating System","Platform-wide revenue, growth, retention, AI economics, and business health"],
-  dashboard:["Command Center","Live overview of your AI operations"], agents:["AI Agent Center","Deploy, monitor, and tune every customer-facing agent"],
+  dashboard:["AI Business Command Center","Kelola pelanggan, penjualan, marketing, dan tim AI dari satu tempat."], agents:["AI Workforce","Pantau karyawan AI yang sedang bekerja untuk bisnis Anda."],
   chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
-  conversations:["Conversation Center","Unified inbox across every connected channel"], analytics:["Analytics","Performance, quality, and business impact"],
+  conversations:["Inbox","Percakapan pelanggan dari semua channel."], analytics:["Analytics","Performa bisnis dan customer journey."],
   observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
   "routing-logs":["Routing Logs","Per-message Intent Router decisions: intent, selected agent, confidence, and handoff status"],
-  channels:["Channels","Connect and monitor WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat"],
+  channels:["Integrations","Hubungkan channel pelanggan dan tool bisnis."],
   costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
   marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
   handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],
@@ -143,8 +142,8 @@ const routeMeta = {
   knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"],
   "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
   "workflow-builder":["Workflow Builder","Rancang automasi AI Agent ala n8n/Zapier — trigger, condition, agent, action, dan notification"],
-  finance:["Finance Center","AI Workforce: invoice, expense, payment, dan laporan revenue/profit/cashflow/forecast bisnis Anda"],
-  marketing:["Marketing Center","AI Workforce: generate konten IG/TikTok/Facebook/Blog/Email/WhatsApp, content calendar, dan engagement tracking"],
+  finance:["Finance","Revenue, invoice, payment, dan laporan keuangan bisnis."],
+  marketing:["Sales & Marketing","Lead, campaign, konten, dan peluang closing."],
   hr:["HR Center","AI Workforce: CV screening, candidate scoring, interview questions, evaluasi karyawan, dan rekomendasi training"],
   operations:["Operations Center","AI Workforce: tenant health, workflow & SLA monitoring, weekly/monthly report, dan critical alert"],
   executive:["Executive Center","AI Workforce: AI CEO Assistant — company health score, executive brief, growth/cost/revenue insight lintas-domain"],
@@ -153,12 +152,12 @@ const routeMeta = {
   "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
   multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
-  security:["Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management"],
-  billing:["Billing & Usage","Subscription, limits, invoices, and plan management"], settings:["Platform Settings","Connections, security, and system configuration"],
+  security:["Security","Keamanan akun, akses tim, dan risiko bisnis."],
+  billing:["Billing","Subscription, invoice, dan penggunaan paket."], settings:["Settings","Preferensi workspace dan konfigurasi platform."],
 };
 export function topbar({ route, health }) {
   const [title, description] = routeMeta[route] || routeMeta.dashboard;
-  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="Search agents, conversations..."><kbd class="mono">⌘K</kbd></label><span class="status-badge ${health?.status==='ok'?'active':'error'}">${health?.status==='ok'?'Systems operational':'Degraded'}</span><button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button><button class="button button-primary" data-action="create-agent">${icon('plus',15)}<span class="button-label">New agent</span></button></div>`;
+  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="Cari pelanggan, agent, invoice..."><kbd class="mono">⌘K</kbd></label><span class="status-badge ${health?.status==='ok'?'active':'error'}">${health?.status==='ok'?'AI workforce aktif':'Perlu perhatian'}</span><button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button></div>`;
 }
 
 export function pageHeader(title, description, actions = "") { return `<div class="page-header"><div><span class="eyebrow">BOTNESIA PLATFORM</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><div class="header-actions">${actions}</div></div>`; }

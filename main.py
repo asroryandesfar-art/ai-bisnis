@@ -416,19 +416,19 @@ async def public_asset(asset_path: str):
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
-OFFICIAL_LOGO_PATH = _PUBLIC_DIR / "assets" / "brand" / "botnesia-official-logo.jpeg"
+OFFICIAL_LOGO_PATH = _PUBLIC_DIR / "assets" / "brand" / "botnesia-clean-logo.png"
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon_ico():
     if not OFFICIAL_LOGO_PATH.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "logo resmi BotNesia tidak ditemukan")
-    return FileResponse(OFFICIAL_LOGO_PATH, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(OFFICIAL_LOGO_PATH, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 @app.get("/apple-touch-icon.png", include_in_schema=False)
 async def apple_touch_icon():
     if not OFFICIAL_LOGO_PATH.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "logo resmi BotNesia tidak ditemukan")
-    return FileResponse(OFFICIAL_LOGO_PATH, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(OFFICIAL_LOGO_PATH, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 @app.get("/botnesia-widget.js", include_in_schema=False)
 async def botnesia_widget_js():
