@@ -352,6 +352,7 @@ app.add_middleware(
 # Serve dashboard static (biar FE dan BE satu origin, minim masalah CORS/mixed-content)
 BASE_DIR = Path(__file__).resolve().parent
 _FRONTEND_DIR = BASE_DIR / "frontend"
+_PUBLIC_DIR = _FRONTEND_DIR / "public"
 _DASHBOARD_PATH = _FRONTEND_DIR / "index.html"
 _API_JS_PATH = BASE_DIR / "api.js"
 _MULTIAGENT_INDEX_PATH = BASE_DIR / "MultiAgent_Index.html"
@@ -387,12 +388,47 @@ async def frontend_asset(asset_path: str):
         ".svg": "image/svg+xml",
         ".png": "image/png",
         ".webp": "image/webp",
+        ".ico": "image/x-icon",
     }
     return FileResponse(
         requested,
         media_type=media_types.get(requested.suffix.lower(), "application/octet-stream"),
         headers={"Cache-Control": "no-cache"},
     )
+
+@app.get("/assets/{asset_path:path}", include_in_schema=False)
+async def public_asset(asset_path: str):
+    requested = (_PUBLIC_DIR / "assets" / asset_path).resolve()
+    public_assets_root = (_PUBLIC_DIR / "assets").resolve()
+    if public_assets_root not in requested.parents or not requested.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset publik tidak ditemukan")
+    media_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".webp": "image/webp",
+        ".ico": "image/x-icon",
+    }
+    return FileResponse(
+        requested,
+        media_type=media_types.get(requested.suffix.lower(), "application/octet-stream"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    favicon_path = _PUBLIC_DIR / "assets" / "brand" / "favicon.ico"
+    if not favicon_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "favicon tidak ditemukan")
+    return FileResponse(favicon_path, media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def apple_touch_icon():
+    icon_path = _PUBLIC_DIR / "assets" / "brand" / "apple-touch-icon.png"
+    if not icon_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "apple touch icon tidak ditemukan")
+    return FileResponse(icon_path, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 @app.get("/botnesia-widget.js", include_in_schema=False)
 async def botnesia_widget_js():

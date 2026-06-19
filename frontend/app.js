@@ -67,7 +67,7 @@ async function loadCore() {
 }
 
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
-function loadingPage(title, description) { setPage(`${pageHeader(title,description)}${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
+function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-logo.png" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
 
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");

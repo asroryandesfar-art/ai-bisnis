@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BotNesia — Dashboard</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32x32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -30,8 +33,7 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 /* AUTH */
 #auth-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column}
-.auth-logo{font-family:var(--mono);font-size:26px;margin-bottom:40px;letter-spacing:-.02em}
-.auth-logo span{background:linear-gradient(135deg,var(--accent),var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+.auth-logo{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:26px;margin-bottom:40px;letter-spacing:-.02em}.auth-logo img{width:52px;height:52px;object-fit:contain;border-radius:12px;background:#fff;box-shadow:0 10px 30px rgba(0,229,160,.18)}
 .auth-box{background:var(--surface);backdrop-filter:blur(var(--blur)) saturate(160%);-webkit-backdrop-filter:blur(var(--blur)) saturate(160%);border:1px solid var(--border2);border-radius:var(--radius);padding:40px 44px;width:380px;box-shadow:var(--shadow)}
 .auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:28px;gap:4px}
 .auth-tab{flex:1;padding:10px;font-family:var(--mono);font-size:12px;text-align:center;cursor:pointer;color:var(--muted2);border-bottom:2px solid transparent;transition:all .2s var(--ease);background:none;border-top:none;border-left:none;border-right:none;border-radius:var(--radius-sm) var(--radius-sm) 0 0}
@@ -59,8 +61,7 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
 /* SIDEBAR */
 aside{background:var(--surface);backdrop-filter:blur(var(--blur)) saturate(160%);-webkit-backdrop-filter:blur(var(--blur)) saturate(160%);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 .sb-head{padding:22px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.sb-logo{font-family:var(--mono);font-size:15px;letter-spacing:-.01em}
-.sb-logo span{background:linear-gradient(135deg,var(--accent),var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sb-logo{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:15px;letter-spacing:-.01em}.sb-logo img{width:34px;height:34px;object-fit:contain;border-radius:9px;background:#fff}
 .sb-plan{font-family:var(--mono);font-size:9px;padding:4px 10px;border-radius:var(--radius-pill);background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.2);color:var(--accent);letter-spacing:.06em}
 .sb-org{padding:14px 20px;border-bottom:1px solid var(--border)}
 .sb-org-name{font-size:13px;font-weight:500}
@@ -246,7 +247,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 <!-- AUTH -->
 <div id="auth-screen">
-  <div class="auth-logo">Bot<span>Nesia</span></div>
+  <div class="auth-logo"><img src="/assets/brand/botnesia-logo.png" alt="BotNesia logo"><span>BotNesia</span></div>
   <div class="auth-box">
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="authTab('login',this)">Login</button>
@@ -273,7 +274,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <div id="app">
   <aside>
     <div class="sb-head">
-      <span class="sb-logo">Bot<span>Nesia</span></span>
+      <span class="sb-logo"><img src="/assets/brand/botnesia-logo.png" alt="BotNesia logo"><span>BotNesia</span></span>
       <span class="sb-plan" id="plan-badge">GROWTH</span>
     </div>
     <div class="sb-org">
