@@ -67,7 +67,7 @@ async function loadCore() {
 }
 
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
-function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-logo.png" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
+function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-official-logo.jpeg" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
 
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
@@ -97,7 +97,58 @@ async function renderDashboard() {
   ].join("");
   const agentRows = state.bots.slice(0,5).map((agent) => `<tr data-agent-id="${esc(agent.id)}"><td><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(agent.name)}</span><div><span class="table-title">${esc(agent.name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(agent.id).slice(0,8)}</div></div></div></td><td>${statusBadge(agent.status)}</td><td>${formatNumber(agent.total_convs)}</td><td>${formatNumber(agent.total_msgs)}</td><td><span class="thinking"><i></i><i></i><i></i></span></td></tr>`).join("");
   const queueHtml = queue.length ? queue.slice(0,5).map((item) => activityItem({ channel:item.priority || 'H', title:item.end_user_name || 'Escalated conversation', description:item.reason || `${item.status} · human queue`, time:relativeTime(item.created_at) })).join("") : activities.length ? activities.map(activityItem).join("") : emptyState("No live activity", "Activity appears after your agents receive conversations.");
-  setPage(`${pageHeader("Command Center",`Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Here is what is happening across ${state.org?.name || 'your workspace'}.`,`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button><button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>`)}<div class="grid grid-4">${metrics}</div><div class="grid dashboard-grid" style="margin-top:16px"><div class="card"><div class="card-head"><div><h3>Conversation volume</h3><span class="subtle" style="font-size:9px">30-day customer demand</span></div><span class="status-badge active"><span class="live-dot"></span>Live data</span></div><div class="card-body"><div style="height:250px"><canvas id="overview-chart"></canvas></div></div></div><div class="card"><div class="card-head"><div><h3>Live activity</h3><span class="subtle" style="font-size:9px">Latest agent and handoff events</span></div></div><div class="card-body activity-list">${queueHtml}</div></div></div><div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent fleet</h3><span class="subtle" style="font-size:9px">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>`);
+  const topAgents = state.bots.slice(0,4).map((agent) => `<div class="command-agent-pill" data-agent-id="${esc(agent.id)}"><span class="agent-icon">${initials(agent.name)}</span><div><strong>${esc(agent.name)}</strong><small>${formatNumber(agent.total_convs)} conversations</small></div>${statusBadge(agent.status)}</div>`).join("");
+  setPage(`<section class="command-dashboard">
+    <div class="command-hero">
+      <div>
+        <span class="eyebrow">BOTNESIA COMMAND</span>
+        <h2>AI Business Control Tower</h2>
+        <p>Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Monitor demand, resolution, agent workload, and human handoff risk across ${state.org?.name || 'your workspace'}.</p>
+      </div>
+      <div class="command-hero-actions">
+        <button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>
+        <button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>
+      </div>
+    </div>
+    <div class="grid grid-4 command-metrics">${metrics}</div>
+    <div class="command-grid">
+      <section class="card command-chart-card">
+        <div class="card-head">
+          <div><h3>Conversation Volume</h3><span class="subtle">30-day customer demand and AI response load</span></div>
+          <span class="status-badge active"><span class="live-dot"></span>Live data</span>
+        </div>
+        <div class="card-body">
+          <div class="command-chart-wrap"><canvas id="overview-chart"></canvas></div>
+        </div>
+      </section>
+      <aside class="card command-ai-card">
+        <div class="command-ai-orb">AI</div>
+        <div>
+          <span class="eyebrow">AUTONOMOUS OPS</span>
+          <h3>${activeAgents} active agents online</h3>
+          <p>${resolution}% of conversations are resolved without human handoff.</p>
+        </div>
+        <div class="command-signal-row"><span>Resolution</span><strong>${resolution}%</strong></div>
+        <div class="progress"><span style="width:${Math.min(100, resolution)}%"></span></div>
+        <div class="command-signal-row"><span>Human queue</span><strong>${formatNumber(queue.length)}</strong></div>
+        <div class="progress"><span style="width:${Math.min(100, queue.length * 12)}%"></span></div>
+      </aside>
+    </div>
+    <div class="command-grid command-grid-secondary">
+      <section class="card">
+        <div class="card-head"><div><h3>Live Activity</h3><span class="subtle">Latest customer and escalation signals</span></div></div>
+        <div class="card-body activity-list">${queueHtml}</div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h3>Priority Agents</h3><span class="subtle">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>
+        <div class="card-body command-agent-list">${topAgents || emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>
+      </section>
+    </div>
+    <div class="card command-fleet-card">
+      <div class="card-head"><div><h3>Agent Fleet</h3><span class="subtle">Detailed workload table</span></div></div>
+      ${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}
+    </div>
+  </section>`);
   drawChart("overview", "#overview-chart", analytics?.daily_volume || [], "line");
 }
 

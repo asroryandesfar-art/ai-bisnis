@@ -1,4 +1,4 @@
-const BRAND_LOGO = "/assets/brand/botnesia-logo.png";
+const BRAND_LOGO = "/assets/brand/botnesia-official-logo.jpeg";
 
 const paths = {
   founder:'<path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/><path d="m3 7 6-4 6 5 7-6"/>',
@@ -124,7 +124,7 @@ const navGroups = [
 export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
   const groups = navGroups.map(([section, links]) => [section, links.filter(([key]) => key !== "founder" || founderAccess)]).filter(([, links]) => links.length);
   const items = groups.map(([section, links]) => `<div class="nav-section">${section}</div>${links.map(([key,label]) => `<button class="nav-item ${route===key?'active':''}" data-route="${key}">${icon(key)}<span>${label}</span>${counts[key] !== undefined ? `<span class="nav-count">${counts[key]}</span>` : ''}</button>`).join('')}`).join('');
-  return `<div class="sidebar-head"><a class="brand" href="#dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BotNesia</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
+  return `<div class="sidebar-head"><a class="brand" href="#dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BOTNESIA</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
 }
 
 const routeMeta = {
