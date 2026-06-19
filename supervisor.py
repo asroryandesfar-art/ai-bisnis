@@ -23,6 +23,7 @@ from hr_agent import HRAgent
 from operations_agent import OperationsAgent
 from security_agent import SecurityAgent
 from executive_agent import ExecutiveAgent
+from workforce_orchestrator import WorkforceOrchestratorAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -378,6 +379,11 @@ class SupervisorAgent:
         # lintas-agent (Finance/Marketing/HR/Operations/Security/Sales),
         # juga hanya dipanggil dari endpoint terautentikasi (/api/executive).
         self.executive_agent = ExecutiveAgent(**fast_kwargs)
+
+        # AI Workforce Phase 7 — Workforce Orchestrator. Koordinasi task
+        # lintas-agent, terpisah total dari pipeline chat di bawah ini --
+        # tidak ada perubahan ke _process()/logika chat pelanggan.
+        self.workforce_orchestrator_agent = WorkforceOrchestratorAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

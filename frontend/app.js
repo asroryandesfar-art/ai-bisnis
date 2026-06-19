@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1301,6 +1301,54 @@ async function renderExecutive() {
   <div class="card"><div class="card-head"><h3>Riwayat Executive Brief</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada executive brief", "Generate brief weekly/monthly pertama Anda — AI akan menyintesis 6 domain jadi satu rekomendasi strategis.")}</div>`);
 }
 
+async function renderWorkforce() {
+  loadingPage("Workforce Orchestration", "Koordinasi task lintas-agent: assign, deteksi konflik, eskalasi, dan human approval workflow.");
+  let dashboard, tasksResult;
+  try {
+    [dashboard, tasksResult] = await Promise.all([api.workforceDashboard(), api.workforceTasks({ limit: 50 })]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.workforceDashboard = dashboard; state.workforceTasks = tasksResult.tasks || [];
+
+  const priorityKind = (p) => (p === "critical" || p === "high" ? "error" : (p === "medium" ? "pending" : "active"));
+  const statusKind = (s) => (s === "completed" ? "active" : (s === "escalated" || s === "cancelled" ? "error" : "pending"));
+
+  const taskRows = state.workforceTasks.map((t) => `<tr>
+    <td>${statusBadge('default', t.domain)}</td>
+    <td><span class="table-title">${esc(t.title)}</span>${t.has_conflict ? `<div class="subtle" style="font-size:9px;margin-top:3px;color:var(--danger,#e11d48)">⚠ Konflik: ${esc(t.conflict_note||'')}</div>` : ''}</td>
+    <td>${statusBadge(priorityKind(t.priority), t.priority)}</td>
+    <td>${statusBadge(statusKind(t.status), t.status)}</td>
+    <td>${t.requires_approval ? (t.approved_at ? statusBadge('active','Approved') : statusBadge('pending','Needs approval')) : '—'}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${t.status==='pending' ? `<button class="button" data-workforce-status="${esc(t.id)}:in_progress">Start</button>` : ''}
+      ${t.status!=='completed' && t.status!=='cancelled' ? `<button class="button button-primary" data-workforce-status="${esc(t.id)}:completed">Complete</button><button class="button button-danger" data-workforce-status="${esc(t.id)}:cancelled">Cancel</button>` : ''}
+      ${t.requires_approval && !t.approved_at ? `<button class="button" data-workforce-approve="${esc(t.id)}">Approve</button>` : ''}
+    </div></td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Workforce Orchestration", "Task koordinasi lintas Finance/Marketing/HR/Operations/Security/Executive — eksekusi tetap manual lewat masing-masing domain.",
+    `<button class="button" data-action="workforce-create-task">${icon('plus',14)} Buat Task</button>
+     <button class="button button-primary" data-action="workforce-scan-conflicts">${icon('refresh',14)} Scan Konflik</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Pending", formatNumber(dashboard.by_status?.pending||0), "Task belum dimulai", "workforce")}
+    ${metricCard("In Progress", formatNumber(dashboard.by_status?.in_progress||0), "Sedang dikerjakan", "workforce")}
+    ${metricCard("Butuh Approval", formatNumber(dashboard.pending_approval_count||0), "Menunggu human approval", "workforce", dashboard.pending_approval_count?'trend-down':'trend-up')}
+    ${metricCard("Konflik Terdeteksi", formatNumber(dashboard.conflicts_count||0), "Perlu ditinjau manusia", "workforce", dashboard.conflicts_count?'trend-down':'trend-up')}
+  </div>
+  <div class="card">${taskRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Domain</th><th>Task</th><th>Priority</th><th>Status</th><th>Approval</th><th></th></tr></thead><tbody>${taskRows}</tbody></table></div>` : emptyState("Belum ada task", "Buat task koordinasi pertama untuk salah satu domain AI Workforce.")}</div>`);
+}
+
+async function createWorkforceTaskPrompt() {
+  const domain = prompt("Domain (finance/marketing/hr/operations/security/executive):"); if (!domain) return;
+  const title = prompt("Judul task:"); if (!title) return;
+  const priority = prompt("Priority (low/medium/high/critical):", "medium") || "medium";
+  const needsApproval = confirm("Task ini butuh human approval sebelum bisa diselesaikan?");
+  try {
+    await api.createWorkforceTask({ domain, title, priority, requires_approval: needsApproval });
+    toast("Task dibuat.", "success");
+    await renderWorkforce();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1835,7 +1883,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -2155,6 +2203,10 @@ document.addEventListener("click", async (event) => {
   if(action==="ops-generate-monthly"){ try{ await api.opsGenerateReport("monthly"); toast("Monthly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="executive-generate-weekly"){ try{ await api.generateExecutiveReport("weekly"); toast("Weekly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }
+  if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
+  const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
+  const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();

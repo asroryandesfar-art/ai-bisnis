@@ -852,6 +852,41 @@ CREATE INDEX IF NOT EXISTS idx_ops_alerts_source  ON ops_alerts(org_id, source, 
 CREATE INDEX IF NOT EXISTS idx_ops_reports_source ON ops_reports(org_id, source, created_at DESC);
 
 -- ============================================================
+-- 10g. WORKFORCE ORCHESTRATION (AI Workforce Phase 7)
+-- ============================================================
+-- Koordinasi lintas-agent (Finance/Marketing/HR/Operations/Security/
+-- Executive): assign task, deteksi konflik, eskalasi, human approval.
+-- SENGAJA terpisah total dari supervisor.py (orchestrator chat pelanggan)
+-- -- tidak ada perubahan ke pipeline chat produksi sama sekali. Eksekusi
+-- task tetap lewat endpoint domain masing-masing (manual/human-driven);
+-- tabel ini hanya tracking/koordinasi, bukan execution engine otomatis.
+CREATE TABLE IF NOT EXISTS workforce_tasks (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id            UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    domain            TEXT NOT NULL CHECK (domain IN ('finance','marketing','hr','operations','security','executive')),
+    title             TEXT NOT NULL,
+    description       TEXT,
+    priority          TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high','critical')),
+    status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_progress','blocked','completed','cancelled','escalated')),
+    source_type       TEXT,             -- mis. 'ops_alert' | 'manual' | 'executive_brief'
+    source_id         UUID,
+    assigned_to       UUID REFERENCES users(id) ON DELETE SET NULL,
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    approved_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_at       TIMESTAMPTZ,
+    has_conflict      BOOLEAN NOT NULL DEFAULT FALSE,
+    conflict_note     TEXT,
+    due_at            TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
+    escalated_at      TIMESTAMPTZ,
+    created_by        UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_workforce_tasks_org_status ON workforce_tasks(org_id, status, due_at);
+CREATE INDEX IF NOT EXISTS idx_workforce_tasks_domain     ON workforce_tasks(org_id, domain);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -912,7 +947,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('security.read',      'security',      'Melihat risk level, security alert, dan laporan keamanan'),
  ('security.write',     'security',      'Menjalankan security scan dan menindaklanjuti security alert'),
  ('executive.read',     'executive',     'Melihat company health score dan executive brief'),
- ('executive.write',    'executive',     'Membuat executive brief (sintesis lintas-agent)')
+ ('executive.write',    'executive',     'Membuat executive brief (sintesis lintas-agent)'),
+ ('workforce.read',     'workforce',     'Melihat task koordinasi lintas-agent AI Workforce'),
+ ('workforce.write',    'workforce',     'Membuat/mengubah task koordinasi lintas-agent'),
+ ('workforce.approve',  'workforce',     'Menyetujui task yang butuh human approval')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -944,7 +982,7 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'conversations.assign', 'knowledge.read', 'analytics.read',
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
-                'operations.read', 'operations.write')
+                'operations.read', 'operations.write', 'workforce.read', 'workforce.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -956,7 +994,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)

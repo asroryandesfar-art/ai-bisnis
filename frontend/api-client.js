@@ -300,6 +300,13 @@ export const api = {
   executiveReports: (params = {}) => request(`/api/executive/reports${encodeQuery(params)}`),
   generateExecutiveReport: (report_type) => request("/api/executive/reports/generate", { method: "POST", body: { report_type } }),
   executiveReport: (id) => request(`/api/executive/reports/${id}`),
+  workforceDashboard: () => request("/api/workforce/dashboard"),
+  workforceTasks: (params = {}) => request(`/api/workforce/tasks${encodeQuery(params)}`),
+  createWorkforceTask: (body) => request("/api/workforce/tasks", { method: "POST", body }),
+  updateWorkforceTaskStatus: (id, status) => request(`/api/workforce/tasks/${id}/status`, { method: "PATCH", body: { status } }),
+  assignWorkforceTask: (id, assigned_to) => request(`/api/workforce/tasks/${id}/assign`, { method: "PATCH", body: { assigned_to } }),
+  approveWorkforceTask: (id) => request(`/api/workforce/tasks/${id}/approve`, { method: "POST" }),
+  scanWorkforceConflicts: () => request("/api/workforce/scan-conflicts", { method: "POST" }),
 };
 
 export async function settle(label, promise) {
