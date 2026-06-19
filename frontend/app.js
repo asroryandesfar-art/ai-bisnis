@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","learning","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1349,6 +1349,38 @@ async function createWorkforceTaskPrompt() {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function renderLearning() {
+  loadingPage("Self-Learning Center", "Insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot.");
+  let dashboard, insightsResult;
+  try {
+    [dashboard, insightsResult] = await Promise.all([api.learningDashboard(), api.learningInsights({ limit: 50 })]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.learningDashboard = dashboard; state.learningInsights = insightsResult.insights || [];
+
+  const categoryLabels = { sales_pattern: "Sales Pattern", complaint_resolution: "Complaint Resolution", successful_approach: "Successful Approach" };
+  const statusKind = (s) => (s === "approved" ? "active" : (s === "rejected" ? "error" : (s === "archived" ? "default" : "pending")));
+
+  const insightRows = state.learningInsights.map((i) => `<tr>
+    <td>${statusBadge('default', categoryLabels[i.category] || i.category)}</td>
+    <td><span class="table-title">${esc(i.insight)}</span><div class="subtle" style="font-size:9px;margin-top:3px">Terdeteksi ${formatNumber(i.occurrence_count)}x</div></td>
+    <td>${statusBadge(statusKind(i.status), i.status)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${i.status==='candidate' ? `<button class="button button-primary" data-learning-status="${esc(i.id)}:approved">Approve</button><button class="button button-danger" data-learning-status="${esc(i.id)}:rejected">Reject</button>` : ''}
+      ${i.status==='approved' ? `<button class="button" data-learning-status="${esc(i.id)}:archived">Archive</button>` : ''}
+    </div></td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Self-Learning Center", "AI mendeteksi pola yang terbukti berhasil dari percakapan, sales, dan resolusi komplain — review manusia wajib sebelum insight memengaruhi jawaban bot ke pelanggan.",
+    `<button class="button button-primary" data-action="learning-scan">${icon('refresh',14)} Jalankan Scan</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Candidate", formatNumber(dashboard.by_status?.candidate||0), "Menunggu review", "learning", dashboard.by_status?.candidate?'default':'trend-up')}
+    ${metricCard("Approved", formatNumber(dashboard.by_status?.approved||0), "Aktif di chat", "learning", "trend-up")}
+    ${metricCard("Sales Pattern", formatNumber(dashboard.approved_by_category?.sales_pattern||0), "Approved", "learning")}
+    ${metricCard("Successful Approach", formatNumber(dashboard.approved_by_category?.successful_approach||0), "Approved", "learning")}
+  </div>
+  <div class="card">${insightRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Kategori</th><th>Insight</th><th>Status</th><th></th></tr></thead><tbody>${insightRows}</tbody></table></div>` : emptyState("Belum ada insight", "Jalankan scan untuk mendeteksi pola dari percakapan, sales, dan komplain.")}</div>`);
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1883,7 +1915,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,learning:renderLearning,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -2207,6 +2239,8 @@ document.addEventListener("click", async (event) => {
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="learning-scan"){ try{ const result=await api.learningScan(); toast(`Scan selesai: ${result.insights?.length||0} insight diperbarui.`,"success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
+  const learningStatus=event.target.closest("[data-learning-status]"); if(learningStatus){ const [id,status]=learningStatus.dataset.learningStatus.split(":"); try{ await api.updateLearningInsight(id,status); toast("Insight diperbarui.","success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();

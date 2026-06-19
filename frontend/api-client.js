@@ -307,6 +307,10 @@ export const api = {
   assignWorkforceTask: (id, assigned_to) => request(`/api/workforce/tasks/${id}/assign`, { method: "PATCH", body: { assigned_to } }),
   approveWorkforceTask: (id) => request(`/api/workforce/tasks/${id}/approve`, { method: "POST" }),
   scanWorkforceConflicts: () => request("/api/workforce/scan-conflicts", { method: "POST" }),
+  learningDashboard: () => request("/api/learning/dashboard"),
+  learningInsights: (params = {}) => request(`/api/learning/insights${encodeQuery(params)}`),
+  learningScan: (days = 90) => request(`/api/learning/scan${encodeQuery({ days })}`, { method: "POST" }),
+  updateLearningInsight: (id, status) => request(`/api/learning/insights/${id}`, { method: "PATCH", body: { status } }),
 };
 
 export async function settle(label, promise) {
