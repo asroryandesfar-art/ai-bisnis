@@ -887,6 +887,34 @@ CREATE INDEX IF NOT EXISTS idx_workforce_tasks_org_status ON workforce_tasks(org
 CREATE INDEX IF NOT EXISTS idx_workforce_tasks_domain     ON workforce_tasks(org_id, domain);
 
 -- ============================================================
+-- 10h. SELF LEARNING COMPANY (AI Workforce Phase 8)
+-- ============================================================
+-- Insight terdistilasi dari conversations/sales/complaints/outcomes --
+-- BUKAN duplikat ai_improvement_recommendations (yang fokus ke masalah/
+-- gap), melainkan pola yang TERBUKTI BERHASIL (sales pattern, resolusi
+-- komplain, pendekatan sukses). Hanya insight berstatus 'approved' yang
+-- disuntikkan balik ke system prompt chat (lihat
+-- self_learning_engine.py::build_organizational_learning_context) --
+-- butuh review manusia dulu sebelum memengaruhi jawaban bot ke pelanggan.
+CREATE TABLE IF NOT EXISTS organizational_memory (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id           UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id           UUID REFERENCES bots(id) ON DELETE SET NULL,   -- NULL = berlaku org-wide
+    category         TEXT NOT NULL CHECK (category IN ('sales_pattern','complaint_resolution','successful_approach')),
+    insight          TEXT NOT NULL,
+    evidence         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurrence_count INT NOT NULL DEFAULT 1,
+    status           TEXT NOT NULL DEFAULT 'candidate' CHECK (status IN ('candidate','approved','rejected','archived')),
+    reviewed_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at      TIMESTAMPTZ,
+    dedup_key        TEXT NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, dedup_key)
+);
+CREATE INDEX IF NOT EXISTS idx_org_memory_org_status ON organizational_memory(org_id, status, category);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -950,7 +978,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('executive.write',    'executive',     'Membuat executive brief (sintesis lintas-agent)'),
  ('workforce.read',     'workforce',     'Melihat task koordinasi lintas-agent AI Workforce'),
  ('workforce.write',    'workforce',     'Membuat/mengubah task koordinasi lintas-agent'),
- ('workforce.approve',  'workforce',     'Menyetujui task yang butuh human approval')
+ ('workforce.approve',  'workforce',     'Menyetujui task yang butuh human approval'),
+ ('learning.read',      'learning',      'Melihat insight organizational memory (Self-Learning Company)'),
+ ('learning.write',     'learning',      'Menjalankan learning scan (membuat insight kandidat)'),
+ ('learning.approve',   'learning',      'Menyetujui/menolak insight yang akan memengaruhi jawaban bot')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -982,7 +1013,8 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'conversations.assign', 'knowledge.read', 'analytics.read',
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
-                'operations.read', 'operations.write', 'workforce.read', 'workforce.write')
+                'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
+                'learning.read', 'learning.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -994,7 +1026,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read', 'learning.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)

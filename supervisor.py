@@ -24,6 +24,7 @@ from operations_agent import OperationsAgent
 from security_agent import SecurityAgent
 from executive_agent import ExecutiveAgent
 from workforce_orchestrator import WorkforceOrchestratorAgent
+from self_learning_engine import SelfLearningAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -384,6 +385,12 @@ class SupervisorAgent:
         # lintas-agent, terpisah total dari pipeline chat di bawah ini --
         # tidak ada perubahan ke _process()/logika chat pelanggan.
         self.workforce_orchestrator_agent = WorkforceOrchestratorAgent(**fast_kwargs)
+
+        # AI Workforce Phase 8 — Self Learning Company. Deteksi/distilasi
+        # insight dipanggil hanya dari endpoint terautentikasi
+        # (/api/learning/scan); injeksi ke chat (main.py) murni baca data
+        # 'approved', tanpa LLM, tanpa lewat agent ini.
+        self.self_learning_agent = SelfLearningAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

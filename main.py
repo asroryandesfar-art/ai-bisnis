@@ -4690,6 +4690,17 @@ async def chat(
     if self_knowledge_context:
         system = system + "\n\n" + self_knowledge_context
 
+    # 7.55 AI Workforce Phase 8 — Self Learning Company: insight yang sudah
+    # di-approve manusia (lihat self_learning_engine.py) disuntik sebagai
+    # konteks tambahan, no LLM di sini supaya tidak nambah latensi/biaya.
+    try:
+        from self_learning_engine import build_organizational_learning_context
+        learning_context = await build_organizational_learning_context(pool, str(bot["org_id"]), bot_id)
+    except Exception:
+        learning_context = ""
+    if learning_context:
+        system = system + "\n\n" + learning_context
+
     # 7.6 Chat + Image: deteksi & generate gambar inline (seperti ChatGPT). Dijalankan
     # SEBELUM supervisor supaya jawaban LLM bisa menjelaskan gambar yang sudah dibuat.
     chat_image_url: str | None = None
@@ -5713,6 +5724,7 @@ try:
     from bn_platform.operations import build_operations_router
     from bn_platform.executive import build_executive_router
     from bn_platform.workforce import build_workforce_router
+    from bn_platform.self_learning import build_self_learning_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
 
@@ -5917,6 +5929,14 @@ try:
     )
     app.include_router(
         build_workforce_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_self_learning_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,
