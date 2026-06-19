@@ -66,6 +66,9 @@ PERMISSIONS: dict[str, str] = {
     "marketing.read":      "Melihat campaign, konten, kalender, dan analitik marketing",
     "marketing.write":     "Membuat/mengubah campaign, konten, dan menjadwalkan publikasi",
     "marketing.approve":   "Menyetujui konten sebelum dipublikasikan",
+    "hr.read":             "Melihat data kandidat, karyawan, evaluasi, dan training",
+    "hr.write":            "Membuat/mengubah kandidat, karyawan, dan rencana training",
+    "hr.approve":          "Menyetujui (finalisasi) evaluasi karyawan",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -77,7 +80,7 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "bots.read", "conversations.read", "conversations.reply",
         "conversations.assign", "knowledge.read", "analytics.read",
         "team.read", "billing.read", "finance.read", "finance.write",
-        "marketing.read", "marketing.write",
+        "marketing.read", "marketing.write", "hr.read", "hr.write",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
     "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read"},
