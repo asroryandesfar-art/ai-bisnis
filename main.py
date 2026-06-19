@@ -5711,6 +5711,7 @@ try:
     from bn_platform.marketing import build_marketing_router
     from bn_platform.hr import build_hr_router
     from bn_platform.operations import build_operations_router
+    from bn_platform.executive import build_executive_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
 
@@ -5899,6 +5900,14 @@ try:
     )
     app.include_router(
         build_operations_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_executive_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,

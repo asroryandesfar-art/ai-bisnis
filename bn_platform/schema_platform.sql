@@ -910,7 +910,9 @@ INSERT INTO permissions (key, category, description) VALUES
  ('operations.read',    'operations',    'Melihat health score, alert, dan laporan operasional'),
  ('operations.write',   'operations',    'Menjalankan scan operasional dan menindaklanjuti alert'),
  ('security.read',      'security',      'Melihat risk level, security alert, dan laporan keamanan'),
- ('security.write',     'security',      'Menjalankan security scan dan menindaklanjuti security alert')
+ ('security.write',     'security',      'Menjalankan security scan dan menindaklanjuti security alert'),
+ ('executive.read',     'executive',     'Melihat company health score dan executive brief'),
+ ('executive.write',    'executive',     'Membuat executive brief (sintesis lintas-agent)')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap

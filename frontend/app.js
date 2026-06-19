@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1249,6 +1249,58 @@ async function renderOperations() {
   <div class="card"><div class="card-head"><h3>Laporan</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada laporan", "Generate laporan weekly/monthly pertama Anda.")}</div>`);
 }
 
+async function renderExecutive() {
+  loadingPage("Executive Center", "AI CEO Assistant — company health score dan executive brief lintas Finance/Marketing/HR/Operations/Security/Sales.");
+  let dashboard, reports;
+  try {
+    [dashboard, reports] = await Promise.all([api.executiveDashboard(), api.executiveReports({ limit: 10 })]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.executiveDashboard = dashboard; state.executiveReports = reports.reports || [];
+
+  const health = dashboard.health || {};
+  const byDomain = health.by_domain || {};
+  const healthTrend = health.label === "healthy" ? "trend-up" : (health.label === "warning" ? "default" : "trend-down");
+
+  const domainLabels = { finance: "Finance", marketing: "Marketing", hr: "HR", operations: "Operations", security: "Security", sales: "Sales" };
+  const domainCards = Object.entries(domainLabels).map(([key, label]) =>
+    metricCard(label, `${byDomain[key] ?? "—"}`, "Sub-score", "executive", byDomain[key] >= 80 ? "trend-up" : (byDomain[key] >= 50 ? "default" : "trend-down"))
+  ).join("");
+
+  let briefHtml = "";
+  if (state.executiveReports.length) {
+    try {
+      const full = await api.executiveReport(state.executiveReports[0].id);
+      const brief = full.data?.brief || {};
+      const listBlock = (title, items) => (items || []).length
+        ? `<div style="margin-bottom:12px"><div class="subtle" style="font-size:10px;text-transform:uppercase;margin-bottom:4px">${esc(title)}</div><ul style="margin:0;padding-left:18px">${items.map((item) => `<li style="font-size:12px;margin-bottom:4px">${esc(item)}</li>`).join("")}</ul></div>`
+        : "";
+      briefHtml = `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Executive Brief Terbaru</h3><span class="subtle mono" style="font-size:9px">${esc(full.report_type || "")}</span></div>
+        ${brief.executive_summary ? `<p style="font-size:13px;margin-bottom:14px">${esc(brief.executive_summary)}</p>` : ""}
+        ${listBlock("Growth Recommendations", brief.growth_recommendations)}
+        ${listBlock("Cost Optimization", brief.cost_optimization)}
+        ${listBlock("Revenue Opportunities", brief.revenue_opportunities)}
+        ${listBlock("Strategic Insights", brief.strategic_insights)}
+      </div>`;
+    } catch { /* tetap tampilkan dashboard meski brief detail gagal dimuat */ }
+  }
+
+  const reportRows = state.executiveReports.map((r) => `<tr>
+    <td>${statusBadge('default', r.report_type)}</td>
+    <td>${esc((r.summary || '').slice(0,100))}${(r.summary||'').length>100?'…':''}</td>
+    <td>${relativeTime(r.created_at)}</td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Executive Center", "AI CEO Assistant: sintesis lintas-domain jadi satu company health score & rekomendasi strategis.",
+    `<button class="button" data-action="executive-generate-weekly">Generate Weekly Brief</button>
+     <button class="button button-primary" data-action="executive-generate-monthly">Generate Monthly Brief</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Company Health Score", `${health.overall ?? "—"}`, health.label || "—", "executive", healthTrend)}
+    ${domainCards}
+  </div>
+  ${briefHtml}
+  <div class="card"><div class="card-head"><h3>Riwayat Executive Brief</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada executive brief", "Generate brief weekly/monthly pertama Anda — AI akan menyintesis 6 domain jadi satu rekomendasi strategis.")}</div>`);
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1783,7 +1835,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -2101,6 +2153,8 @@ document.addEventListener("click", async (event) => {
   if(action==="ops-scan"){ try{ const result=await api.opsScan(); toast(`Scan selesai: ${result.alerts_created?.length||0} alert baru.`,"success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="ops-generate-weekly"){ try{ await api.opsGenerateReport("weekly"); toast("Weekly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="ops-generate-monthly"){ try{ await api.opsGenerateReport("monthly"); toast("Monthly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="executive-generate-weekly"){ try{ await api.generateExecutiveReport("weekly"); toast("Weekly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();

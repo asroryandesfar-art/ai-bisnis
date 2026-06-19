@@ -18,6 +18,7 @@ const paths = {
   marketing:'<path d="M3 11v2a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 8a4 4 0 0 1 0 8M19 5a8 8 0 0 1 0 14"/>',
   hr:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-1a6 6 0 0 1 6-6h0a6 6 0 0 1 6 6v1"/><path d="M17 11a3 3 0 1 0 0-6M21 21v-1a5 5 0 0 0-4-4.9"/>',
   operations:'<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/><circle cx="12" cy="12" r="4"/>',
+  executive:'<path d="M3 21h18M6 21V10l6-4 6 4v11M9 21v-6h6v6"/>',
   multimedia:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 14 4-4 3 3 5-5 4 4"/><path d="M8 21h8"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
   security:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
@@ -110,7 +111,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 const navGroups = [
   ["FOUNDER", [["founder","Founder OS"]]],
   ["OPERATIONS", [["dashboard","Command Center"],["agents","AI Agents"],["chat","AI Chat"],["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["finance","Finance Center"],["marketing","Marketing Center"],["hr","HR Center"],["operations","Operations Center"],["multimedia","Multimedia Studio"],["team","Team & Tenants"],["billing","Billing"]]],
+  ["PLATFORM", [["channels","Channels"],["marketplace","Agent Marketplace"],["knowledge","Knowledge Base"],["kb-builder","Knowledge Builder"],["workflow-builder","Workflow Builder"],["finance","Finance Center"],["marketing","Marketing Center"],["hr","HR Center"],["operations","Operations Center"],["executive","Executive Center"],["multimedia","Multimedia Studio"],["team","Team & Tenants"],["billing","Billing"]]],
   ["SYSTEM", [["security","Security"],["settings","Settings"]]],
 ];
 
@@ -140,6 +141,7 @@ const routeMeta = {
   marketing:["Marketing Center","AI Workforce: generate konten IG/TikTok/Facebook/Blog/Email/WhatsApp, content calendar, dan engagement tracking"],
   hr:["HR Center","AI Workforce: CV screening, candidate scoring, interview questions, evaluasi karyawan, dan rekomendasi training"],
   operations:["Operations Center","AI Workforce: tenant health, workflow & SLA monitoring, weekly/monthly report, dan critical alert"],
+  executive:["Executive Center","AI Workforce: AI CEO Assistant — company health score, executive brief, growth/cost/revenue insight lintas-domain"],
   multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
   security:["Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management"],

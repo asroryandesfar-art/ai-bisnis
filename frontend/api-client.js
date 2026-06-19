@@ -296,6 +296,10 @@ export const api = {
   opsReports: (params = {}) => request(`/api/operations/reports${encodeQuery(params)}`),
   opsGenerateReport: (report_type) => request("/api/operations/reports/generate", { method: "POST", body: { report_type } }),
   opsReport: (id) => request(`/api/operations/reports/${id}`),
+  executiveDashboard: () => request("/api/executive/dashboard"),
+  executiveReports: (params = {}) => request(`/api/executive/reports${encodeQuery(params)}`),
+  generateExecutiveReport: (report_type) => request("/api/executive/reports/generate", { method: "POST", body: { report_type } }),
+  executiveReport: (id) => request(`/api/executive/reports/${id}`),
 };
 
 export async function settle(label, promise) {
