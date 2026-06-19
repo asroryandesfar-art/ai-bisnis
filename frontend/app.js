@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","learning","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1337,6 +1337,62 @@ async function renderWorkforce() {
   <div class="card">${taskRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Domain</th><th>Task</th><th>Priority</th><th>Status</th><th>Approval</th><th></th></tr></thead><tbody>${taskRows}</tbody></table></div>` : emptyState("Belum ada task", "Buat task koordinasi pertama untuk salah satu domain AI Workforce.")}</div>`);
 }
 
+async function renderWorkforceOverview() {
+  loadingPage("AI Workforce Overview", "Company health score lintas Finance/Marketing/HR/Operations/Security/Executive dalam satu tampilan.");
+  const results = await Promise.all([
+    settle("finance", api.financeDashboard()),
+    settle("marketing", api.marketingDashboard()),
+    settle("hr", api.hrDashboard()),
+    settle("operations", api.opsDashboard()),
+    settle("security", api.securityDashboard()),
+    settle("executive", api.executiveDashboard()),
+    settle("workforce", api.workforceDashboard()),
+    settle("learning", api.learningDashboard()),
+  ]);
+  const data = Object.fromEntries(results.filter((result) => result.ok).map((result) => [result.label, result.data]));
+  const failed = results.filter((result) => !result.ok);
+  const executiveHealth = data.executive?.health || {};
+  const opsHealth = data.operations?.health || {};
+  const securityRisk = data.security?.risk_level || "—";
+  const workforceStatus = data.workforce?.by_status || {};
+  const learningStatus = data.learning?.by_status || {};
+  const revenue = data.finance?.revenue_30d_idr ?? data.finance?.total_revenue_idr ?? data.finance?.revenue_idr ?? 0;
+  const marketingContent = data.marketing?.content_30d ?? data.marketing?.scheduled_content_count ?? data.marketing?.published_content_count ?? 0;
+  const hrPending = data.hr?.pending_training_recommendations ?? data.hr?.open_candidates_count ?? data.hr?.active_employees_count ?? 0;
+  const openOpsAlerts = Object.values(data.operations?.open_alerts_by_severity || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const securityOpenAlerts = data.security?.open_risk_alerts_count ?? data.security?.security_events_24h ?? 0;
+  const healthTrend = executiveHealth.label === "healthy" ? "trend-up" : (executiveHealth.label === "critical" ? "trend-down" : "");
+
+  const domainRows = [
+    ["Finance", idr(revenue), `${formatNumber(data.finance?.pending_invoices_count || 0)} invoice pending`, "finance", "finance"],
+    ["Marketing", formatNumber(marketingContent), "Konten/kampanye aktif", "marketing", "marketing"],
+    ["HR", formatNumber(hrPending), "Training/kandidat perlu review", "hr", "hr"],
+    ["Operations", opsHealth.score ?? "—", `${formatNumber(openOpsAlerts)} alert terbuka`, "operations", "operations"],
+    ["Security", securityRisk, `${formatNumber(securityOpenAlerts)} sinyal risiko`, "security", "security"],
+    ["Executive", executiveHealth.overall ?? "—", executiveHealth.label || "Company health", "executive", "executive"],
+    ["Workforce", formatNumber((workforceStatus.pending || 0) + (workforceStatus.in_progress || 0)), "Task aktif lintas-agent", "workforce", "workforce"],
+    ["Self-Learning", formatNumber(learningStatus.candidate || 0), "Insight menunggu approval", "self-learning", "self-learning"],
+  ].map(([label, value, meta, iconName, routeName]) =>
+    `<article class="card metric-card card-hover" data-route="${routeName}"><div class="metric-top"><span class="metric-label">${esc(label)}</span><span class="metric-icon">${icon(iconName,16)}</span></div><div class="metric-value">${value}</div><div class="metric-meta">${esc(meta)}</div></article>`
+  ).join("");
+
+  const failedNote = failed.length
+    ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((result) => `${result.label}: ${result.error.message}`).join(" · "))}</p></div></div>`
+    : "";
+
+  setPage(`${pageHeader("AI Workforce Overview", "Satu ringkasan untuk membaca kondisi perusahaan dan langsung masuk ke domain AI Workforce yang perlu perhatian.",
+    `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>
+     <button class="button button-primary" data-route="workforce">${icon('arrow',14)} Lihat Task</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Company Health", executiveHealth.overall ?? "—", executiveHealth.label || "Executive score", "executive", healthTrend)}
+    ${metricCard("Operations Health", opsHealth.score ?? "—", opsHealth.label || "Operational score", "operations", opsHealth.label === "healthy" ? "trend-up" : "")}
+    ${metricCard("Security Risk", securityRisk, "Risk posture", "security", securityRisk === "low" ? "trend-up" : "trend-down")}
+    ${metricCard("Active Workforce Tasks", formatNumber((workforceStatus.pending || 0) + (workforceStatus.in_progress || 0)), `${formatNumber(data.workforce?.pending_approval_count || 0)} butuh approval`, "workforce", data.workforce?.pending_approval_count ? "trend-down" : "trend-up")}
+  </div>
+  <div class="grid grid-4">${domainRows}</div>
+  ${failedNote}`);
+}
+
 async function createWorkforceTaskPrompt() {
   const domain = prompt("Domain (finance/marketing/hr/operations/security/executive):"); if (!domain) return;
   const title = prompt("Judul task:"); if (!title) return;
@@ -1915,7 +1971,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,learning:renderLearning,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
