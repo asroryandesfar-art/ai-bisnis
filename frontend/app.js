@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -977,6 +977,88 @@ function deleteWorkflowEdge(edgeId) {
   updateWorkflowEdgeLines();
 }
 
+function formatIDR(amount) { return `Rp ${formatNumber(Math.round(Number(amount || 0)))}`; }
+
+async function renderFinance() {
+  loadingPage("Finance Center", "Invoice, expense, dan laporan keuangan bisnis Anda — dikelola oleh AI Workforce.");
+  let dashboard, invoices, expenses;
+  try {
+    [dashboard, invoices, expenses] = await Promise.all([
+      api.financeDashboard(), api.financeInvoices({ limit: 50 }), api.financeExpenses({ limit: 50 }),
+    ]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.financeDashboard = dashboard; state.financeInvoices = invoices.invoices || []; state.financeExpenses = expenses.expenses || [];
+
+  const invoiceRows = state.financeInvoices.map((inv) => `<tr>
+    <td><span class="table-title">${esc(inv.invoice_number)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(inv.customer_name)}</div></td>
+    <td>${formatIDR(inv.amount_idr)}</td>
+    <td>${statusBadge(inv.status, inv.status)}</td>
+    <td>${relativeTime(inv.due_date)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${inv.status === "draft" ? `<button class="button" data-finance-invoice-status="${esc(inv.id)}:sent">Kirim</button>` : ""}
+      ${inv.status === "sent" || inv.status === "overdue" ? `<button class="button button-primary" data-finance-invoice-status="${esc(inv.id)}:paid">Tandai lunas</button>` : ""}
+      ${inv.status !== "paid" && inv.status !== "cancelled" ? `<button class="button button-danger" data-finance-invoice-status="${esc(inv.id)}:cancelled">Batalkan</button>` : ""}
+    </div></td>
+  </tr>`).join("");
+
+  const expenseRows = state.financeExpenses.map((exp) => `<tr>
+    <td><span class="table-title">${esc(exp.description)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(exp.category)}</div></td>
+    <td>${formatIDR(exp.amount_idr)}</td>
+    <td>${statusBadge(exp.status, exp.status)}</td>
+    <td>${relativeTime(exp.expense_date)}</td>
+    <td>${exp.status === "recorded" ? `<div style="display:flex;gap:6px"><button class="button button-primary" data-finance-expense-approve="${esc(exp.id)}:1">Approve</button><button class="button button-danger" data-finance-expense-approve="${esc(exp.id)}:0">Reject</button></div>` : ""}</td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Finance Center", "Generate invoice, catat expense, dan pantau revenue/profit/cashflow bisnis Anda — semua aksi tercatat di audit log.",
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="button" data-action="finance-ask-ai">${icon("chat", 14)} Tanya AI Finance</button>
+      <button class="button" data-action="finance-new-expense">Catat Expense</button>
+      <button class="button button-primary" data-action="finance-new-invoice">${icon("plus", 14)} Buat Invoice</button>
+    </div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Revenue (30d)", formatIDR(dashboard.revenue_30d_idr), "Income tercatat", "finance", "trend-up")}
+    ${metricCard("Profit (30d)", formatIDR(dashboard.profit_30d_idr), "Revenue - expense", "finance", dashboard.profit_30d_idr >= 0 ? "trend-up" : "trend-down")}
+    ${metricCard("MRR / ARR", `${formatIDR(dashboard.mrr_idr)} / ${formatIDR(dashboard.arr_idr)}`, `Churn ${dashboard.churn_pct}%`, "finance")}
+    ${metricCard("Invoice Pending", formatNumber(dashboard.pending_invoices_count), `${formatIDR(dashboard.pending_invoices_amount_idr)} · ${formatNumber(dashboard.overdue_invoices_count)} overdue`, "finance", dashboard.overdue_invoices_count ? "trend-down" : "trend-up")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Invoices</h3></div>${invoiceRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Jumlah</th><th>Status</th><th>Jatuh tempo</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table></div>` : emptyState("Belum ada invoice", "Buat invoice pertama untuk pelanggan Anda.")}</div>
+  <div class="card"><div class="card-head"><h3>Expenses</h3></div>${expenseRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Expense</th><th>Jumlah</th><th>Status</th><th>Tanggal</th><th></th></tr></thead><tbody>${expenseRows}</tbody></table></div>` : emptyState("Belum ada expense", "Catat pengeluaran bisnis untuk laporan profit yang akurat.")}</div>`);
+}
+
+async function createInvoicePrompt() {
+  const customer_name = prompt("Nama pelanggan:"); if (!customer_name) return;
+  const amount_raw = prompt("Jumlah invoice (Rp, angka saja):"); if (!amount_raw) return;
+  const amount_idr = parseInt(amount_raw.replace(/[^0-9]/g, ""), 10);
+  if (!amount_idr || amount_idr <= 0) { toast("Jumlah tidak valid", "error"); return; }
+  try {
+    await api.financeCreateInvoice({ customer_name, amount_idr });
+    toast("Invoice dibuat.", "success");
+    await renderFinance();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function createExpensePrompt() {
+  const description = prompt("Deskripsi expense:"); if (!description) return;
+  const category = prompt("Kategori (operasional/gaji/marketing/sewa/lainnya):", "lainnya") || "lainnya";
+  const amount_raw = prompt("Jumlah (Rp, angka saja):"); if (!amount_raw) return;
+  const amount_idr = parseInt(amount_raw.replace(/[^0-9]/g, ""), 10);
+  if (!amount_idr || amount_idr <= 0) { toast("Jumlah tidak valid", "error"); return; }
+  try {
+    await api.financeCreateExpense({ description, category, amount_idr });
+    toast("Expense dicatat.", "success");
+    await renderFinance();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function askFinanceAiPrompt() {
+  const text = prompt("Tulis permintaan finance (contoh: 'Buatkan invoice untuk Budi Rp 500000'):"); if (!text) return;
+  try {
+    const result = await api.financeParse(text);
+    toast(`AI Finance: ${result?.intent?.action || "unknown"} berhasil diproses.`, "success");
+    await renderFinance();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1485,7 +1567,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1781,6 +1863,11 @@ document.addEventListener("click", async (event) => {
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan) await checkout(plan.dataset.checkoutPlan);
+  if(action==="finance-new-invoice") await createInvoicePrompt();
+  if(action==="finance-new-expense") await createExpensePrompt();
+  if(action==="finance-ask-ai") await askFinanceAiPrompt();
+  const financeInvoiceStatus=event.target.closest("[data-finance-invoice-status]"); if(financeInvoiceStatus){ const [id,status]=financeInvoiceStatus.dataset.financeInvoiceStatus.split(":"); try{ await api.financeUpdateInvoiceStatus(id,status); toast("Status invoice diperbarui.","success"); await renderFinance(); }catch(error){ toast(error.message,"error"); } return; }
+  const financeExpenseApprove=event.target.closest("[data-finance-expense-approve]"); if(financeExpenseApprove){ const [id,approve]=financeExpenseApprove.dataset.financeExpenseApprove.split(":"); try{ await api.financeApproveExpense(id, approve==="1"); toast("Status expense diperbarui.","success"); await renderFinance(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();
   if(action==="wf-save") await saveWorkflow();

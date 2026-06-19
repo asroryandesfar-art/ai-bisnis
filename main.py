@@ -183,6 +183,7 @@ class Settings(BaseSettings):
     storage_bucket:       str = "botnesia-docs"
     app_name:             str = "BotNesia"
     app_url:              str = "https://botnesia.id"
+    cors_allowed_origins: str = "*"  # comma-separated, "*" = allow semua (default lama)
 
     class Config:
         env_file = ".env"
@@ -339,9 +340,11 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+_cors_origins_raw = (cfg.cors_allowed_origins or "*").strip()
+_cors_origins = ["*"] if _cors_origins_raw == "*" else [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Ganti dengan domain spesifik di production
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -5704,6 +5707,7 @@ try:
     from bn_platform.knowledge_builder import build_knowledge_builder_router
     from bn_platform.workflow_builder import build_workflow_builder_router
     from bn_platform.improvement_engine import build_improvement_router
+    from bn_platform.finance import build_finance_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
 
@@ -5862,6 +5866,14 @@ try:
         build_improvement_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_finance_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
         ),
         prefix="/api",
     )

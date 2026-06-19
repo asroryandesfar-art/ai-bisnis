@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS roles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_roles_org ON roles(org_id);
+-- UNIQUE (org_id, key) di atas TIDAK berlaku untuk role sistem (org_id NULL)
+-- -- Postgres menganggap NULL selalu berbeda satu sama lain di unique
+-- constraint, jadi ON CONFLICT (org_id, key) tidak pernah ke-trigger untuk
+-- baris ini. Index partial ini menutup celahnya (lihat scripts/dedupe_system_roles.sql
+-- untuk pembersihan data lama yang sudah terlanjur terduplikasi).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_system_key_unique ON roles(key) WHERE org_id IS NULL;
 
 CREATE TABLE IF NOT EXISTS role_permissions (
     role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -549,6 +555,105 @@ SELECT
 FROM organizations o;
 
 -- ============================================================
+-- 10b. FINANCE AGENT (AI Workforce Phase 1)
+-- ============================================================
+-- Keuangan BISNIS TENANT sendiri (invoice ke pelanggan mereka, expense,
+-- laporan) -- terpisah total dari tabel `invoices`/`subscriptions` di atas
+-- (itu billing SaaS BotNesia ke tenant). Nama tabel diberi prefix
+-- `finance_` justru untuk menghindari tabrakan nama dengan `invoices` yang
+-- sudah dipakai billing.
+
+CREATE TABLE IF NOT EXISTS finance_invoices (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id          UUID REFERENCES bots(id) ON DELETE SET NULL,
+    invoice_number  TEXT NOT NULL,           -- 'INV-2026-000001', unik per tenant (bukan global)
+    customer_name   TEXT NOT NULL,
+    customer_contact TEXT,                   -- email/telepon pelanggan tenant (opsional)
+    amount_idr      BIGINT NOT NULL,
+    currency        TEXT NOT NULL DEFAULT 'IDR',
+    line_items      JSONB NOT NULL DEFAULT '[]'::jsonb,   -- [{"name":..,"qty":..,"price_idr":..}]
+    status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','sent','paid','overdue','cancelled')),
+    is_recurring    BOOLEAN NOT NULL DEFAULT FALSE,        -- dasar hitung MRR/ARR/churn tenant
+    notes           TEXT,
+    due_date        TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+    sent_at         TIMESTAMPTZ,
+    paid_at         TIMESTAMPTZ,
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, invoice_number)
+);
+CREATE INDEX IF NOT EXISTS idx_finance_invoices_org_created ON finance_invoices(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_invoices_status      ON finance_invoices(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_finance_invoices_due         ON finance_invoices(org_id, due_date);
+
+CREATE TABLE IF NOT EXISTS finance_payments (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    invoice_id  UUID REFERENCES finance_invoices(id) ON DELETE SET NULL,
+    amount_idr  BIGINT NOT NULL,
+    method      TEXT NOT NULL DEFAULT 'transfer',  -- 'cash'|'transfer'|'qris'|'other'
+    paid_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    notes       TEXT,
+    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_payments_org_paid ON finance_payments(org_id, paid_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_payments_invoice  ON finance_payments(invoice_id);
+
+CREATE TABLE IF NOT EXISTS finance_expenses (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    category     TEXT NOT NULL DEFAULT 'lainnya',  -- 'operasional'|'gaji'|'marketing'|'sewa'|'lainnya'
+    description  TEXT NOT NULL,
+    amount_idr   BIGINT NOT NULL,
+    expense_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status       TEXT NOT NULL DEFAULT 'recorded' CHECK (status IN ('recorded','approved','rejected')),
+    created_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_at  TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_expenses_org_date ON finance_expenses(org_id, expense_date DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_expenses_status   ON finance_expenses(org_id, status);
+
+-- Ledger gabungan (auto-terisi tiap kali invoice dibayar / payment dicatat /
+-- expense dicatat) -- satu sumber data konsisten untuk semua laporan
+-- (revenue/profit/cashflow), supaya logika agregasi tidak terduplikasi
+-- di banyak tempat.
+CREATE TABLE IF NOT EXISTS finance_transactions (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL CHECK (type IN ('income','expense')),
+    category    TEXT NOT NULL DEFAULT 'lainnya',
+    amount_idr  BIGINT NOT NULL,
+    source_type TEXT NOT NULL,        -- 'invoice'|'payment'|'expense'|'manual'
+    source_id   UUID,
+    description TEXT,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_tx_org_occurred ON finance_transactions(org_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_tx_org_type     ON finance_transactions(org_id, type);
+
+-- Snapshot laporan yang sudah dihasilkan (revenue/profit/cashflow/forecast)
+-- -- cache ringan untuk histori, bukan satu-satunya sumber data (laporan
+-- selalu bisa dihitung ulang langsung dari finance_transactions).
+CREATE TABLE IF NOT EXISTS finance_reports (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    report_type   TEXT NOT NULL CHECK (report_type IN ('revenue','profit','cashflow','forecast')),
+    period_start  TIMESTAMPTZ NOT NULL,
+    period_end    TIMESTAMPTZ NOT NULL,
+    data          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    generated_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_reports_org_type ON finance_reports(org_id, report_type, created_at DESC);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -594,7 +699,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('settings.manage',    'settings',      'Mengubah pengaturan organisasi, channel, integrasi'),
  ('apikeys.manage',     'settings',      'Membuat & mencabut API key'),
  ('audit.read',         'security',      'Melihat audit log'),
- ('marketplace.install','settings',      'Memasang template dari marketplace')
+ ('marketplace.install','settings',      'Memasang template dari marketplace'),
+ ('finance.read',       'finance',       'Melihat invoice, expense, dan laporan keuangan tenant'),
+ ('finance.write',      'finance',       'Membuat/mengubah invoice, expense, dan pembayaran tenant'),
+ ('finance.approve',    'finance',       'Menyetujui/menolak expense dan keputusan keuangan penting')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -605,7 +713,7 @@ INSERT INTO roles (org_id, key, name, description, is_system) VALUES
  (NULL, 'manager', 'Manager', 'Mengelola percakapan, inbox, & melihat analitik', TRUE),
  (NULL, 'agent',   'Agent',   'Membalas percakapan yang ditugaskan (human handoff)', TRUE),
  (NULL, 'viewer',  'Viewer',  'Akses lihat-saja ke dashboard & laporan', TRUE)
-ON CONFLICT (org_id, key) DO NOTHING;
+ON CONFLICT (key) WHERE org_id IS NULL DO NOTHING;
 
 -- Pemetaan role sistem -> permission (least-privilege per level)
 INSERT INTO role_permissions (role_id, permission_id)
@@ -624,7 +732,7 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'manager'
   AND p.key IN ('bots.read', 'conversations.read', 'conversations.reply',
                 'conversations.assign', 'knowledge.read', 'analytics.read',
-                'team.read', 'billing.read')
+                'team.read', 'billing.read', 'finance.read', 'finance.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -636,7 +744,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)
