@@ -798,6 +798,45 @@ CREATE INDEX IF NOT EXISTS idx_hr_training_employee ON hr_training_records(emplo
 CREATE INDEX IF NOT EXISTS idx_hr_training_org       ON hr_training_records(org_id, status);
 
 -- ============================================================
+-- 10e. OPERATIONS AGENT (AI Workforce Phase 4)
+-- ============================================================
+-- Tenant health/workflow/SLA monitoring + weekly/monthly report + critical
+-- alert. SENGAJA tidak menduplikasi data -- hanya AGREGASI read-only dari
+-- tabel yang sudah ada (workflow_executions, human_queue,
+-- ai_improvement_recommendations, conversations), mirip pola
+-- improvement_engine.py. Hanya 2 tabel baru: alert + snapshot laporan.
+
+CREATE TABLE IF NOT EXISTS ops_alerts (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    severity        TEXT NOT NULL CHECK (severity IN ('low','medium','high','critical')),
+    category        TEXT NOT NULL,   -- 'sla_breach' | 'workflow_failure' | 'tenant_inactivity' | 'improvement_backlog'
+    message         TEXT NOT NULL,
+    source_type     TEXT,
+    source_id       UUID,
+    status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved')),
+    acknowledged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    acknowledged_at TIMESTAMPTZ,
+    resolved_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ops_alerts_org_status ON ops_alerts(org_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ops_alerts_category    ON ops_alerts(org_id, category);
+
+CREATE TABLE IF NOT EXISTS ops_reports (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    report_type  TEXT NOT NULL CHECK (report_type IN ('weekly','monthly')),
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end   TIMESTAMPTZ NOT NULL,
+    data         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    summary      TEXT,
+    generated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ops_reports_org_type ON ops_reports(org_id, report_type, created_at DESC);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -852,7 +891,9 @@ INSERT INTO permissions (key, category, description) VALUES
  ('marketing.approve',  'marketing',     'Menyetujui konten sebelum dipublikasikan'),
  ('hr.read',            'hr',            'Melihat data kandidat, karyawan, evaluasi, dan training'),
  ('hr.write',           'hr',            'Membuat/mengubah kandidat, karyawan, dan rencana training'),
- ('hr.approve',         'hr',            'Menyetujui (finalisasi) evaluasi karyawan')
+ ('hr.approve',         'hr',            'Menyetujui (finalisasi) evaluasi karyawan'),
+ ('operations.read',    'operations',    'Melihat health score, alert, dan laporan operasional'),
+ ('operations.write',   'operations',    'Menjalankan scan operasional dan menindaklanjuti alert')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -883,7 +924,8 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
   AND p.key IN ('bots.read', 'conversations.read', 'conversations.reply',
                 'conversations.assign', 'knowledge.read', 'analytics.read',
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
-                'marketing.read', 'marketing.write', 'hr.read', 'hr.write')
+                'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
+                'operations.read', 'operations.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -895,7 +937,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)

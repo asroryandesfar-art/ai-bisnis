@@ -69,6 +69,8 @@ PERMISSIONS: dict[str, str] = {
     "hr.read":             "Melihat data kandidat, karyawan, evaluasi, dan training",
     "hr.write":            "Membuat/mengubah kandidat, karyawan, dan rencana training",
     "hr.approve":          "Menyetujui (finalisasi) evaluasi karyawan",
+    "operations.read":     "Melihat health score, alert, dan laporan operasional",
+    "operations.write":    "Menjalankan scan operasional dan menindaklanjuti alert",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -81,9 +83,10 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "conversations.assign", "knowledge.read", "analytics.read",
         "team.read", "billing.read", "finance.read", "finance.write",
         "marketing.read", "marketing.write", "hr.read", "hr.write",
+        "operations.read", "operations.write",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
-    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read"},
+    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read"},
 }
 
 ROLE_ORDER = ["owner", "admin", "manager", "agent", "viewer"]
