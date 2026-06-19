@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BotNesia API Docs</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32x32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
   :root {
     --bg: #0a0a0a; --surface: #111; --border: #1e1e1e;
@@ -16,8 +19,8 @@
 
   /* SIDEBAR */
   aside { background: var(--surface); border-right: 1px solid var(--border); padding: 24px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-  .logo { font-size: 14px; font-weight: 500; padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-  .logo span { color: var(--accent); }
+  .logo { display:flex; align-items:center; gap:10px; font-size: 14px; font-weight: 500; padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .logo img { width:34px; height:34px; object-fit:contain; border-radius:8px; background:#fff; }
   .nav-group { margin-bottom: 8px; }
   .nav-group-title { font-size: 10px; letter-spacing: .12em; color: var(--muted); padding: 6px 20px; text-transform: uppercase; }
   .nav-item { display: block; padding: 7px 20px; color: var(--muted); text-decoration: none; cursor: pointer; transition: color .15s, background .15s; border-left: 2px solid transparent; font-size: 12px; }
@@ -68,7 +71,7 @@
 <body>
 
 <aside>
-  <div class="logo">Bot<span>Nesia</span> API</div>
+  <div class="logo"><img src="/assets/brand/botnesia-logo.png" alt="BotNesia logo"><span>BotNesia API</span></div>
 
   <div class="nav-group">
     <div class="nav-group-title">Auth</div>
