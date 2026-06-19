@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1122,6 +1122,88 @@ async function generateMarketingContentPrompt() {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function renderHR() {
+  loadingPage("HR Center", "CV screening, candidate scoring, interview questions, evaluasi karyawan, dan rekomendasi training — dikelola oleh AI Workforce.");
+  let dashboard, candidates, employees;
+  try {
+    [dashboard, candidates, employees] = await Promise.all([
+      api.hrDashboard(), api.hrCandidates({ limit: 50 }), api.hrEmployees({ limit: 50 }),
+    ]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.hrDashboard = dashboard; state.hrCandidates = candidates.candidates || []; state.hrEmployees = employees.employees || [];
+
+  const candidateRows = state.hrCandidates.map((c) => `<tr>
+    <td><span class="table-title">${esc(c.name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(c.position_applied || "")}</div></td>
+    <td>${c.score != null ? c.score : "—"}</td>
+    <td>${statusBadge(c.status, c.status)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button" data-hr-candidate-score="${esc(c.id)}">Score (AI)</button>
+      <button class="button button-danger" data-hr-candidate-delete="${esc(c.id)}">Hapus</button>
+    </div></td>
+  </tr>`).join("");
+
+  const employeeRows = state.hrEmployees.map((e) => `<tr>
+    <td><span class="table-title">${esc(e.full_name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(e.position || "")}${e.department ? " · " + esc(e.department) : ""}</div></td>
+    <td>${statusBadge(e.status, e.status)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button" data-hr-employee-evaluate="${esc(e.id)}">Generate Evaluasi (AI)</button>
+    </div></td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("HR Center", "AI membantu screening CV, scoring kandidat, draft evaluasi, dan rekomendasi training — keputusan akhir (hire/finalisasi evaluasi) tetap di tangan tim Anda.",
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="button" data-action="hr-new-candidate">Kandidat Baru</button>
+      <button class="button button-primary" data-action="hr-new-employee">${icon("plus", 14)} Karyawan Baru</button>
+    </div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Kandidat Baru", formatNumber(dashboard.candidates_by_status?.new || 0), "Belum diproses", "hr")}
+    ${metricCard("Kandidat Screened", formatNumber(dashboard.candidates_by_status?.screened || 0), "Sudah di-score AI", "hr")}
+    ${metricCard("Karyawan Aktif", formatNumber(dashboard.employees_by_status?.active || 0), "Total aktif", "hr", "trend-up")}
+    ${metricCard("Avg Skor Evaluasi (90d)", dashboard.avg_evaluation_score_90d != null ? dashboard.avg_evaluation_score_90d : "—", `${formatNumber(dashboard.pending_training_recommendations)} training pending`, "hr")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Kandidat</h3></div>${candidateRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Kandidat</th><th>Skor</th><th>Status</th><th></th></tr></thead><tbody>${candidateRows}</tbody></table></div>` : emptyState("Belum ada kandidat", "Tambahkan kandidat untuk mulai proses screening.")}</div>
+  <div class="card"><div class="card-head"><h3>Karyawan</h3></div>${employeeRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Karyawan</th><th>Status</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div>` : emptyState("Belum ada karyawan", "Tambahkan karyawan untuk mulai tracking performa.")}</div>`);
+}
+
+async function createHRCandidatePrompt() {
+  const name = prompt("Nama kandidat:"); if (!name) return;
+  const position_applied = prompt("Posisi yang dilamar:") || null;
+  try {
+    await api.hrCreateCandidate({ name, position_applied });
+    toast("Kandidat ditambahkan.", "success");
+    await renderHR();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function createHREmployeePrompt() {
+  const full_name = prompt("Nama karyawan:"); if (!full_name) return;
+  const position = prompt("Posisi/jabatan:") || null;
+  try {
+    await api.hrCreateEmployee({ full_name, position });
+    toast("Karyawan ditambahkan.", "success");
+    await renderHR();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function scoreHRCandidatePrompt(candidateId) {
+  const position = prompt("Posisi yang dilamar (untuk scoring AI):"); if (!position) return;
+  try {
+    await api.hrScoreCandidate(candidateId, { position });
+    toast("Kandidat berhasil di-score AI.", "success");
+    await renderHR();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function evaluateHREmployeePrompt(employeeId) {
+  const role = prompt("Role/jabatan karyawan saat ini:"); if (!role) return;
+  const notes = prompt("Catatan manajer tentang performa karyawan ini:"); if (!notes) return;
+  try {
+    await api.hrGenerateEvaluation(employeeId, { role, notes });
+    toast("Draft evaluasi berhasil digenerate AI (belum final).", "success");
+    await renderHR();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1630,7 +1712,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1936,6 +2018,11 @@ document.addEventListener("click", async (event) => {
   const marketingApprove=event.target.closest("[data-marketing-content-approve]"); if(marketingApprove){ try{ await api.marketingApproveContent(marketingApprove.dataset.marketingContentApprove); toast("Konten disetujui.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
   const marketingPublish=event.target.closest("[data-marketing-content-publish]"); if(marketingPublish){ try{ await api.marketingPublishContent(marketingPublish.dataset.marketingContentPublish); toast("Konten ditandai published.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
   const marketingCancel=event.target.closest("[data-marketing-content-cancel]"); if(marketingCancel){ try{ await api.marketingCancelContent(marketingCancel.dataset.marketingContentCancel); toast("Konten dibatalkan.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="hr-new-candidate") await createHRCandidatePrompt();
+  if(action==="hr-new-employee") await createHREmployeePrompt();
+  const hrCandidateScore=event.target.closest("[data-hr-candidate-score]"); if(hrCandidateScore){ await scoreHRCandidatePrompt(hrCandidateScore.dataset.hrCandidateScore); return; }
+  const hrCandidateDelete=event.target.closest("[data-hr-candidate-delete]"); if(hrCandidateDelete && confirm("Hapus kandidat ini?")){ try{ await api.hrDeleteCandidate(hrCandidateDelete.dataset.hrCandidateDelete); toast("Kandidat dihapus.","success"); await renderHR(); }catch(error){ toast(error.message,"error"); } return; }
+  const hrEmployeeEvaluate=event.target.closest("[data-hr-employee-evaluate]"); if(hrEmployeeEvaluate){ await evaluateHREmployeePrompt(hrEmployeeEvaluate.dataset.hrEmployeeEvaluate); return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();
   if(action==="wf-save") await saveWorkflow();

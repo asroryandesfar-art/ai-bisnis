@@ -19,6 +19,7 @@ from trainer    import TrainerAgent
 from memory_agent import MemoryAgent
 from finance_agent import FinanceAgent
 from marketing_agent import MarketingAgent
+from hr_agent import HRAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -352,6 +353,12 @@ class SupervisorAgent:
         # hanya dipanggil dari endpoint terautentikasi bn_platform/marketing.py
         # (POST /marketing/content/generate), tidak dari chat publik.
         self.marketing_agent = MarketingAgent(**fast_kwargs)
+
+        # AI Workforce Phase 3 — HR Agent. Sama seperti finance/marketing:
+        # hanya dipanggil dari endpoint terautentikasi bn_platform/hr.py
+        # (hr.write/hr.approve), tidak dari chat publik -- data HR/PII
+        # kandidat & karyawan sensitif.
+        self.hr_agent = HRAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

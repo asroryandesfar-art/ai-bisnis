@@ -719,6 +719,85 @@ CREATE INDEX IF NOT EXISTS idx_marketing_engagement_content ON marketing_engagem
 CREATE INDEX IF NOT EXISTS idx_marketing_engagement_org     ON marketing_engagement(org_id, recorded_at DESC);
 
 -- ============================================================
+-- 10d. HR AGENT (AI Workforce Phase 3)
+-- ============================================================
+-- CV screening, candidate scoring, interview question generator, employee
+-- evaluation, training recommendation, performance tracking -- untuk
+-- bisnis TENANT sendiri (data karyawan/kandidat mereka, bukan karyawan
+-- BotNesia). Prefix `hr_` mengikuti konvensi finance_/marketing_ supaya
+-- konsisten & aman dari tabrakan nama.
+
+CREATE TABLE IF NOT EXISTS hr_candidates (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id           UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id           UUID REFERENCES bots(id) ON DELETE SET NULL,
+    name             TEXT NOT NULL,
+    email            TEXT,
+    phone            TEXT,
+    position_applied TEXT,
+    cv_text          TEXT,
+    cv_filename      TEXT,
+    score            INT CHECK (score IS NULL OR (score >= 0 AND score <= 100)),
+    score_breakdown  JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status           TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','screened','interview','offered','hired','rejected')),
+    created_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hr_candidates_org_created ON hr_candidates(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hr_candidates_status       ON hr_candidates(org_id, status);
+
+CREATE TABLE IF NOT EXISTS hr_employees (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id      UUID REFERENCES bots(id) ON DELETE SET NULL,
+    full_name   TEXT NOT NULL,
+    email       TEXT,
+    position    TEXT,
+    department  TEXT,
+    hire_date   TIMESTAMPTZ,
+    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','on_leave','terminated')),
+    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hr_employees_org ON hr_employees(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hr_employees_status ON hr_employees(org_id, status);
+
+CREATE TABLE IF NOT EXISTS hr_evaluations (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id           UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    employee_id      UUID NOT NULL REFERENCES hr_employees(id) ON DELETE CASCADE,
+    period_start     TIMESTAMPTZ,
+    period_end       TIMESTAMPTZ,
+    score            INT CHECK (score IS NULL OR (score >= 0 AND score <= 100)),
+    strengths        TEXT,
+    areas_to_improve TEXT,
+    status           TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','finalized')),
+    evaluator_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+    finalized_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    finalized_at     TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hr_evaluations_employee ON hr_evaluations(employee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hr_evaluations_org       ON hr_evaluations(org_id);
+
+CREATE TABLE IF NOT EXISTS hr_training_records (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id         UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    employee_id    UUID NOT NULL REFERENCES hr_employees(id) ON DELETE CASCADE,
+    training_name  TEXT NOT NULL,
+    reason         TEXT,
+    recommended_by TEXT NOT NULL DEFAULT 'manual' CHECK (recommended_by IN ('ai','manual')),
+    status         TEXT NOT NULL DEFAULT 'recommended' CHECK (status IN ('recommended','in_progress','completed')),
+    completed_at   TIMESTAMPTZ,
+    created_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hr_training_employee ON hr_training_records(employee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hr_training_org       ON hr_training_records(org_id, status);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -770,7 +849,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('finance.approve',    'finance',       'Menyetujui/menolak expense dan keputusan keuangan penting'),
  ('marketing.read',     'marketing',     'Melihat campaign, konten, kalender, dan analitik marketing'),
  ('marketing.write',    'marketing',     'Membuat/mengubah campaign, konten, dan menjadwalkan publikasi'),
- ('marketing.approve',  'marketing',     'Menyetujui konten sebelum dipublikasikan')
+ ('marketing.approve',  'marketing',     'Menyetujui konten sebelum dipublikasikan'),
+ ('hr.read',            'hr',            'Melihat data kandidat, karyawan, evaluasi, dan training'),
+ ('hr.write',           'hr',            'Membuat/mengubah kandidat, karyawan, dan rencana training'),
+ ('hr.approve',         'hr',            'Menyetujui (finalisasi) evaluasi karyawan')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -801,7 +883,7 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
   AND p.key IN ('bots.read', 'conversations.read', 'conversations.reply',
                 'conversations.assign', 'knowledge.read', 'analytics.read',
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
-                'marketing.read', 'marketing.write')
+                'marketing.read', 'marketing.write', 'hr.read', 'hr.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
