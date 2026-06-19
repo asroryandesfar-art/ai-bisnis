@@ -21,6 +21,7 @@ from finance_agent import FinanceAgent
 from marketing_agent import MarketingAgent
 from hr_agent import HRAgent
 from operations_agent import OperationsAgent
+from security_agent import SecurityAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -365,6 +366,12 @@ class SupervisorAgent:
         # workforce lain: hanya dipanggil dari endpoint terautentikasi
         # bn_platform/operations.py, tidak dari chat publik.
         self.operations_agent = OperationsAgent(**fast_kwargs)
+
+        # AI Workforce Phase 5 — Security Agent. Lapisan tipis di atas
+        # bn_platform/security.py::run_security_scan() yang sudah ada,
+        # juga hanya dipanggil dari endpoint terautentikasi (/api/security),
+        # tidak dari chat publik.
+        self.security_agent = SecurityAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

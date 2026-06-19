@@ -342,10 +342,13 @@ def test_security_dashboard_aggregates_summary():
                   "usage_count": 5, "last_used_at": "now", "rotated_at": None, "expires_at": None,
                   "is_active": True, "created_at": "now"}]
     pool = FakePool(fetch_results=[
-        ("FROM sessions s JOIN users u", sessions),
+        ("s.id, s.user_id, u.email AS user_email", sessions),
         ("actor_user_id, actor_email, action, resource_type", audit_logs),
         ("(action IN", security_events),
         ("FROM api_keys WHERE org_id=$1", api_keys),
+        # run_security_scan() sub-queries (kini juga dipanggil oleh /dashboard
+        # lewat security_agent.dashboard_summary, AI Workforce Phase 5) --
+        # default ke [] lewat FakePool, kecuali yang sengaja dicocokkan di atas.
     ])
     router = _build_router(pool, permissions={"audit.read"})
     handler = _route(router, "/dashboard", "GET")

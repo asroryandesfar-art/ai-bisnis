@@ -1295,10 +1295,34 @@ async function renderBilling() {
 
 async function renderSecurity() {
   loadingPage("Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management.");
-  const dashResult = await settle("security", api.securityDashboard());
+  const [dashResult, riskAlertsResult, reportsResult] = await Promise.all([
+    settle("security", api.securityDashboard()),
+    settle("riskAlerts", api.securityRiskAlerts({ status_filter: "open", limit: 50 })),
+    settle("reports", api.securityReports({ limit: 10 })),
+  ]);
   if (!dashResult.ok) { setPage(`${pageHeader("Security Dashboard","Audit logs, active sessions, suspicious logins, and API key management.")}${errorState(dashResult.error.message)}`); return; }
   state.security = dashResult.data;
+  state.securityRiskAlerts = riskAlertsResult.ok ? (riskAlertsResult.data.alerts || []) : [];
+  state.securityReports = reportsResult.ok ? (reportsResult.data.reports || []) : [];
   const sec = state.security;
+  const riskLevel = sec.risk_level || "—";
+  const riskBadgeKind = riskLevel === "low" ? "active" : (riskLevel === "medium" ? "pending" : "error");
+
+  const riskAlertRows = state.securityRiskAlerts.map((a) => `<tr>
+    <td>${statusBadge(a.severity==='critical'||a.severity==='high'?'error':a.severity==='medium'?'pending':'active', a.severity)}</td>
+    <td><span class="table-title">${esc(a.category.replace(/_/g,' '))}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(a.message)}</div></td>
+    <td>${relativeTime(a.created_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button" data-security-alert-status="${esc(a.id)}:acknowledged">Acknowledge</button>
+      <button class="button button-primary" data-security-alert-status="${esc(a.id)}:resolved">Resolve</button>
+    </div></td>
+  </tr>`).join("");
+
+  const securityReportRows = state.securityReports.map((r) => `<tr>
+    <td>${statusBadge('default', r.report_type)}</td>
+    <td>${esc((r.summary||'').slice(0,100))}${(r.summary||'').length>100?'…':''}</td>
+    <td>${relativeTime(r.created_at)}</td>
+  </tr>`).join("");
 
   const sessionRows = (sec.active_sessions||[]).map((session) => `<tr><td><span class="table-title">${esc(session.user_email)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(session.user_agent||'—')}</div></td><td class="mono">${esc(session.ip_address||'—')}</td><td>${session.is_suspicious?statusBadge('error','Suspicious'):statusBadge('active','Normal')}</td><td>${relativeTime(session.last_seen_at)}</td><td>${formatDate(session.expires_at)}</td><td><button class="button button-danger" data-revoke-session="${esc(session.id)}">Revoke</button></td></tr>`).join("");
 
@@ -1312,9 +1336,11 @@ async function renderSecurity() {
   const scoreCard = metricCard("Security Score", scan?`${scan.score}/100`:'—', scan?`${scan.findings_count} findings (last scan)`:'Run a scan to compute', "security");
   const findingsCard = scan?.findings?.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Latest scan findings</h3></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Recommendation</th></tr></thead><tbody>${scan.findings.map((finding)=>`<tr><td>${statusBadge(finding.severity==='critical'||finding.severity==='high'?'error':finding.severity==='medium'?'pending':'active',finding.severity)}</td><td>${esc(finding.category)}</td><td>${esc(finding.title)}</td><td class="subtle" style="font-size:10px">${esc(finding.recommendation)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
 
-  setPage(`${pageHeader("Security Dashboard","Enterprise security posture: RBAC, audit trail, sessions, suspicious logins, and API keys.",`<button class="button button-primary" data-action="security-scan">${icon('refresh',14)} Run security scan</button><button class="button" data-action="create-api-key">${icon('plus',14)} New API key</button>`)}
-  <div class="grid grid-4" style="margin-bottom:16px">${scoreCard}${metricCard("Active sessions",formatNumber(sec.active_sessions_count),"Across your workspace","team")}${metricCard("Suspicious logins",formatNumber(sec.suspicious_sessions_count),"New IP detected (30 days)","security")}${metricCard("Active API keys",formatNumber(sec.active_api_keys_count),`${formatNumber((sec.api_keys||[]).length)} total`,"settings")}</div>
+  setPage(`${pageHeader("Security Dashboard","Enterprise security posture: RBAC, audit trail, sessions, suspicious logins, and API keys.",`<button class="button button-primary" data-action="security-scan">${icon('refresh',14)} Run security scan</button><button class="button" data-action="security-scan-and-alert">${icon('refresh',14)} Scan &amp; create alerts</button><button class="button" data-action="security-generate-weekly">Weekly report</button><button class="button" data-action="security-generate-monthly">Monthly report</button><button class="button" data-action="create-api-key">${icon('plus',14)} New API key</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">${scoreCard}${metricCard("Risk Level",riskLevel,`Score ${sec.score ?? '—'}/100`,"security",riskLevel==='low'?'trend-up':(riskLevel==='medium'?'default':'trend-down'))}${metricCard("Open Security Alerts",formatNumber(state.securityRiskAlerts.length),`${formatNumber((sec.open_security_alerts_by_severity||{}).critical||0)} critical`,"security",state.securityRiskAlerts.length?'trend-down':'trend-up')}${metricCard("Suspicious logins",formatNumber(sec.suspicious_sessions_count),"New IP detected (30 days)","security")}</div>
   ${findingsCard}
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Risk Alerts</h3><span class="subtle mono" style="font-size:9px">AI WORKFORCE — SECURITY AGENT</span></div>${riskAlertRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Alert</th><th>Time</th><th></th></tr></thead><tbody>${riskAlertRows}</tbody></table></div>`:emptyState("No open risk alerts","Run \"Scan & create alerts\" to detect threats, API abuse, and tenant isolation issues.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Security Reports</h3></div>${securityReportRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Type</th><th>Summary</th><th>Created</th></tr></thead><tbody>${securityReportRows}</tbody></table></div>`:emptyState("No reports yet","Generate a weekly/monthly security report.")}</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Active sessions</h3><span class="subtle mono" style="font-size:9px">SESSION MANAGEMENT</span></div>${sessionRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>User</th><th>IP address</th><th>Status</th><th>Last seen</th><th>Expires</th><th></th></tr></thead><tbody>${sessionRows}</tbody></table></div>`:emptyState("No active sessions","Sessions appear here after users log in.")}</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>API keys</h3><span class="subtle mono" style="font-size:9px">ROTATION & USAGE TRACKING</span></div>${apiKeyRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Key</th><th>Scopes</th><th>Usage</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>${apiKeyRows}</tbody></table></div>`:emptyState("No API keys","Create an API key to access BotNesia programmatically.")}</div>
   <div class="grid grid-2"><div class="card"><div class="card-head"><h3>Security events</h3><span class="subtle mono" style="font-size:9px">LOGIN FAILURES & ALERTS</span></div>${eventRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>IP</th></tr></thead><tbody>${eventRows}</tbody></table></div>`:emptyState("No security events","Failed logins, permission denials, and suspicious logins appear here.")}</div><div class="card"><div class="card-head"><h3>Audit log</h3><span class="subtle mono" style="font-size:9px">RECENT ACTIVITY</span></div>${auditRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead><tbody>${auditRows}</tbody></table></div>`:emptyState("No audit log entries","All login, billing, and configuration changes are tracked here.")}</div></div>`);
@@ -2006,6 +2032,10 @@ document.addEventListener("click", async (event) => {
     voiceStatus(container, state.speakReplies ? "Suara aktif - jawaban AI akan dibaca sampai akhir" : "Suara dimatikan");
   }
   if(action==="security-scan") { try{ const result=await api.securityScan(); state.securityScan=result; toast(`Security scan completed: ${result.findings?.length||0} findings.`,"success"); if(state.route==="security") await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  if(action==="security-scan-and-alert") { try{ const result=await api.securityScanAndAlert(); state.securityScan=result.scan; toast(`Scan selesai: ${result.alerts_created?.length||0} alert baru.`,"success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  if(action==="security-generate-weekly") { try{ await api.generateSecurityReport("weekly"); toast("Weekly security report dibuat.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  if(action==="security-generate-monthly") { try{ await api.generateSecurityReport("monthly"); toast("Monthly security report dibuat.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } }
+  const securityAlertStatus=event.target.closest("[data-security-alert-status]"); if(securityAlertStatus){ const [id,status]=securityAlertStatus.dataset.securityAlertStatus.split(":"); try{ await api.updateSecurityRiskAlert(id,status); toast("Alert diperbarui.","success"); await renderSecurity(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="improvement-scan") { try{ const result=await api.improvementScan(state.improvementDays||30); toast(`Improvement scan completed: ${result.recommendations_generated||0} rekomendasi.`,"success"); if(state.route==="improvement") await renderImprovement(); }catch(error){ toast(error.message,"error"); } }
   const improvementAction=event.target.closest("[data-improvement-action]");
   if(improvementAction){ const status=improvementAction.dataset.improvementAction; const note=(status==="applied"||status==="dismissed") ? (prompt("Catatan (opsional):") || null) : null; try{ await api.updateImprovementRecommendation(improvementAction.dataset.improvementId,{status,resolution_note:note}); toast("Rekomendasi diperbarui.","success"); await renderImprovement(); }catch(error){ toast(error.message,"error"); } return; }
