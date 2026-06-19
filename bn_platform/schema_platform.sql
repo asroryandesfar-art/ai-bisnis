@@ -654,6 +654,71 @@ CREATE TABLE IF NOT EXISTS finance_reports (
 CREATE INDEX IF NOT EXISTS idx_finance_reports_org_type ON finance_reports(org_id, report_type, created_at DESC);
 
 -- ============================================================
+-- 10c. MARKETING AGENT (AI Workforce Phase 2)
+-- ============================================================
+-- Generate konten (IG/TikTok/Facebook/Blog/Email/WhatsApp), kalender
+-- konten, dan pencatatan engagement/konversi. Tidak ada integrasi publish
+-- API Instagram/TikTok/Facebook sungguhan di codebase ini -- publikasi ke
+-- platform tetap MANUAL oleh tenant (AI hanya menyiapkan & menjadwalkan
+-- draft); engagement/konversi juga dicatat manual (tenant input angka dari
+-- dashboard platform aslinya), bukan auto-fetch. Konsisten dengan
+-- Truthfulness Policy yang sudah ada di tool_registry.py.
+
+CREATE TABLE IF NOT EXISTS marketing_campaigns (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id          UUID REFERENCES bots(id) ON DELETE SET NULL,
+    name            TEXT NOT NULL,
+    goal            TEXT,
+    target_audience TEXT,
+    status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','completed','cancelled')),
+    start_date      TIMESTAMPTZ,
+    end_date        TIMESTAMPTZ,
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_org ON marketing_campaigns(org_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS marketing_content (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    campaign_id  UUID REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
+    bot_id       UUID REFERENCES bots(id) ON DELETE SET NULL,
+    platform     TEXT NOT NULL CHECK (platform IN ('instagram','tiktok','facebook','blog','email','whatsapp')),
+    title        TEXT,
+    body         TEXT NOT NULL,
+    hashtags     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status       TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','scheduled','ready_to_publish','published','cancelled')),
+    scheduled_at TIMESTAMPTZ,
+    published_at TIMESTAMPTZ,
+    approved_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_at  TIMESTAMPTZ,
+    created_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_marketing_content_org_created  ON marketing_content(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketing_content_campaign     ON marketing_content(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_marketing_content_status       ON marketing_content(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_marketing_content_scheduled    ON marketing_content(org_id, scheduled_at);
+
+-- Engagement & konversi -- dicatat manual (tenant input angka dari
+-- Instagram/TikTok/Facebook Insights mereka sendiri).
+CREATE TABLE IF NOT EXISTS marketing_engagement (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    content_id  UUID NOT NULL REFERENCES marketing_content(id) ON DELETE CASCADE,
+    metric_type TEXT NOT NULL CHECK (metric_type IN ('likes','comments','shares','views','clicks','conversions')),
+    value       BIGINT NOT NULL DEFAULT 0,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_marketing_engagement_content ON marketing_engagement(content_id);
+CREATE INDEX IF NOT EXISTS idx_marketing_engagement_org     ON marketing_engagement(org_id, recorded_at DESC);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -702,7 +767,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('marketplace.install','settings',      'Memasang template dari marketplace'),
  ('finance.read',       'finance',       'Melihat invoice, expense, dan laporan keuangan tenant'),
  ('finance.write',      'finance',       'Membuat/mengubah invoice, expense, dan pembayaran tenant'),
- ('finance.approve',    'finance',       'Menyetujui/menolak expense dan keputusan keuangan penting')
+ ('finance.approve',    'finance',       'Menyetujui/menolak expense dan keputusan keuangan penting'),
+ ('marketing.read',     'marketing',     'Melihat campaign, konten, kalender, dan analitik marketing'),
+ ('marketing.write',    'marketing',     'Membuat/mengubah campaign, konten, dan menjadwalkan publikasi'),
+ ('marketing.approve',  'marketing',     'Menyetujui konten sebelum dipublikasikan')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -732,7 +800,8 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'manager'
   AND p.key IN ('bots.read', 'conversations.read', 'conversations.reply',
                 'conversations.assign', 'knowledge.read', 'analytics.read',
-                'team.read', 'billing.read', 'finance.read', 'finance.write')
+                'team.read', 'billing.read', 'finance.read', 'finance.write',
+                'marketing.read', 'marketing.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -744,7 +813,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)

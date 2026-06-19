@@ -250,6 +250,21 @@ export const api = {
   financeCreateExpense: (body) => request("/api/finance/expenses", { method: "POST", body }),
   financeApproveExpense: (id, approve) => request(`/api/finance/expenses/${id}/approval`, { method: "PATCH", body: { approve } }),
   financeParse: (text, bot_id = null) => request("/api/finance/parse", { method: "POST", body: { text, bot_id } }),
+  marketingDashboard: () => request("/api/marketing/dashboard"),
+  marketingCalendar: (period_days = 30) => request(`/api/marketing/calendar${encodeQuery({ period_days })}`),
+  marketingDue: () => request("/api/marketing/due"),
+  marketingCampaigns: (limit = 50) => request(`/api/marketing/campaigns${encodeQuery({ limit })}`),
+  marketingCreateCampaign: (body) => request("/api/marketing/campaigns", { method: "POST", body }),
+  marketingUpdateCampaignStatus: (id, status) => request(`/api/marketing/campaigns/${id}/status`, { method: "PATCH", body: { status } }),
+  marketingCampaignAnalytics: (id) => request(`/api/marketing/campaigns/${id}/analytics`),
+  marketingContent: (params = {}) => request(`/api/marketing/content${encodeQuery(params)}`),
+  marketingCreateContent: (body) => request("/api/marketing/content", { method: "POST", body }),
+  marketingGenerateContent: (body) => request("/api/marketing/content/generate", { method: "POST", body }),
+  marketingScheduleContent: (id, scheduled_at) => request(`/api/marketing/content/${id}/schedule`, { method: "PATCH", body: { scheduled_at } }),
+  marketingApproveContent: (id) => request(`/api/marketing/content/${id}/approve`, { method: "PATCH" }),
+  marketingPublishContent: (id) => request(`/api/marketing/content/${id}/publish`, { method: "PATCH" }),
+  marketingCancelContent: (id) => request(`/api/marketing/content/${id}`, { method: "DELETE" }),
+  marketingCreateEngagement: (id, body) => request(`/api/marketing/content/${id}/engagement`, { method: "POST", body }),
 };
 
 export async function settle(label, promise) {

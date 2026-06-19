@@ -18,6 +18,7 @@ from analytics  import AnalyticsAgent
 from trainer    import TrainerAgent
 from memory_agent import MemoryAgent
 from finance_agent import FinanceAgent
+from marketing_agent import MarketingAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -346,6 +347,11 @@ class SupervisorAgent:
         # Registrasi di sini supaya tetap "terhubung ke Supervisor" sesuai
         # arsitektur, sama seperti faq_agent/sales_agent di atas.
         self.finance_agent = FinanceAgent(**fast_kwargs)
+
+        # AI Workforce Phase 2 — Marketing Agent. Sama seperti finance_agent:
+        # hanya dipanggil dari endpoint terautentikasi bn_platform/marketing.py
+        # (POST /marketing/content/generate), tidak dari chat publik.
+        self.marketing_agent = MarketingAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)
