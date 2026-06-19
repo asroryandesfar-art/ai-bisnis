@@ -27,6 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from .config import cfg as platform_cfg
 from .observability import record_audit_log_failure
 
+import security_agent as sec_agent
+
 logger = logging.getLogger("bn_platform.security")
 
 GetCurrentUser = Callable[..., Awaitable[dict]]
@@ -423,8 +425,12 @@ async def run_security_scan(pool: asyncpg.Pool, *, org_id: str) -> dict:
 # ============================================================
 
 def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
-                           require_permission, hash_password) -> APIRouter:
+                           require_permission, hash_password,
+                           get_agent_config: Callable[[], dict] | None = None) -> APIRouter:
     router = APIRouter(prefix="/security", tags=["security"])
+    cfg = get_agent_config() if get_agent_config else {}
+    agent = sec_agent.SecurityAgent(api_key=cfg.get("api_key"), model=cfg.get("model"),
+                                     base_url=cfg.get("base_url"), app_url=cfg.get("app_url", "https://botnesia.id"))
 
     @router.get("/audit-logs")
     async def get_audit_logs(
@@ -562,6 +568,7 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
             user["org_id"],
         )
         api_keys = [dict(r) for r in api_key_rows]
+        risk = await sec_agent.dashboard_summary(pool, user["org_id"])
         return {
             "active_sessions": sessions,
             "active_sessions_count": len(sessions),
@@ -570,6 +577,142 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
             "security_events": security_events,
             "api_keys": api_keys,
             "active_api_keys_count": sum(1 for k in api_keys if k["is_active"]),
+            "score": risk["score"],
+            "risk_level": risk["risk_level"],
+            "open_security_alerts_by_severity": risk["open_alerts_by_severity"],
         }
 
+    # ── AI Workforce Phase 5: lapisan tipis di atas run_security_scan ──
+    # (deteksi API abuse & tenant isolation BARU + alert persisten lewat
+    # ops_alerts/ops_reports yang sudah ada dari Operations Agent)
+    @router.post("/scan-and-alert")
+    async def scan_and_alert(
+        user: Annotated[dict, Depends(require_permission("security.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        org_id = user["org_id"]
+        _check_rate_limit(f"security-scan-alert:{org_id}", 5)
+        scan_result = await run_security_scan(pool, org_id=org_id)
+        api_abuse = await sec_agent.detect_api_abuse(pool, org_id)
+        isolation_violations = await sec_agent.check_tenant_isolation(pool, org_id)
+        created = await sec_agent.sync_alerts_from_scan(pool, org_id, scan_result, api_abuse, isolation_violations)
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="security_scan", resource_type="organization", resource_id=org_id,
+            metadata={"alerts_created": len(created), "api_abuse_count": len(api_abuse),
+                      "isolation_violations": len(isolation_violations)},
+        )
+        return {
+            "scan": scan_result, "api_abuse": api_abuse,
+            "tenant_isolation_violations": isolation_violations, "alerts_created": created,
+        }
+
+    @router.get("/risk-alerts")
+    async def list_risk_alerts(
+        user: Annotated[dict, Depends(require_permission("security.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        status_filter: str | None = None,
+        limit: int = 50,
+    ):
+        org_id = user["org_id"]
+        limit = max(1, min(limit, 200))
+        if status_filter:
+            rows = await pool.fetch(
+                "SELECT * FROM ops_alerts WHERE org_id=$1 AND source='security' AND status=$2 ORDER BY created_at DESC LIMIT $3",
+                org_id, status_filter, limit,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT * FROM ops_alerts WHERE org_id=$1 AND source='security' ORDER BY created_at DESC LIMIT $2",
+                org_id, limit,
+            )
+        return {"alerts": [dict(r) for r in rows]}
+
+    @router.patch("/risk-alerts/{alert_id}")
+    async def update_risk_alert(
+        alert_id: str, body: dict,
+        user: Annotated[dict, Depends(require_permission("security.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        new_status = body.get("status")
+        try:
+            row = await sec_agent.update_alert_status(pool, org_id=user["org_id"], alert_id=alert_id,
+                                                        status=new_status, actor_id=user["id"])
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Alert tidak ditemukan")
+        await write_audit_log(
+            pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+            action="update", resource_type="ops_alert", resource_id=alert_id, metadata={"status": new_status},
+        )
+        return row
+
+    @router.get("/reports")
+    async def list_security_reports(
+        user: Annotated[dict, Depends(require_permission("security.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        report_type: str | None = None,
+        limit: int = 20,
+    ):
+        org_id = user["org_id"]
+        limit = max(1, min(limit, 100))
+        if report_type:
+            rows = await pool.fetch(
+                "SELECT id, org_id, report_type, period_start, period_end, summary, created_at FROM ops_reports "
+                "WHERE org_id=$1 AND source='security' AND report_type=$2 ORDER BY created_at DESC LIMIT $3",
+                org_id, report_type, limit,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT id, org_id, report_type, period_start, period_end, summary, created_at FROM ops_reports "
+                "WHERE org_id=$1 AND source='security' ORDER BY created_at DESC LIMIT $2",
+                org_id, limit,
+            )
+        return {"reports": [dict(r) for r in rows]}
+
+    @router.post("/reports/generate", status_code=201)
+    async def generate_security_report_route(
+        body: dict,
+        user: Annotated[dict, Depends(require_permission("security.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        org_id = user["org_id"]
+        _check_rate_limit(f"security-report:{org_id}", 5)
+        try:
+            report = await sec_agent.generate_security_report(
+                pool, org_id, body.get("report_type"), generated_by=user["id"], agent=agent,
+            )
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="create", resource_type="ops_report", resource_id=report["id"],
+            metadata={"report_type": body.get("report_type"), "source": "security"},
+        )
+        return _security_report_out(report)
+
+    @router.get("/reports/{report_id}")
+    async def get_security_report(
+        report_id: str,
+        user: Annotated[dict, Depends(require_permission("security.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        row = await pool.fetchrow(
+            "SELECT * FROM ops_reports WHERE id=$1 AND org_id=$2 AND source='security'", report_id, user["org_id"],
+        )
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Laporan tidak ditemukan")
+        return _security_report_out(dict(row))
+
     return router
+
+
+def _security_report_out(row: dict) -> dict:
+    out = dict(row)
+    if isinstance(out.get("data"), str):
+        try:
+            out["data"] = json.loads(out["data"])
+        except Exception:
+            out["data"] = {}
+    return out

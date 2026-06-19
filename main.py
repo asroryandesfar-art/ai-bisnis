@@ -5827,6 +5827,7 @@ try:
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             hash_password=hash_password,
+            get_agent_config=get_workflow_agent_config,
         ),
         prefix="/api",
     )

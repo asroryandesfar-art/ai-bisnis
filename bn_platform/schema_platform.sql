@@ -837,6 +837,21 @@ CREATE TABLE IF NOT EXISTS ops_reports (
 CREATE INDEX IF NOT EXISTS idx_ops_reports_org_type ON ops_reports(org_id, report_type, created_at DESC);
 
 -- ============================================================
+-- 10f. SECURITY AGENT (AI Workforce Phase 5)
+-- ============================================================
+-- Reuse ops_alerts/ops_reports dari Phase 4 (Operations Agent) -- bukan
+-- tabel baru. `source` membedakan asal alert/report: 'operations'
+-- (default, data lama tetap valid) vs 'security' (threat/abuse/isolation
+-- findings dari security_agent.py, lapisan tipis di atas
+-- bn_platform/security.py::run_security_scan() yang sudah ada).
+ALTER TABLE ops_alerts
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'operations';
+ALTER TABLE ops_reports
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'operations';
+CREATE INDEX IF NOT EXISTS idx_ops_alerts_source  ON ops_alerts(org_id, source, status);
+CREATE INDEX IF NOT EXISTS idx_ops_reports_source ON ops_reports(org_id, source, created_at DESC);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -893,7 +908,9 @@ INSERT INTO permissions (key, category, description) VALUES
  ('hr.write',           'hr',            'Membuat/mengubah kandidat, karyawan, dan rencana training'),
  ('hr.approve',         'hr',            'Menyetujui (finalisasi) evaluasi karyawan'),
  ('operations.read',    'operations',    'Melihat health score, alert, dan laporan operasional'),
- ('operations.write',   'operations',    'Menjalankan scan operasional dan menindaklanjuti alert')
+ ('operations.write',   'operations',    'Menjalankan scan operasional dan menindaklanjuti alert'),
+ ('security.read',      'security',      'Melihat risk level, security alert, dan laporan keamanan'),
+ ('security.write',     'security',      'Menjalankan security scan dan menindaklanjuti security alert')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
