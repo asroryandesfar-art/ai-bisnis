@@ -115,6 +115,10 @@ async function renderDashboard() {
         <span class="eyebrow">AI WORKFORCE PLATFORM</span>
         <h2>AI Business Command Center</h2>
         <p>Kelola pelanggan, penjualan, marketing, dan tim AI dari satu tempat.</p>
+        <div class="business-quick-actions">
+          <button class="button button-primary" data-route="chat">${icon('chat',14)} Open AI Chat</button>
+          <button class="button" data-route="conversations">${icon('conversations',14)} Open Inbox</button>
+        </div>
       </div>
       <div class="business-health-card">
         <span>Business Health Score</span>

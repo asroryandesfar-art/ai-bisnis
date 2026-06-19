@@ -115,9 +115,9 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 
 const navGroups = [
   ["BUSINESS", [["dashboard","Dashboard"],["conversations","Inbox"],["handoffs","Customers"],["marketing","Sales"],["marketing","Marketing"],["finance","Finance"]]],
-  ["AI WORKFORCE", [["agents","Supervisor"],["marketing","Sales Agent"],["marketing","Marketing Agent"],["finance","Finance Agent"],["executive","Executive Agent"]]],
-  ["OPERATIONS", [["analytics","Analytics"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"]]],
-  ["SETTINGS", [["team","Team"],["billing","Billing"],["channels","Integrations"]]],
+  ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
+  ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
+  ["SETTINGS", [["team","Team"],["billing","Billing"],["settings","Settings"],["founder","Founder OS"]]],
 ];
 
 export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
