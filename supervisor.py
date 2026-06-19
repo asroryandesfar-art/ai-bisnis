@@ -17,6 +17,7 @@ from escalation import EscalationAgent
 from analytics  import AnalyticsAgent
 from trainer    import TrainerAgent
 from memory_agent import MemoryAgent
+from finance_agent import FinanceAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -337,6 +338,14 @@ class SupervisorAgent:
         self.faq_agent       = FAQAgent(**fast_kwargs)
         self.sales_agent     = SalesAgent(**fast_kwargs)
         self.knowledge_agent = KnowledgeAgent(**fast_kwargs)
+
+        # AI Workforce Phase 1 — Finance Agent. SENGAJA tidak dipanggil di
+        # _process() (jalur chat publik/customer-facing) -- aksinya menulis
+        # invoice/expense/payment, jadi hanya dipanggil dari endpoint
+        # terautentikasi bn_platform/finance.py (POST /finance/parse).
+        # Registrasi di sini supaya tetap "terhubung ke Supervisor" sesuai
+        # arsitektur, sama seperti faq_agent/sales_agent di atas.
+        self.finance_agent = FinanceAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

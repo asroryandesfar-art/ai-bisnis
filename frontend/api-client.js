@@ -234,6 +234,22 @@ export const api = {
   createApiKey: (body) => request("/api-keys", { method: "POST", body }),
   rotateApiKey: (id) => request(`/api/security/api-keys/${id}/rotate`, { method: "POST" }),
   revokeApiKey: (id) => request(`/api/security/api-keys/${id}`, { method: "DELETE" }),
+  financeDashboard: () => request("/api/finance/dashboard"),
+  financeRevenueReport: (period_days = 30) => request(`/api/finance/reports/revenue${encodeQuery({ period_days })}`),
+  financeProfitReport: (period_days = 30) => request(`/api/finance/reports/profit${encodeQuery({ period_days })}`),
+  financeCashflowReport: (period_days = 30) => request(`/api/finance/reports/cashflow${encodeQuery({ period_days })}`),
+  financeForecast: (months_back = 3) => request(`/api/finance/reports/forecast${encodeQuery({ months_back })}`),
+  financeReminders: () => request("/api/finance/reminders"),
+  financeInvoices: (params = {}) => request(`/api/finance/invoices${encodeQuery(params)}`),
+  financeCreateInvoice: (body) => request("/api/finance/invoices", { method: "POST", body }),
+  financeUpdateInvoiceStatus: (id, status) => request(`/api/finance/invoices/${id}/status`, { method: "PATCH", body: { status } }),
+  financeDeleteInvoice: (id) => request(`/api/finance/invoices/${id}`, { method: "DELETE" }),
+  financePayments: (limit = 50) => request(`/api/finance/payments${encodeQuery({ limit })}`),
+  financeCreatePayment: (body) => request("/api/finance/payments", { method: "POST", body }),
+  financeExpenses: (params = {}) => request(`/api/finance/expenses${encodeQuery(params)}`),
+  financeCreateExpense: (body) => request("/api/finance/expenses", { method: "POST", body }),
+  financeApproveExpense: (id, approve) => request(`/api/finance/expenses/${id}/approval`, { method: "PATCH", body: { approve } }),
+  financeParse: (text, bot_id = null) => request("/api/finance/parse", { method: "POST", body: { text, bot_id } }),
 };
 
 export async function settle(label, promise) {

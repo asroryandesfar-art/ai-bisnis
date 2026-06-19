@@ -60,6 +60,9 @@ PERMISSIONS: dict[str, str] = {
     "apikeys.manage":      "Membuat & mencabut API key",
     "audit.read":          "Melihat audit log",
     "marketplace.install": "Memasang template dari marketplace",
+    "finance.read":        "Melihat invoice, expense, dan laporan keuangan tenant",
+    "finance.write":       "Membuat/mengubah invoice, expense, dan pembayaran tenant",
+    "finance.approve":     "Menyetujui/menolak expense dan keputusan keuangan penting",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -70,10 +73,10 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "manager": {
         "bots.read", "conversations.read", "conversations.reply",
         "conversations.assign", "knowledge.read", "analytics.read",
-        "team.read", "billing.read",
+        "team.read", "billing.read", "finance.read", "finance.write",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
-    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read"},
+    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read"},
 }
 
 ROLE_ORDER = ["owner", "admin", "manager", "agent", "viewer"]
