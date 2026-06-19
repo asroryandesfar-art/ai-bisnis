@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1059,6 +1059,69 @@ async function askFinanceAiPrompt() {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function renderMarketing() {
+  loadingPage("Marketing Center", "Generate konten IG/TikTok/Facebook/Blog/Email/WhatsApp, kelola content calendar, dan catat engagement — dikelola oleh AI Workforce.");
+  let dashboard, content, campaigns;
+  try {
+    [dashboard, content, campaigns] = await Promise.all([
+      api.marketingDashboard(), api.marketingContent({ limit: 50 }), api.marketingCampaigns(50),
+    ]);
+  } catch (error) { setPage(errorState(error.message)); return; }
+  state.marketingDashboard = dashboard; state.marketingContent = content.content || []; state.marketingCampaigns = campaigns.campaigns || [];
+
+  const contentRows = state.marketingContent.map((item) => `<tr>
+    <td><span class="table-title">${esc(item.title || item.platform)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc((item.body || "").slice(0, 80))}${(item.body || "").length > 80 ? "…" : ""}</div></td>
+    <td>${statusBadge("default", item.platform)}</td>
+    <td>${statusBadge(item.status, item.status)}</td>
+    <td>${item.scheduled_at ? relativeTime(item.scheduled_at) : "—"}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${item.status === "draft" ? `<button class="button" data-marketing-content-approve="${esc(item.id)}">Approve</button>` : ""}
+      ${item.status === "ready_to_publish" || item.status === "scheduled" ? `<button class="button button-primary" data-marketing-content-publish="${esc(item.id)}">Tandai published</button>` : ""}
+      ${item.status !== "published" && item.status !== "cancelled" ? `<button class="button button-danger" data-marketing-content-cancel="${esc(item.id)}">Batalkan</button>` : ""}
+    </div></td>
+  </tr>`).join("");
+
+  const campaignRows = state.marketingCampaigns.map((c) => `<tr>
+    <td><span class="table-title">${esc(c.name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(c.goal || "")}</div></td>
+    <td>${statusBadge(c.status, c.status)}</td>
+    <td>${c.start_date ? relativeTime(c.start_date) : "—"}</td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Marketing Center", "AI generate konten per platform, jadwalkan di content calendar — publikasi ke platform tetap manual oleh tim Anda, engagement dicatat manual dari Insights masing-masing platform.",
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="button" data-action="marketing-new-campaign">Campaign Baru</button>
+      <button class="button button-primary" data-action="marketing-generate-content">${icon("plus", 14)} Generate Konten</button>
+    </div>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Campaign Aktif", formatNumber(dashboard.active_campaigns), "Sedang berjalan", "marketing")}
+    ${metricCard("Konten Draft/Scheduled", `${formatNumber(dashboard.content_draft)} / ${formatNumber(dashboard.content_scheduled)}`, `${formatNumber(dashboard.content_due_now)} siap tayang`, "marketing", dashboard.content_due_now ? "trend-down" : "trend-up")}
+    ${metricCard("Siap Publish / Published", `${formatNumber(dashboard.content_ready_to_publish)} / ${formatNumber(dashboard.content_published)}`, "Total konten", "marketing")}
+    ${metricCard("Engagement (30d)", formatNumber(Object.values(dashboard.engagement_30d || {}).reduce((a, b) => a + b, 0)), "Likes+comments+shares+views+clicks", "marketing", "trend-up")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Content Calendar</h3></div>${contentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Konten</th><th>Platform</th><th>Status</th><th>Jadwal</th><th></th></tr></thead><tbody>${contentRows}</tbody></table></div>` : emptyState("Belum ada konten", "Generate konten pertama untuk campaign Anda.")}</div>
+  <div class="card"><div class="card-head"><h3>Campaigns</h3></div>${campaignRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Campaign</th><th>Status</th><th>Mulai</th></tr></thead><tbody>${campaignRows}</tbody></table></div>` : emptyState("Belum ada campaign", "Buat campaign untuk mengelompokkan konten marketing Anda.")}</div>`);
+}
+
+async function createMarketingCampaignPrompt() {
+  const name = prompt("Nama campaign:"); if (!name) return;
+  const goal = prompt("Goal campaign (opsional):") || null;
+  try {
+    await api.marketingCreateCampaign({ name, goal });
+    toast("Campaign dibuat.", "success");
+    await renderMarketing();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function generateMarketingContentPrompt() {
+  const platform = prompt("Platform (instagram/tiktok/facebook/blog/email/whatsapp):", "instagram"); if (!platform) return;
+  const brief = prompt("Brief konten (contoh: 'Promo akhir bulan diskon 20% untuk semua produk'):"); if (!brief) return;
+  try {
+    await api.marketingGenerateContent({ platform: platform.trim().toLowerCase(), brief });
+    toast("Konten berhasil digenerate.", "success");
+    await renderMarketing();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function parseFeatures(value) {
   if (value && typeof value === "object") return value;
   try { return JSON.parse(value || "{}"); } catch { return {}; }
@@ -1567,7 +1630,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -1868,6 +1931,11 @@ document.addEventListener("click", async (event) => {
   if(action==="finance-ask-ai") await askFinanceAiPrompt();
   const financeInvoiceStatus=event.target.closest("[data-finance-invoice-status]"); if(financeInvoiceStatus){ const [id,status]=financeInvoiceStatus.dataset.financeInvoiceStatus.split(":"); try{ await api.financeUpdateInvoiceStatus(id,status); toast("Status invoice diperbarui.","success"); await renderFinance(); }catch(error){ toast(error.message,"error"); } return; }
   const financeExpenseApprove=event.target.closest("[data-finance-expense-approve]"); if(financeExpenseApprove){ const [id,approve]=financeExpenseApprove.dataset.financeExpenseApprove.split(":"); try{ await api.financeApproveExpense(id, approve==="1"); toast("Status expense diperbarui.","success"); await renderFinance(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="marketing-new-campaign") await createMarketingCampaignPrompt();
+  if(action==="marketing-generate-content") await generateMarketingContentPrompt();
+  const marketingApprove=event.target.closest("[data-marketing-content-approve]"); if(marketingApprove){ try{ await api.marketingApproveContent(marketingApprove.dataset.marketingContentApprove); toast("Konten disetujui.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
+  const marketingPublish=event.target.closest("[data-marketing-content-publish]"); if(marketingPublish){ try{ await api.marketingPublishContent(marketingPublish.dataset.marketingContentPublish); toast("Konten ditandai published.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
+  const marketingCancel=event.target.closest("[data-marketing-content-cancel]"); if(marketingCancel){ try{ await api.marketingCancelContent(marketingCancel.dataset.marketingContentCancel); toast("Konten dibatalkan.","success"); await renderMarketing(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="wf-new") await createWorkflowPrompt();
   if(action==="wf-back") backToWorkflowList();
   if(action==="wf-save") await saveWorkflow();
