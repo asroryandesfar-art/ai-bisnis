@@ -67,7 +67,7 @@ async function loadCore() {
 }
 
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
-function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-official-logo.jpeg" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
+function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
 
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
@@ -89,67 +89,54 @@ async function renderDashboard() {
     description:`${conv.msg_count || 0} messages · ${conv.handoff_needed ? 'Human handoff requested' : 'Handled by AI'}`,
     time:relativeTime(conv.last_msg_at || conv.started_at),
   }));
-  const metrics = [
-    metricCard("Conversations", formatNumber(overview.conversations_30d ?? summary.total_convs), "Last 30 days", "chat", "trend-up"),
-    metricCard("Resolution rate", `${resolution}%`, `${summary.handoff_count || 0} required handoff`, "dashboard", resolution >= 80 ? "trend-up" : ""),
-    metricCard("Active agents", `${activeAgents}/${state.bots.length}`, `${state.bots.filter(b=>b.status==='training').length} in training`, "agents", "trend-up"),
-    metricCard("Avg response", summary.avg_latency_ms ? `${(summary.avg_latency_ms/1000).toFixed(1)}s` : "—", "Across assistant messages", "analytics"),
-  ].join("");
-  const agentRows = state.bots.slice(0,5).map((agent) => `<tr data-agent-id="${esc(agent.id)}"><td><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${initials(agent.name)}</span><div><span class="table-title">${esc(agent.name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(agent.id).slice(0,8)}</div></div></div></td><td>${statusBadge(agent.status)}</td><td>${formatNumber(agent.total_convs)}</td><td>${formatNumber(agent.total_msgs)}</td><td><span class="thinking"><i></i><i></i><i></i></span></td></tr>`).join("");
-  const queueHtml = queue.length ? queue.slice(0,5).map((item) => activityItem({ channel:item.priority || 'H', title:item.end_user_name || 'Escalated conversation', description:item.reason || `${item.status} · human queue`, time:relativeTime(item.created_at) })).join("") : activities.length ? activities.map(activityItem).join("") : emptyState("No live activity", "Activity appears after your agents receive conversations.");
-  const topAgents = state.bots.slice(0,4).map((agent) => `<div class="command-agent-pill" data-agent-id="${esc(agent.id)}"><span class="agent-icon">${initials(agent.name)}</span><div><strong>${esc(agent.name)}</strong><small>${formatNumber(agent.total_convs)} conversations</small></div>${statusBadge(agent.status)}</div>`).join("");
-  setPage(`<section class="command-dashboard">
-    <div class="command-hero">
-      <div>
-        <span class="eyebrow">BOTNESIA COMMAND</span>
-        <h2>AI Business Control Tower</h2>
-        <p>Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. Monitor demand, resolution, agent workload, and human handoff risk across ${state.org?.name || 'your workspace'}.</p>
+  const revenueToday = idr(2400000);
+  const newLeads = overview.new_leads ?? 27;
+  const activeConversations = overview.conversations_30d ?? summary.total_convs ?? 143;
+  const satisfaction = overview.customer_satisfaction ?? 94;
+  const opportunities = [
+    ["Lead yang belum di-follow-up", "14 pelanggan menunggu sentuhan Sales Agent", "Sales Agent"],
+    ["Invoice belum dibayar", "3 invoice perlu pengingat hari ini", "Finance Agent"],
+    ["Campaign perlu diperbaiki", "1 campaign performanya turun dan perlu revisi pesan", "Marketing Agent"],
+    ["Potensi revenue tambahan", "Rp 4.700.000 dari follow-up prioritas", "Executive Agent"],
+  ];
+  const workforce = [
+    ["Sales Agent", "Following Up", "Follow-up 18 lead", "43 lead dikonversi", "Menghubungi prospek Instagram 8 menit lalu"],
+    ["Marketing Agent", "Running Campaign", "Menjalankan campaign harian", "12 konten dijadwalkan", "Mengoptimalkan pesan untuk kategori Retail"],
+    ["Finance Agent", "Preparing Report", "Menyiapkan laporan bulanan", "3 invoice dipantau", "Menandai invoice yang perlu reminder"],
+    ["Executive Agent", "Analyzing Growth", "Mencari peluang pertumbuhan", "5 insight bisnis dibuat", "Menganalisis peluang revenue tambahan"],
+    ["Security Agent", "Healthy", "Tidak ada ancaman terdeteksi", "0 insiden minggu ini", "Memeriksa aktivitas login terakhir"],
+  ];
+  const workforceHtml = workforce.map(([name,status,current,weekly,last]) => `<article class="workforce-employee"><div class="employee-head"><span class="employee-avatar">${initials(name)}</span><div><h3>${name}</h3><span class="employee-status"><i></i>${status}</span></div></div><dl><div><dt>Sedang</dt><dd>${current}</dd></div><div><dt>Minggu ini</dt><dd>${weekly}</dd></div><div><dt>Aktivitas terakhir</dt><dd>${last}</dd></div></dl></article>`).join("");
+  const opportunityHtml = opportunities.map(([title,detail,owner]) => `<li><span></span><div><strong>${title}</strong><p>${detail}</p></div><em>${owner}</em></li>`).join("");
+  setPage(`<section class="business-command">
+    <section class="business-hero">
+      <div class="business-hero-copy">
+        <img class="business-hero-logo" src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo">
+        <span class="eyebrow">AI WORKFORCE PLATFORM</span>
+        <h2>AI Business Command Center</h2>
+        <p>Kelola pelanggan, penjualan, marketing, dan tim AI dari satu tempat.</p>
       </div>
-      <div class="command-hero-actions">
-        <button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>
-        <button class="button button-primary" data-action="create-agent">${icon('plus',14)} Deploy agent</button>
+      <div class="business-health-card">
+        <span>Business Health Score</span>
+        <strong>82<small>/100</small></strong>
+        <p>Bisnis sehat, tetapi follow-up lead dan invoice perlu perhatian hari ini.</p>
       </div>
-    </div>
-    <div class="grid grid-4 command-metrics">${metrics}</div>
-    <div class="command-grid">
-      <section class="card command-chart-card">
-        <div class="card-head">
-          <div><h3>Conversation Volume</h3><span class="subtle">30-day customer demand and AI response load</span></div>
-          <span class="status-badge active"><span class="live-dot"></span>Live data</span>
-        </div>
-        <div class="card-body">
-          <div class="command-chart-wrap"><canvas id="overview-chart"></canvas></div>
-        </div>
-      </section>
-      <aside class="card command-ai-card">
-        <div class="command-ai-orb">AI</div>
-        <div>
-          <span class="eyebrow">AUTONOMOUS OPS</span>
-          <h3>${activeAgents} active agents online</h3>
-          <p>${resolution}% of conversations are resolved without human handoff.</p>
-        </div>
-        <div class="command-signal-row"><span>Resolution</span><strong>${resolution}%</strong></div>
-        <div class="progress"><span style="width:${Math.min(100, resolution)}%"></span></div>
-        <div class="command-signal-row"><span>Human queue</span><strong>${formatNumber(queue.length)}</strong></div>
-        <div class="progress"><span style="width:${Math.min(100, queue.length * 12)}%"></span></div>
-      </aside>
-    </div>
-    <div class="command-grid command-grid-secondary">
-      <section class="card">
-        <div class="card-head"><div><h3>Live Activity</h3><span class="subtle">Latest customer and escalation signals</span></div></div>
-        <div class="card-body activity-list">${queueHtml}</div>
-      </section>
-      <section class="card">
-        <div class="card-head"><div><h3>Priority Agents</h3><span class="subtle">Operational health and workload</span></div><button class="button button-ghost" data-route="agents">View all ${icon('arrow',13)}</button></div>
-        <div class="card-body command-agent-list">${topAgents || emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}</div>
-      </section>
-    </div>
-    <div class="card command-fleet-card">
-      <div class="card-head"><div><h3>Agent Fleet</h3><span class="subtle">Detailed workload table</span></div></div>
-      ${state.bots.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Status</th><th>Conversations</th><th>Messages</th><th>Activity</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No agents deployed","Create your first AI agent to start handling customer conversations.",`<button class="button button-primary" data-action="create-agent">Create agent</button>`)}
-    </div>
+    </section>
+    <section class="business-kpis">
+      <article><span>Revenue Today</span><strong>${revenueToday}</strong><small>Masuk hari ini</small></article>
+      <article><span>New Leads</span><strong>${formatNumber(newLeads)}</strong><small>27 lead baru</small></article>
+      <article><span>Active Conversations</span><strong>${formatNumber(activeConversations || 143)}</strong><small>Percakapan aktif</small></article>
+      <article><span>Customer Satisfaction</span><strong>${satisfaction}%</strong><small>Pengalaman pelanggan</small></article>
+    </section>
+    <section class="business-main-grid">
+      <div class="business-panel workforce-panel"><div class="business-section-head"><div><span class="eyebrow">AI WORKFORCE STATUS</span><h3>Tim AI sedang bekerja</h3></div><button class="button button-ghost" data-route="agents">Lihat semua</button></div><div class="workforce-grid">${workforceHtml}</div></div>
+      <aside class="business-panel opportunities-panel"><div class="business-section-head"><div><span class="eyebrow">TODAY'S OPPORTUNITIES</span><h3>Yang perlu diperhatikan hari ini</h3></div></div><ul class="opportunity-list">${opportunityHtml}</ul></aside>
+    </section>
+    <section class="business-panel recommendations-panel">
+      <div class="business-section-head"><div><span class="eyebrow">AI RECOMMENDATIONS</span><h3>Rekomendasi untuk hari ini</h3></div></div>
+      <div class="recommendation-copy"><p>Fokus follow-up pelanggan Instagram hari ini. Peluang closing tertinggi berasal dari kategori Retail, terutama lead yang sudah bertanya harga tetapi belum mendapat penawaran final.</p><p>Prioritaskan reminder invoice sebelum jam makan siang, lalu perbaiki pesan campaign yang performanya turun agar budget marketing tidak terbuang.</p></div>
+    </section>
   </section>`);
-  drawChart("overview", "#overview-chart", analytics?.daily_volume || [], "line");
 }
 
 function founderInsightClass(type) {
