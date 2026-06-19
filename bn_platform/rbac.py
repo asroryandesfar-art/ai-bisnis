@@ -73,6 +73,8 @@ PERMISSIONS: dict[str, str] = {
     "operations.write":    "Menjalankan scan operasional dan menindaklanjuti alert",
     "security.read":       "Melihat risk level, security alert, dan laporan keamanan",
     "security.write":      "Menjalankan security scan dan menindaklanjuti security alert",
+    "executive.read":      "Melihat company health score dan executive brief",
+    "executive.write":     "Membuat executive brief (sintesis lintas-agent)",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;

@@ -22,6 +22,7 @@ from marketing_agent import MarketingAgent
 from hr_agent import HRAgent
 from operations_agent import OperationsAgent
 from security_agent import SecurityAgent
+from executive_agent import ExecutiveAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -372,6 +373,11 @@ class SupervisorAgent:
         # juga hanya dipanggil dari endpoint terautentikasi (/api/security),
         # tidak dari chat publik.
         self.security_agent = SecurityAgent(**fast_kwargs)
+
+        # AI Workforce Phase 6 — Executive Agent (AI CEO Assistant). Sintesis
+        # lintas-agent (Finance/Marketing/HR/Operations/Security/Sales),
+        # juga hanya dipanggil dari endpoint terautentikasi (/api/executive).
+        self.executive_agent = ExecutiveAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)
