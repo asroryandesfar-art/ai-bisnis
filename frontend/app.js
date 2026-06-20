@@ -72,42 +72,67 @@ function loadingPage(title, description) { setPage(`<div class="loading-brand"><
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
   const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
-  const [analyticsResult, convResult, queueResult] = await Promise.all([
+  const results = await Promise.all([
     bot ? settle("analytics", api.botAnalytics(bot.id, 30)) : Promise.resolve({ok:false}),
-    bot ? settle("conversations", api.botConversations(bot.id, {limit:8})) : Promise.resolve({ok:false}),
     settle("queue", api.handoffQueue({limit:8})),
+    settle("finance", api.financeDashboard()),
+    settle("marketing", api.marketingDashboard()),
+    settle("hr", api.hrDashboard()),
+    settle("operations", api.opsDashboard()),
+    settle("security", api.securityDashboard()),
+    settle("executive", api.executiveDashboard()),
+    settle("workforce", api.workforceDashboard()),
   ]);
+  const [analyticsResult, queueResult, financeResult, marketingResult, hrResult, opsResult, securityResult, executiveResult, workforceResult] = results;
   const analytics = analyticsResult.ok ? analyticsResult.data : null;
-  const conversations = convResult.ok ? convResult.data : [];
   const queue = queueResult.ok ? queueResult.data.queue || [] : [];
+  const finance = financeResult.ok ? financeResult.data : {};
+  const marketing = marketingResult.ok ? marketingResult.data : {};
+  const hr = hrResult.ok ? hrResult.data : {};
+  const ops = opsResult.ok ? opsResult.data : {};
+  const security = securityResult.ok ? securityResult.data : {};
+  const executive = executiveResult.ok ? executiveResult.data : {};
+  const workforceData = workforceResult.ok ? workforceResult.data : {};
   const overview = state.overview || {};
   const summary = analytics?.summary || {};
-  const activeAgents = state.bots.filter((item) => item.status === "active").length;
-  const resolution = summary.total_convs ? Math.max(0, Math.round((1 - (summary.handoff_count || 0) / summary.total_convs) * 100)) : 0;
-  const activities = conversations.slice(0,6).map((conv) => ({
-    channel:"AI", title:conv.end_user_name || conv.end_user_email || "Anonymous customer",
-    description:`${conv.msg_count || 0} messages · ${conv.handoff_needed ? 'Human handoff requested' : 'Handled by AI'}`,
-    time:relativeTime(conv.last_msg_at || conv.started_at),
-  }));
-  const revenueToday = idr(2400000);
-  const newLeads = overview.new_leads ?? 27;
-  const activeConversations = overview.conversations_30d ?? summary.total_convs ?? 143;
-  const satisfaction = overview.customer_satisfaction ?? 94;
+  const health = executive.health || {};
+  const opsHealth = ops.health || {};
+  const openOpsAlerts = Object.values(ops.open_alerts_by_severity || {}).reduce((sum, n) => sum + Number(n || 0), 0);
+  const openSecurityAlerts = Object.values(security.open_security_alerts_by_severity || {}).reduce((sum, n) => sum + Number(n || 0), 0);
+  const overdueInvoices = finance.overdue_invoices_count || 0;
+  const pendingInvoices = finance.pending_invoices_count || 0;
+  const contentDueNow = marketing.content_due_now || 0;
+  const pendingTraining = hr.pending_training_recommendations || 0;
+  const pendingApproval = workforceData.pending_approval_count || 0;
+
   const opportunities = [
-    ["Lead yang belum di-follow-up", "14 pelanggan menunggu sentuhan Sales Agent", "Sales Agent"],
-    ["Invoice belum dibayar", "3 invoice perlu pengingat hari ini", "Finance Agent"],
-    ["Campaign perlu diperbaiki", "1 campaign performanya turun dan perlu revisi pesan", "Marketing Agent"],
-    ["Potensi revenue tambahan", "Rp 4.700.000 dari follow-up prioritas", "Executive Agent"],
-  ];
+    overdueInvoices ? ["Invoice overdue", `${formatNumber(overdueInvoices)} invoice melewati jatuh tempo, total ${idr(finance.pending_invoices_amount_idr || 0)}`, "Finance Agent"] : null,
+    contentDueNow ? ["Konten terlambat publish", `${formatNumber(contentDueNow)} konten terjadwal sudah lewat waktu publish`, "Marketing Agent"] : null,
+    openOpsAlerts ? ["Alert operasional terbuka", `${formatNumber(openOpsAlerts)} alert operations perlu ditindaklanjuti`, "Operations Agent"] : null,
+    openSecurityAlerts ? ["Sinyal risiko keamanan", `${formatNumber(openSecurityAlerts)} alert security terbuka`, "Security Agent"] : null,
+    pendingTraining ? ["Rekomendasi training tertunda", `${formatNumber(pendingTraining)} rekomendasi training menunggu review`, "HR Agent"] : null,
+    pendingApproval ? ["Task menunggu approval", `${formatNumber(pendingApproval)} workforce task butuh human approval`, "Workforce Orchestrator"] : null,
+  ].filter(Boolean);
+  const opportunityHtml = opportunities.length
+    ? opportunities.map(([title,detail,owner]) => `<li><span></span><div><strong>${esc(title)}</strong><p>${esc(detail)}</p></div><em>${esc(owner)}</em></li>`).join("")
+    : `<li><span></span><div><strong>Tidak ada yang butuh perhatian khusus</strong><p>Semua domain AI Workforce dalam kondisi normal hari ini.</p></div></li>`;
+
   const workforce = [
-    ["Sales Agent", "Following Up", "Follow-up 18 lead", "43 lead dikonversi", "Menghubungi prospek Instagram 8 menit lalu"],
-    ["Marketing Agent", "Running Campaign", "Menjalankan campaign harian", "12 konten dijadwalkan", "Mengoptimalkan pesan untuk kategori Retail"],
-    ["Finance Agent", "Preparing Report", "Menyiapkan laporan bulanan", "3 invoice dipantau", "Menandai invoice yang perlu reminder"],
-    ["Executive Agent", "Analyzing Growth", "Mencari peluang pertumbuhan", "5 insight bisnis dibuat", "Menganalisis peluang revenue tambahan"],
-    ["Security Agent", "Healthy", "Tidak ada ancaman terdeteksi", "0 insiden minggu ini", "Memeriksa aktivitas login terakhir"],
-  ];
-  const workforceHtml = workforce.map(([name,status,current,weekly,last]) => `<article class="workforce-employee"><div class="employee-head"><span class="employee-avatar">${initials(name)}</span><div><h3>${name}</h3><span class="employee-status"><i></i>${status}</span></div></div><dl><div><dt>Sedang</dt><dd>${current}</dd></div><div><dt>Minggu ini</dt><dd>${weekly}</dd></div><div><dt>Aktivitas terakhir</dt><dd>${last}</dd></div></dl></article>`).join("");
-  const opportunityHtml = opportunities.map(([title,detail,owner]) => `<li><span></span><div><strong>${title}</strong><p>${detail}</p></div><em>${owner}</em></li>`).join("");
+    ["Finance Agent", overdueInvoices ? "Needs Attention" : "Healthy", `${formatNumber(pendingInvoices)} invoice pending`, idr(finance.revenue_30d_idr || 0) + " revenue 30 hari", overdueInvoices ? `${formatNumber(overdueInvoices)} invoice overdue perlu reminder` : "Tidak ada invoice overdue", "finance"],
+    ["Marketing Agent", contentDueNow ? "Needs Attention" : "Healthy", `${formatNumber(marketing.active_campaigns || 0)} campaign aktif`, `${formatNumber(marketing.content_published || 0)} konten published`, contentDueNow ? `${formatNumber(contentDueNow)} konten terlambat publish` : "Semua konten on schedule", "marketing"],
+    ["HR Agent", pendingTraining ? "Needs Attention" : "Healthy", `${formatNumber(Object.values(hr.candidates_by_status || {}).reduce((s,n)=>s+Number(n||0),0))} kandidat aktif`, `${formatNumber(pendingTraining)} rekomendasi training`, hr.avg_evaluation_score_90d != null ? `Avg evaluasi karyawan: ${hr.avg_evaluation_score_90d}` : "Belum ada data evaluasi", "hr"],
+    ["Executive Agent", health.label || "—", `Company health ${health.overall ?? "—"}/100`, `${formatNumber(Object.keys(health.by_domain || {}).length)} domain dipantau`, "Health score lintas Finance/Marketing/HR/Operations/Security/Sales", "executive"],
+    ["Security Agent", security.risk_level || "—", `Risk level: ${security.risk_level || "—"}`, `${formatNumber(security.suspicious_sessions_count || 0)} sesi mencurigakan`, openSecurityAlerts ? `${formatNumber(openSecurityAlerts)} alert terbuka` : "Tidak ada alert terbuka", "security"],
+  ].map(([name,status,current,weekly,last,iconName]) => `<article class="workforce-employee" data-route="${iconName}"><div class="employee-head"><span class="employee-avatar">${initials(name)}</span><div><h3>${esc(name)}</h3><span class="employee-status"><i></i>${esc(status)}</span></div></div><dl><div><dt>Status</dt><dd>${esc(current)}</dd></div><div><dt>30 hari</dt><dd>${esc(weekly)}</dd></div><div><dt>Perlu perhatian</dt><dd>${esc(last)}</dd></div></dl></article>`).join("");
+
+  const healthDescriptionParts = [];
+  if (overdueInvoices) healthDescriptionParts.push(`${formatNumber(overdueInvoices)} invoice overdue`);
+  if (openOpsAlerts) healthDescriptionParts.push(`${formatNumber(openOpsAlerts)} alert operasional`);
+  if (openSecurityAlerts) healthDescriptionParts.push(`${formatNumber(openSecurityAlerts)} sinyal security`);
+  const healthDescription = healthDescriptionParts.length
+    ? `Perlu perhatian: ${healthDescriptionParts.join(", ")}.`
+    : "Tidak ada sinyal kritis lintas domain saat ini.";
+
   setPage(`<section class="business-command">
     <section class="business-hero">
       <div class="business-hero-copy">
@@ -120,25 +145,21 @@ async function renderDashboard() {
           <button class="button" data-route="conversations">${icon('conversations',14)} Open Inbox</button>
         </div>
       </div>
-      <div class="business-health-card">
+      <div class="business-health-card" data-route="executive">
         <span>Business Health Score</span>
-        <strong>82<small>/100</small></strong>
-        <p>Bisnis sehat, tetapi follow-up lead dan invoice perlu perhatian hari ini.</p>
+        <strong>${health.overall ?? "—"}<small>/100</small></strong>
+        <p>${esc(healthDescription)}</p>
       </div>
     </section>
     <section class="business-kpis">
-      <article><span>Revenue Today</span><strong>${revenueToday}</strong><small>Masuk hari ini</small></article>
-      <article><span>New Leads</span><strong>${formatNumber(newLeads)}</strong><small>27 lead baru</small></article>
-      <article><span>Active Conversations</span><strong>${formatNumber(activeConversations || 143)}</strong><small>Percakapan aktif</small></article>
-      <article><span>Customer Satisfaction</span><strong>${satisfaction}%</strong><small>Pengalaman pelanggan</small></article>
+      <article data-route="finance"><span>Revenue (30 hari)</span><strong>${idr(finance.revenue_30d_idr || 0)}</strong><small>${formatNumber(pendingInvoices)} invoice pending</small></article>
+      <article data-route="conversations"><span>Active Conversations</span><strong>${formatNumber(overview.conversations_30d ?? summary.total_convs ?? 0)}</strong><small>30 hari terakhir</small></article>
+      <article data-route="handoffs"><span>Human Handoff</span><strong>${formatNumber(queue.length)}</strong><small>Menunggu di queue</small></article>
+      <article data-route="operations"><span>Operations Health</span><strong>${opsHealth.score ?? "—"}</strong><small>${esc(opsHealth.label || "—")}</small></article>
     </section>
     <section class="business-main-grid">
-      <div class="business-panel workforce-panel"><div class="business-section-head"><div><span class="eyebrow">AI WORKFORCE STATUS</span><h3>Tim AI sedang bekerja</h3></div><button class="button button-ghost" data-route="agents">Lihat semua</button></div><div class="workforce-grid">${workforceHtml}</div></div>
+      <div class="business-panel workforce-panel"><div class="business-section-head"><div><span class="eyebrow">AI WORKFORCE STATUS</span><h3>Tim AI sedang bekerja</h3></div><button class="button button-ghost" data-route="workforce-overview">Lihat semua</button></div><div class="workforce-grid">${workforce}</div></div>
       <aside class="business-panel opportunities-panel"><div class="business-section-head"><div><span class="eyebrow">TODAY'S OPPORTUNITIES</span><h3>Yang perlu diperhatikan hari ini</h3></div></div><ul class="opportunity-list">${opportunityHtml}</ul></aside>
-    </section>
-    <section class="business-panel recommendations-panel">
-      <div class="business-section-head"><div><span class="eyebrow">AI RECOMMENDATIONS</span><h3>Rekomendasi untuk hari ini</h3></div></div>
-      <div class="recommendation-copy"><p>Fokus follow-up pelanggan Instagram hari ini. Peluang closing tertinggi berasal dari kategori Retail, terutama lead yang sudah bertanya harga tetapi belum mendapat penawaran final.</p><p>Prioritaskan reminder invoice sebelum jam makan siang, lalu perbaiki pesan campaign yang performanya turun agar budget marketing tidak terbuang.</p></div>
     </section>
   </section>`);
 }
