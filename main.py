@@ -357,6 +357,7 @@ _FRONTEND_DIR = BASE_DIR / "frontend"
 _PUBLIC_DIR = _FRONTEND_DIR / "public"
 _DASHBOARD_PATH = _FRONTEND_DIR / "index.html"
 _PUBLIC_DEMO_PATH = _FRONTEND_DIR / "demo.html"
+_LANDING_PATH = _FRONTEND_DIR / "landing.html"
 _API_JS_PATH = BASE_DIR / "api.js"
 _MULTIAGENT_INDEX_PATH = BASE_DIR / "MultiAgent_Index.html"
 _MULTIAGENT_QUICK_PATH = BASE_DIR / "MultiAgent_Quick_Start.html"
@@ -365,6 +366,12 @@ _MULTIAGENT_INTEGRATION_PATH = BASE_DIR / "MultiAgent_App_Integration.html"
 
 @app.get("/", include_in_schema=False)
 async def root():
+    if _LANDING_PATH.exists():
+        return FileResponse(
+            _LANDING_PATH,
+            media_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
     if _DASHBOARD_PATH.exists():
         return RedirectResponse(url="/dashboard")
     return {"status": "ok"}
