@@ -220,6 +220,66 @@ def compute_score_deltas(current_synthesis: dict, current_health: dict, previous
     }
 
 
+async def gather_trend_series(pool: asyncpg.Pool, org_id: str, days: int = 30) -> dict:
+    """6 chart Executive Analytics -- semua query SQL baru (beda dari
+    gather_synthesis_data yang murni orkestrasi), tapi seluruhnya atas
+    kolom yang SUDAH ADA (finance_transactions/conversations/
+    conversation_analysis) -- tidak ada tabel baru. Tidak zero-fill
+    tanggal kosong, sama seperti pola daily_volume di main.py -- frontend
+    (Chart.js) baik-baik saja dengan data yang jarang/sparse."""
+    window = max(1, min(days, 365))
+
+    revenue_rows = await pool.fetch(
+        """SELECT date_trunc('day', occurred_at) AS day, COALESCE(SUM(amount_idr) FILTER (WHERE type='income'),0) AS value
+           FROM finance_transactions WHERE org_id=$1 AND occurred_at >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+    customer_growth_rows = await pool.fetch(
+        """SELECT date_trunc('day', first_seen) AS day, COUNT(*) AS value FROM (
+               SELECT end_user_id, MIN(started_at) AS first_seen FROM conversations
+               WHERE org_id=$1 AND end_user_id IS NOT NULL GROUP BY end_user_id
+           ) first_conv WHERE first_seen >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+    sales_growth_rows = await pool.fetch(
+        """SELECT date_trunc('day', ca.created_at) AS day, COUNT(*) AS value
+           FROM conversation_analysis ca WHERE ca.org_id=$1 AND ca.purchase_status='purchased'
+             AND ca.created_at >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+    lead_conversion_rows = await pool.fetch(
+        """SELECT date_trunc('day', ca.created_at) AS day,
+                  ROUND(COUNT(*) FILTER (WHERE ca.purchase_status='purchased')::numeric / COUNT(*) * 100, 1) AS value
+           FROM conversation_analysis ca WHERE ca.org_id=$1
+             AND ca.created_at >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+    satisfaction_rows = await pool.fetch(
+        """SELECT date_trunc('day', started_at) AS day, ROUND(AVG(rating)::numeric, 2) AS value
+           FROM conversations WHERE org_id=$1 AND rating IS NOT NULL
+             AND started_at >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+    ai_performance_rows = await pool.fetch(
+        """SELECT date_trunc('day', ca.created_at) AS day, ROUND(AVG(ca.quality_score)::numeric, 2) AS value
+           FROM conversation_analysis ca WHERE ca.org_id=$1 AND ca.quality_score IS NOT NULL
+             AND ca.created_at >= NOW() - INTERVAL '1 day' * $2
+           GROUP BY day ORDER BY day""", org_id, window,
+    )
+
+    def _series(rows: list) -> list[dict]:
+        return [{"date": r["day"].date().isoformat(), "value": float(r["value"]) if r["value"] is not None else 0} for r in rows]
+
+    return {
+        "revenue_trend": _series(revenue_rows),
+        "customer_growth": _series(customer_growth_rows),
+        "sales_growth": _series(sales_growth_rows),
+        "lead_conversion": _series(lead_conversion_rows),
+        "customer_satisfaction": _series(satisfaction_rows),
+        "ai_performance": _series(ai_performance_rows),
+    }
+
+
 async def run_business_analysis(pool: asyncpg.Pool, org_id: str, agent: "ExecutiveAgent | None" = None) -> dict:
     """Orkestrator 'Analyze My Business' -- TIDAK dipersist ke ops_reports
     (on-demand, bisa diklik berkali-kali tanpa migrasi schema baru utk

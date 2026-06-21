@@ -200,6 +200,49 @@ def test_generate_executive_brief_returns_structured_data(monkeypatch):
     assert result["growth_recommendations"] == ["A"]
 
 
+# ─── Executive Analytics Charts (Phase Next 13) ──────────────────
+
+def test_gather_trend_series_returns_all_six_series_in_order():
+    import datetime as dt
+    day = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)
+    pool = FakePool(fetch_results=[
+        [{"day": day, "value": 1_000_000}],   # revenue_trend
+        [{"day": day, "value": 3}],            # customer_growth
+        [{"day": day, "value": 2}],            # sales_growth
+        [{"day": day, "value": 66.7}],         # lead_conversion
+        [{"day": day, "value": 4.5}],          # customer_satisfaction
+        [{"day": day, "value": 8.2}],          # ai_performance
+    ])
+    result = asyncio.run(exe.gather_trend_series(pool, "org-1", days=30))
+    assert result["revenue_trend"] == [{"date": "2026-06-01", "value": 1_000_000.0}]
+    assert result["customer_growth"][0]["value"] == 3.0
+    assert result["sales_growth"][0]["value"] == 2.0
+    assert result["lead_conversion"][0]["value"] == 66.7
+    assert result["customer_satisfaction"][0]["value"] == 4.5
+    assert result["ai_performance"][0]["value"] == 8.2
+
+
+def test_gather_trend_series_handles_empty_series():
+    pool = FakePool(fetch_results=[[], [], [], [], [], []])
+    result = asyncio.run(exe.gather_trend_series(pool, "org-1", days=7))
+    assert all(result[key] == [] for key in ("revenue_trend", "customer_growth", "sales_growth", "lead_conversion", "customer_satisfaction", "ai_performance"))
+
+
+def test_gather_trend_series_clamps_days_window():
+    pool = FakePool(fetch_results=[[], [], [], [], [], []])
+    asyncio.run(exe.gather_trend_series(pool, "org-1", days=9999))
+    revenue_call = next(c for c in pool.calls if c[0] == "fetch" and "finance_transactions" in c[1])
+    assert revenue_call[2][1] == 365
+
+
+def test_trends_route_returns_series(monkeypatch):
+    pool = FakePool(fetch_results=[[], [], [], [], [], []])
+    router = _build_router(pool)
+    handler = _route(router, "/trends", "GET")
+    result = asyncio.run(handler(user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool, days=30))
+    assert set(result.keys()) == {"revenue_trend", "customer_growth", "sales_growth", "lead_conversion", "customer_satisfaction", "ai_performance"}
+
+
 # ─── AI Business Analyst (Phase Next 12) ─────────────────────────
 
 def test_business_health_label_four_tiers():
@@ -332,7 +375,7 @@ def test_router_gates_every_route_with_executive_permission():
         get_agent_config=lambda: {"api_key": ""},
     )
 
-    assert requested_keys.count("executive.read") == 3
+    assert requested_keys.count("executive.read") == 4
     assert requested_keys.count("executive.write") == 2
     assert set(requested_keys) == {"executive.read", "executive.write"}
 
