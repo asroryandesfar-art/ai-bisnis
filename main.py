@@ -68,6 +68,7 @@ from pydantic_settings import BaseSettings
 
 # Multi-agent AI pipeline (user-built)
 from supervisor import SupervisorAgent
+import executive_agent as exec_agent_module
 from knowledge_builder_agent import KnowledgeBuilderAgent
 import knowledge_seeder
 import tool_registry
@@ -203,6 +204,7 @@ _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, acti
 _platform_create_session = None  # (pool, user_id, org_id, ip_address, user_agent, expires_at) → {"id","is_suspicious"}
 _platform_touch_session = None   # (pool, session_id) → bool (False jika revoked/expired)
 _platform_revoke_session = None  # (pool, session_id, org_id, reason) → dict|None
+_platform_check_rate_limit = None  # (key, max_req) → None, raises HTTPException(429)
 _platform_require_permission = None  # (permission_key) → async checker(user=, pool=) -> dict, raises 403
 
 # Multi-agent supervisor singleton (cloud-only)
@@ -354,6 +356,7 @@ BASE_DIR = Path(__file__).resolve().parent
 _FRONTEND_DIR = BASE_DIR / "frontend"
 _PUBLIC_DIR = _FRONTEND_DIR / "public"
 _DASHBOARD_PATH = _FRONTEND_DIR / "index.html"
+_PUBLIC_DEMO_PATH = _FRONTEND_DIR / "demo.html"
 _API_JS_PATH = BASE_DIR / "api.js"
 _MULTIAGENT_INDEX_PATH = BASE_DIR / "MultiAgent_Index.html"
 _MULTIAGENT_QUICK_PATH = BASE_DIR / "MultiAgent_Quick_Start.html"
@@ -365,6 +368,16 @@ async def root():
     if _DASHBOARD_PATH.exists():
         return RedirectResponse(url="/dashboard")
     return {"status": "ok"}
+
+@app.get("/demo", include_in_schema=False)
+async def public_demo_page():
+    if not _PUBLIC_DEMO_PATH.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "demo.html tidak ditemukan")
+    return FileResponse(
+        _PUBLIC_DEMO_PATH,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 @app.get("/dashboard", include_in_schema=False)
 async def dashboard():
@@ -3935,6 +3948,33 @@ def get_workflow_agent_config() -> dict:
     }
 
 
+def _real_client_ip(request: Request) -> str:
+    """IP visitor sebenarnya di belakang Cloudflare Tunnel -- request.client.host
+    saja akan selalu memberi IP edge Cloudflare, bukan IP visitor."""
+    forwarded = request.headers.get("X-Forwarded-For") or request.headers.get("CF-Connecting-IP")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.post("/api/public/investor-demo", include_in_schema=False)
+async def public_investor_demo(request: Request):
+    """Investor Demo Mode publik, TANPA login -- untuk link demo yang dibagikan ke
+    investor/pemerintah/inkubator. Memanggil exec_agent_module.run_investor_demo()
+    yang sudah ada (AI Workforce Phase Next 15) APA ADANYA: skenario 100% sintetis,
+    tidak pernah menyentuh data tenant manapun, jadi aman dipanggil tanpa auth.
+    Rate-limit per IP (bukan per org_id, karena pengunjung anonim)."""
+    ip = _real_client_ip(request)
+    if _platform_check_rate_limit:
+        _platform_check_rate_limit(f"public-demo:{ip}", 5)
+    agent_cfg = get_workflow_agent_config()
+    agent = exec_agent_module.ExecutiveAgent(
+        api_key=agent_cfg.get("api_key"), model=agent_cfg.get("model"),
+        base_url=agent_cfg.get("base_url"), app_url=agent_cfg.get("app_url", "https://botnesia.id"),
+    )
+    return await exec_agent_module.run_investor_demo(agent=agent)
+
+
 async def _dispatch_workflow_trigger(
     trigger_type: str, payload: dict, *, org_id: str, bot_id: str | None,
 ) -> None:
@@ -5746,6 +5786,7 @@ try:
         create_session as _platform_create_session_fn,
         touch_session as _platform_touch_session_fn,
         revoke_session as _platform_revoke_session_fn,
+        _check_rate_limit as _platform_check_rate_limit_fn,
     )
     from bn_platform.observability import instrument_app, record_db_pool_stats
     from bn_platform.ai_observability import build_ai_observability_router
@@ -5773,6 +5814,7 @@ try:
     _platform_create_session = _platform_create_session_fn
     _platform_touch_session = _platform_touch_session_fn
     _platform_revoke_session = _platform_revoke_session_fn
+    _platform_check_rate_limit = _platform_check_rate_limit_fn
 
     # ── 1. Prometheus middleware + GET /metrics ──────────────────
     instrument_app(app)

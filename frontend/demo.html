@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>BotNesia — Investor Demo Mode (Live AI Workforce Demo)</title>
+  <meta name="description" content="Lihat AI Workforce BotNesia menganalisis bisnis secara live: root cause analysis, rekomendasi, action plan, dan prediksi pertumbuhan — dalam hitungan detik.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght%40400;500&amp;family=Manrope:wght%40400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/assets/brand/botnesia-clean-logo.png" sizes="any">
+  <link rel="apple-touch-icon" href="/assets/brand/botnesia-clean-logo.png">
+  <link rel="stylesheet" href="/ui/styles.css">
+  <style>
+    body{max-width:1080px;margin:0 auto;padding:28px 20px 80px}
+    .demo-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+    .demo-topbar .brand img{width:36px;height:36px}
+    .demo-topbar .brand span{font-size:15px;font-weight:800}
+    .demo-cta-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+    #demo-stepper-panel,#demo-result{margin-top:18px}
+    .demo-foot{margin-top:40px;text-align:center;color:var(--text-3);font-size:11px}
+    .demo-foot a{color:var(--cyan)}
+  </style>
+</head>
+<body>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <header class="demo-topbar">
+    <a class="brand" href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit"><img src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo"><span>BOTNESIA</span></a>
+    <a class="button" href="/dashboard">Masuk / Daftar</a>
+  </header>
+
+  <section class="business-hero">
+    <div class="business-hero-copy">
+      <span class="eyebrow">PUBLIC INVESTOR DEMO</span>
+      <h2>Lihat AI Workforce BotNesia Bekerja, Live.</h2>
+      <p>Klik satu tombol — AI yang sama dengan yang dipakai pelanggan BotNesia akan menganalisis sebuah skenario bisnis, menemukan root cause, memberi rekomendasi, menyusun action plan, dan memprediksi pemulihan. Semua nyata, hanya skenarionya simulasi.</p>
+      <div class="demo-cta-row"><button class="button button-primary" id="run-demo-btn">▶ Mulai Demo Investor</button></div>
+    </div>
+    <div class="business-health-card">
+      <span>Skenario Demo</span>
+      <strong style="font-size:30px">Revenue -15%</strong>
+      <p>Customer -8% &middot; Hot leads turun tajam &middot; Operations &amp; Security menurun</p>
+    </div>
+  </section>
+
+  <section class="business-panel" id="demo-stepper-panel" style="display:none">
+    <div class="business-section-head"><div><span class="eyebrow">AI WORKING</span><h3>Proses Analisis Live</h3></div></div>
+    <div style="padding:18px 22px"><div id="demo-stepper"></div></div>
+  </section>
+
+  <div id="demo-result"></div>
+
+  <p class="demo-foot">BotNesia — AI Workforce Platform untuk Bisnis Indonesia. <a href="/">Kembali ke halaman utama</a> &middot; <a href="/dashboard">Masuk ke workspace Anda</a></p>
+
+  <script>
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const el = (selector) => document.querySelector(selector);
+
+    const STEPS = ["Collecting Data","Analyzing Revenue","Analyzing Customers","Analyzing Operations","Finding Root Cause","Generating Recommendations","Creating Action Plan","Generating Executive Report","Predicting Business Growth","Executive Conclusion"];
+
+    function stepperHtml(doneUpTo, activeIndex) {
+      return `<ul class="demo-stepper">${STEPS.map((label, i) => `<li class="${i < doneUpTo ? "done" : ""} ${i === activeIndex ? "active" : ""}"><span class="step-dot">${i < doneUpTo ? "&check;" : i + 1}</span><span class="step-label">${esc(label)}</span></li>`).join("")}</ul>`;
+    }
+
+    function statusBadge(kind, label) {
+      return `<span class="status-badge ${kind}">${esc(label)}</span>`;
+    }
+
+    function renderResult(result) {
+      if (!result || result.error) {
+        return `<div class="card"><div class="card-body"><p style="color:var(--red)">${esc(result?.error || "Demo gagal dijalankan, coba lagi sebentar.")}</p></div></div>`;
+      }
+      const healthKind = { Excellent: "active", Good: "active", Warning: "pending", Critical: "error" }[result.business_health_label] || "default";
+      const analysis = result.analysis || {};
+      const rootCause = (analysis.root_cause_analysis || []).map((item) => `<div class="founder-insight warning" style="margin-bottom:8px"><span></span><div><strong>${esc(item.question)}</strong><p>${esc(item.explanation)}</p></div></div>`).join("");
+      const recs = analysis.recommendations || {};
+      const recBlock = (label, items, kind) => (items || []).length
+        ? `<div style="margin-bottom:10px"><span class="status-badge ${kind}">${esc(label)}</span><ul style="margin:8px 0 0;padding-left:18px">${items.map((i) => `<li style="font-size:12px;margin-bottom:4px">${esc(i)}</li>`).join("")}</ul></div>` : "";
+      const plan = analysis.action_plan || {};
+      const planBlock = (label, items) => `<div class="card" style="flex:1"><div class="card-head"><h3 style="font-size:13px">${esc(label)}</h3></div><div class="card-body">${(items || []).length ? `<ul style="margin:0;padding-left:18px">${items.map((i) => `<li style="font-size:12px;margin-bottom:6px">${esc(i)}</li>`).join("")}</ul>` : `<span class="subtle" style="font-size:11px">Tidak ada langkah spesifik.</span>`}</div></div>`;
+      const predicted = result.predicted_improvement || {};
+
+      return `<div class="demo-banner">Mode Simulasi — seluruh data di bawah ini adalah skenario demo, bukan data bisnis nyata.</div>
+      <div class="grid grid-4" style="margin-bottom:16px">
+        <div class="card"><div class="card-body"><span class="subtle" style="font-size:10px;text-transform:uppercase">Business Health</span><div style="font-size:30px;font-weight:800;margin:8px 0">${esc(result.health?.overall ?? "-")}</div>${statusBadge(healthKind, result.business_health_label)}</div></div>
+        <div class="card"><div class="card-body"><span class="subtle" style="font-size:10px;text-transform:uppercase">Revenue Impact</span><div style="font-size:30px;font-weight:800;margin:8px 0;color:var(--red)">${esc(result.deltas?.revenue_30d_idr_delta ? Math.round(result.deltas.revenue_30d_idr_delta / 1000000 * 10) / 10 : "-")}jt</div><span class="subtle" style="font-size:11px">30 hari terakhir (simulasi)</span></div></div>
+        <div class="card"><div class="card-body"><span class="subtle" style="font-size:10px;text-transform:uppercase">Predicted Recovery</span><div style="font-size:30px;font-weight:800;margin:8px 0;color:var(--green)">+${esc(predicted.revenue_recovery_pct ?? "-")}%</div><span class="subtle" style="font-size:11px">dalam ${esc(predicted.timeframe_days ?? "90")} hari</span></div></div>
+        <div class="card"><div class="card-body"><span class="subtle" style="font-size:10px;text-transform:uppercase">Root Causes Found</span><div style="font-size:30px;font-weight:800;margin:8px 0">${(analysis.root_cause_analysis || []).length}</div><span class="subtle" style="font-size:11px">teridentifikasi otomatis oleh AI</span></div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Executive Report — AI Business Analyst</h3></div><div class="card-body">
+        ${analysis.executive_summary ? `<p style="font-size:13px;margin-bottom:14px">${esc(analysis.executive_summary)}</p>` : ""}
+        ${rootCause ? `<div style="margin-bottom:14px"><div class="subtle" style="font-size:10px;text-transform:uppercase;margin-bottom:6px">Root Cause Analysis</div>${rootCause}</div>` : ""}
+        <div class="subtle" style="font-size:10px;text-transform:uppercase;margin-bottom:6px">Recommendations</div>
+        ${recBlock("Prioritas Tinggi", recs.high, "error")}
+        ${recBlock("Prioritas Sedang", recs.medium, "pending")}
+        ${recBlock("Prioritas Rendah", recs.low, "default")}
+        <div class="subtle" style="font-size:10px;text-transform:uppercase;margin:14px 0 6px">Action Plan</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">${planBlock("7 Hari", plan["7_days"])}${planBlock("30 Hari", plan["30_days"])}${planBlock("90 Hari", plan["90_days"])}</div>
+      </div></div>
+      <div class="business-panel"><div class="business-section-head"><div><span class="eyebrow">PREDICTED IMPROVEMENT</span><h3>Prediksi Pemulihan Bisnis</h3></div></div>
+        <div style="padding:20px"><p style="margin:0;color:var(--text-3);font-size:11px">${esc(predicted.note || "")}</p></div>
+      </div>
+      <div class="demo-cta-row" style="justify-content:center;margin-top:24px"><a class="button button-primary" href="/dashboard">Coba dengan Data Bisnis Anda Sendiri</a></div>`;
+    }
+
+    async function runDemo() {
+      const btn = el("#run-demo-btn");
+      const panel = el("#demo-stepper-panel");
+      const stepperEl = el("#demo-stepper");
+      const resultEl = el("#demo-result");
+      btn.disabled = true;
+      btn.textContent = "Sedang menganalisis...";
+      panel.style.display = "block";
+      resultEl.innerHTML = "";
+      stepperEl.innerHTML = stepperHtml(0, 0);
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      const demoPromise = fetch("/api/public/investor-demo", { method: "POST" })
+        .then((r) => { if (!r.ok) return r.json().then((b) => ({ error: b.detail || "Demo gagal dijalankan." })); return r.json(); })
+        .catch((error) => ({ error: error.message }));
+
+      const pacing = [500, 600, 600, 550];
+      for (let i = 0; i < pacing.length; i++) { await sleep(pacing[i]); stepperEl.innerHTML = stepperHtml(i + 1, i + 1); }
+
+      const result = await demoPromise;
+
+      for (const i of [4, 5, 6, 7, 8, 9]) { await sleep(450); stepperEl.innerHTML = stepperHtml(i + 1, i + 1); }
+      await sleep(250);
+      stepperEl.innerHTML = stepperHtml(STEPS.length, -1);
+
+      resultEl.innerHTML = renderResult(result);
+      btn.disabled = false;
+      btn.textContent = "▶ Jalankan Demo Lagi";
+    }
+
+    el("#run-demo-btn").addEventListener("click", runDemo);
+  </script>
+</body>
+</html>
