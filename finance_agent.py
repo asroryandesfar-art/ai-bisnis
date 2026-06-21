@@ -278,7 +278,7 @@ async def generate_forecast(pool: asyncpg.Pool, org_id: str, months_back: int = 
                   COALESCE(SUM(amount_idr) FILTER (WHERE type='income'), 0)  AS income_idr,
                   COALESCE(SUM(amount_idr) FILTER (WHERE type='expense'), 0) AS expense_idr
            FROM finance_transactions
-           WHERE org_id=$1 AND occurred_at >= date_trunc('month', NOW()) - ($2 || ' months')::interval
+           WHERE org_id=$1 AND occurred_at >= date_trunc('month', NOW()) - INTERVAL '1 month' * $2
            GROUP BY month ORDER BY month ASC""",
         org_id, months_back,
     )
