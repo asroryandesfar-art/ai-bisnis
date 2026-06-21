@@ -5,6 +5,7 @@ const paths = {
   dashboard:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
   agents:'<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M8 3 6 1M16 3l2-2"/>',
   channels:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="7" cy="6" r="2"/><circle cx="17" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>',
+  "communication-center":'<path d="M21 11.5a8.38 8.38 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 17 0z"/><path d="M8 10h8M8 14h5"/>',
   chat:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>',
   analytics:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
   observability:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
@@ -116,7 +117,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 const navGroups = [
   ["BUSINESS", [["dashboard","Dashboard"],["conversations","Inbox"],["handoffs","Customers"],["marketing","Sales"],["marketing","Marketing"],["finance","Finance"]]],
   ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
-  ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
+  ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
   ["SETTINGS", [["team","Team"],["billing","Billing"],["settings","Settings"],["founder","Founder OS"]]],
 ];
 
@@ -150,6 +151,7 @@ const routeMeta = {
   workforce:["Workforce Orchestration","AI Workforce: koordinasi task lintas-agent, deteksi konflik, eskalasi, dan human approval workflow"],
   "self-learning":["Self-Learning Center","AI Workforce: insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot"],
   "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
+  "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
   multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
   security:["Security","Keamanan akun, akses tim, dan risiko bisnis."],

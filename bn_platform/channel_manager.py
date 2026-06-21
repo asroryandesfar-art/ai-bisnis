@@ -219,24 +219,68 @@ class ChannelManager:
         return [self._public_connection(dict(row), str(row["channel_type"])) for row in rows]
 
     async def analytics(self, tenant_id: str, *, days: int = 30) -> dict[str, Any]:
+        window = max(1, min(days, 365))
         summary = await self.pool.fetchrow(
             """SELECT COUNT(*)::int AS total_messages,
                       COUNT(DISTINCT user_id)::int AS active_users,
                       COALESCE(AVG(response_time_ms) FILTER (WHERE response_time_ms IS NOT NULL),0)::numeric(12,2) AS response_time_ms,
+                      COUNT(*) FILTER (WHERE direction='inbound')::int AS inbound_messages,
+                      COUNT(*) FILTER (WHERE direction='outbound')::int AS outbound_messages,
                       COUNT(*) FILTER (WHERE (metadata->>'conversion')::boolean IS TRUE)::int AS conversions
-               FROM channel_messages WHERE tenant_id=$1 AND created_at >= NOW()-($2::int * INTERVAL '1 day')""", tenant_id, max(1, min(days, 365)),
+               FROM channel_messages WHERE tenant_id=$1 AND created_at >= NOW()-($2::int * INTERVAL '1 day')""", tenant_id, window,
         )
         usage = await self.pool.fetch(
             """SELECT c.channel_type AS channel, COUNT(cm.id)::int AS messages,
-                      COUNT(DISTINCT cm.user_id)::int AS active_users
+                      COUNT(DISTINCT cm.user_id)::int AS active_users,
+                      COALESCE(AVG(cm.response_time_ms) FILTER (WHERE cm.response_time_ms IS NOT NULL),0)::numeric(12,2) AS response_time_ms,
+                      COUNT(cm.id) FILTER (WHERE cm.direction='inbound')::int AS inbound_messages,
+                      COUNT(cm.id) FILTER (WHERE cm.direction='outbound')::int AS outbound_messages
                FROM channels c
                LEFT JOIN channel_connections cc ON cc.channel_id=c.id AND cc.tenant_id=$1
                LEFT JOIN channel_messages cm ON cm.connection_id=cc.id AND cm.created_at >= NOW()-($2::int * INTERVAL '1 day')
-               WHERE c.tenant_id=$1 GROUP BY c.channel_type ORDER BY messages DESC""", tenant_id, max(1, min(days, 365)),
+               WHERE c.tenant_id=$1 GROUP BY c.channel_type ORDER BY messages DESC""", tenant_id, window,
         )
+        # conversations.channel (intelligence/schema_intelligence.sql) sudah diisi oleh chat()
+        # untuk pesan yang lewat ChannelManager (lihat main.py internal_channel) — dipakai utk
+        # AI resolution rate & satisfaction per channel karena channel_messages.conversation_id
+        # tidak pernah diisi (lihat _process_inbound, tidak ada FK conversation di INSERT-nya).
+        conv_stats = await self.pool.fetch(
+            """SELECT channel,
+                      COUNT(*)::int AS conversations,
+                      COUNT(*) FILTER (WHERE handoff_needed IS FALSE)::int AS ai_resolved_conversations,
+                      AVG(rating) FILTER (WHERE rating IS NOT NULL) AS avg_rating
+               FROM conversations
+               WHERE org_id=$1 AND started_at >= NOW()-($2::int * INTERVAL '1 day')
+               GROUP BY channel""", tenant_id, window,
+        )
+        conv_by_channel = {row["channel"]: row for row in conv_stats}
+
+        def _enrich(channel: str, base: dict[str, Any]) -> dict[str, Any]:
+            conv = conv_by_channel.get(channel)
+            conversations = int(conv["conversations"]) if conv else 0
+            base["response_rate_pct"] = round(base["outbound_messages"] / base["inbound_messages"] * 100, 1) if base["inbound_messages"] else 0.0
+            base["ai_resolution_rate_pct"] = round(int(conv["ai_resolved_conversations"]) / conversations * 100, 1) if conversations else None
+            base["satisfaction_avg"] = round(float(conv["avg_rating"]), 2) if conv and conv["avg_rating"] is not None else None
+            base["conversations"] = conversations
+            return base
+
+        usage_rows = [_enrich(str(row["channel"]), dict(row)) for row in usage]
         total = int(summary["total_messages"] or 0)
+        inbound_total = int(summary["inbound_messages"] or 0)
+        outbound_total = int(summary["outbound_messages"] or 0)
         conversions = int(summary["conversions"] or 0)
-        return {"total_messages": total, "active_users": int(summary["active_users"] or 0), "response_time_ms": float(summary["response_time_ms"] or 0), "conversion_rate": round(conversions / total * 100, 2) if total else 0.0, "top_channels": [dict(row) for row in usage], "channel_usage": [dict(row) for row in usage]}
+        total_conversations = sum(int(r["conversations"]) for r in conv_by_channel.values()) if conv_by_channel else 0
+        total_ai_resolved = sum(int(r["ai_resolved_conversations"]) for r in conv_by_channel.values()) if conv_by_channel else 0
+        ratings = [float(r["avg_rating"]) for r in conv_by_channel.values() if r["avg_rating"] is not None]
+        return {
+            "total_messages": total, "active_users": int(summary["active_users"] or 0),
+            "response_time_ms": float(summary["response_time_ms"] or 0),
+            "response_rate_pct": round(outbound_total / inbound_total * 100, 1) if inbound_total else 0.0,
+            "ai_resolution_rate_pct": round(total_ai_resolved / total_conversations * 100, 1) if total_conversations else None,
+            "satisfaction_avg": round(sum(ratings) / len(ratings), 2) if ratings else None,
+            "conversion_rate": round(conversions / total * 100, 2) if total else 0.0,
+            "top_channels": usage_rows, "channel_usage": usage_rows,
+        }
 
     async def _process_inbound(self, connection: dict[str, Any], connector, unified: UnifiedMessage) -> dict[str, Any]:
         tenant_id, connection_id = str(connection["tenant_id"]), str(connection["id"])

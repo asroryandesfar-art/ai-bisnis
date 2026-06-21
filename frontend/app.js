@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1674,6 +1674,67 @@ async function renderChannels() {
   }
 }
 
+const COMM_CENTER_PERIODS = [["1","Today"],["7","7 Days"],["30","30 Days"],["90","90 Days"],["365","1 Year"]];
+
+async function renderCommunicationCenter() {
+  loadingPage("Communication Center", "Status koneksi dan performa AI lintas semua channel pelanggan.");
+  const days = state.commCenterDays || 30;
+  const [statusResult, analyticsResult, gmailResult] = await Promise.all([
+    settle("status", api.channelStatus()),
+    settle("analytics", api.channelAnalytics(days)),
+    settle("gmail", api.gmailPoller()),
+  ]);
+  const channels = statusResult.ok ? statusResult.data.channels || [] : [];
+  const a = analyticsResult.ok ? analyticsResult.data : {};
+  const gmail = gmailResult.ok ? gmailResult.data : {};
+  const usageByChannel = Object.fromEntries((a.channel_usage || []).map((row) => [row.channel, row]));
+
+  const periodTabs = COMM_CENTER_PERIODS.map(([value, label]) => `<button class="button ${days===Number(value)?'button-primary':''}" data-comm-period="${value}">${label}</button>`).join("");
+
+  const catalog = [
+    ["whatsapp", "WhatsApp"], ["telegram", "Telegram"], ["instagram", "Instagram"],
+    ["facebook", "Facebook Messenger"], ["website", "Website Chat"],
+  ];
+  const channelCards = catalog.map(([key, label]) => {
+    const item = channels.find((row) => row.channel_type === key && row.status !== "disconnected") || channels.find((row) => row.channel_type === key);
+    const status = item?.status || "disconnected";
+    const usage = usageByChannel[key] || {};
+    return `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">${initials(label)}</span><div><h3>${esc(label)}</h3></div></div>${statusBadge(status, status.charAt(0).toUpperCase()+status.slice(1))}</div><div class="card-body">
+      <div class="channel-stat"><span>Total Messages</span><strong>${formatNumber(usage.messages||0)}</strong></div>
+      <div class="channel-stat"><span>Response Rate</span><strong>${usage.response_rate_pct!=null?`${usage.response_rate_pct}%`:"—"}</strong></div>
+      <div class="channel-stat"><span>Response Time</span><strong>${usage.response_time_ms!=null?`${Number(usage.response_time_ms).toFixed(0)}ms`:"—"}</strong></div>
+      <div class="channel-stat"><span>Customer Satisfaction</span><strong>${usage.satisfaction_avg!=null?`${usage.satisfaction_avg}/5`:"Belum ada data"}</strong></div>
+      <div class="channel-stat"><span>AI Resolution Rate</span><strong>${usage.ai_resolution_rate_pct!=null?`${usage.ai_resolution_rate_pct}%`:"Belum ada data"}</strong></div>
+    </div></article>`;
+  }).join("");
+
+  const gmailStatus = gmail.enabled && gmail.running ? "connected" : (gmail.enabled ? "pending" : "disconnected");
+  const gmailCard = `<article class="card channel-card"><div class="card-head"><div class="channel-title"><span class="activity-symbol">${initials("Email")}</span><div><h3>Email (Gmail)</h3></div></div>${statusBadge(gmailStatus, gmailStatus.charAt(0).toUpperCase()+gmailStatus.slice(1))}</div><div class="card-body">
+    <div class="channel-stat"><span>Polling interval</span><strong>${formatNumber(gmail.interval_seconds||0)}s</strong></div>
+    <div class="channel-stat"><span>Max per poll</span><strong>${formatNumber(gmail.max_messages||0)}</strong></div>
+    <div class="channel-stat"><span>Catatan</span><strong style="font-size:10px">Email memakai jalur polling terpisah dari channel lain — metrik response/satisfaction belum tersedia.</strong></div>
+  </div></article>`;
+
+  const breakdownRows = (a.channel_usage || []).map((row) => `<tr>
+    <td><span class="table-title">${esc(row.channel)}</span></td>
+    <td>${formatNumber(row.messages)}</td>
+    <td>${row.response_rate_pct!=null?`${row.response_rate_pct}%`:"—"}</td>
+    <td>${row.response_time_ms!=null?`${Number(row.response_time_ms).toFixed(0)}ms`:"—"}</td>
+    <td>${row.satisfaction_avg!=null?`${row.satisfaction_avg}/5`:"—"}</td>
+    <td>${row.ai_resolution_rate_pct!=null?`${row.ai_resolution_rate_pct}%`:"—"}</td>
+  </tr>`).join("");
+
+  setPage(`${pageHeader("Communication Center", "Satu pandangan untuk semua channel komunikasi pelanggan — status koneksi, kecepatan respons, kepuasan, dan tingkat penyelesaian oleh AI.", `<div class="business-quick-actions">${periodTabs}</div>`)}
+  <div class="grid grid-4" style="margin:16px 0">
+    ${metricCard("Total Messages", formatNumber(a.total_messages||0), `${days===1?"Today":days+" hari terakhir"}`, "communication-center")}
+    ${metricCard("Response Rate", a.response_rate_pct!=null?`${a.response_rate_pct}%`:"—", "Pesan terjawab / pesan masuk", "channels", a.response_rate_pct>=90?"trend-up":"")}
+    ${metricCard("Customer Satisfaction", a.satisfaction_avg!=null?`${a.satisfaction_avg}/5`:"Belum ada data", "Rating rata-rata percakapan", "handoffs")}
+    ${metricCard("AI Resolution Rate", a.ai_resolution_rate_pct!=null?`${a.ai_resolution_rate_pct}%`:"Belum ada data", "Selesai tanpa human handoff", "executive", a.ai_resolution_rate_pct>=80?"trend-up":"")}
+  </div>
+  <div class="grid channel-grid">${channelCards}${gmailCard}</div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Breakdown per Channel</h3><span class="subtle">${days===1?"Today":days+" hari terakhir"}</span></div></div>${breakdownRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Messages</th><th>Response Rate</th><th>Response Time</th><th>Satisfaction</th><th>AI Resolution</th></tr></thead><tbody>${breakdownRows}</tbody></table></div>`:emptyState("Belum ada data","Data muncul setelah ada pesan masuk dari channel manapun.")}</div>`);
+}
+
 async function renderSettings() {
   loadingPage("Platform Settings","Configure security posture and workspace connectivity.");
   const integrationResult = await settle("integrations",api.integrations());
@@ -2034,7 +2095,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
   await renderers[state.route]();
 }
 
@@ -2300,6 +2361,7 @@ document.addEventListener("click", async (event) => {
   if(action==="invite-member") showInviteMember();
   if(action==="submit-invite-member") await submitInviteMember();
   const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); }catch(error){toast(error.message,"error");} }
+  const commPeriod=event.target.closest("[data-comm-period]"); if(commPeriod){ state.commCenterDays=Number(commPeriod.dataset.commPeriod); await renderCommunicationCenter(); return; }
   if(action==="manage-member") showMemberRole(event.target.closest("[data-team-user]")?.dataset.teamUser);
   if(action==="submit-member-role") await submitMemberRole();
   const revokeMemberRole=event.target.closest("[data-revoke-member-role]");
