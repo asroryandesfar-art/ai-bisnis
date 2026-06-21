@@ -48,6 +48,14 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
     ):
         return await exe.dashboard_summary(pool, user["org_id"])
 
+    @router.get("/trends")
+    async def trends(
+        user: Annotated[dict, Depends(require_permission("executive.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        days: int = 30,
+    ):
+        return await exe.gather_trend_series(pool, user["org_id"], days=days)
+
     @router.get("/reports")
     async def list_reports(
         user: Annotated[dict, Depends(require_permission("executive.read"))],

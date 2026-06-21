@@ -377,6 +377,11 @@ function drawChart(key, selector, rows, type = "bar") {
   state.charts[key] = new Chart(canvas, { type, data:{labels,datasets:[{data:values,borderColor:'#8b7cff',backgroundColor:type==='line'?'rgba(139,124,255,.12)':'rgba(139,124,255,.7)',fill:type==='line',tension:.38,borderWidth:2,pointRadius:0,borderRadius:5}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#697386',font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(105,115,134,.13)'},ticks:{color:'#697386',font:{size:9}}}}} });
 }
 
+function drawDoughnutChart(key, selector, labels, values) {
+  const canvas = el(selector); if (!canvas || !window.Chart) return; destroyChart(key);
+  state.charts[key] = new Chart(canvas, { type:"doughnut", data:{labels,datasets:[{data:values,backgroundColor:['#697386','#f4bd62','#45d39b'],borderWidth:0}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#697386',font:{size:10},boxWidth:10}}},cutout:'65%'} });
+}
+
 async function renderAnalytics(days = state.analyticsDays) {
   loadingPage("Analytics","Measure service quality, customer demand, and agent performance.");
   if (!state.selectedBotId) { setPage(pageHeader("Analytics","Performance insights for your AI fleet.") + emptyState("No agent data","Deploy an agent to start collecting analytics.")); return; }
@@ -1312,17 +1317,22 @@ async function renderOperations() {
   <div class="card"><div class="card-head"><h3>Laporan</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada laporan", "Generate laporan weekly/monthly pertama Anda.")}</div>`);
 }
 
+const EXECUTIVE_TREND_PERIODS = [["1","Today"],["7","7 Days"],["30","30 Days"],["90","90 Days"],["365","1 Year"]];
+
 async function renderExecutive() {
   loadingPage("Executive Center", "AI CEO Assistant — company health score dan executive brief lintas Finance/Marketing/HR/Operations/Security/Sales.");
-  let dashboard, reports;
+  const trendDays = state.executiveTrendDays || 30;
+  let dashboard, reports, trends;
   try {
-    [dashboard, reports] = await Promise.all([api.executiveDashboard(), api.executiveReports({ limit: 10 })]);
+    [dashboard, reports, trends] = await Promise.all([api.executiveDashboard(), api.executiveReports({ limit: 10 }), api.executiveTrends(trendDays)]);
   } catch (error) { setPage(errorState(error.message)); return; }
-  state.executiveDashboard = dashboard; state.executiveReports = reports.reports || [];
+  state.executiveDashboard = dashboard; state.executiveReports = reports.reports || []; state.executiveTrends = trends || {};
 
   const health = dashboard.health || {};
   const byDomain = health.by_domain || {};
   const healthTrend = health.label === "healthy" ? "trend-up" : (health.label === "warning" ? "default" : "trend-down");
+  const sales = dashboard.synthesis?.sales || {};
+  const periodTabs = EXECUTIVE_TREND_PERIODS.map(([value, label]) => `<button class="button ${trendDays===Number(value)?'button-primary':''}" data-exec-trend-period="${value}">${label}</button>`).join("");
 
   const domainLabels = { finance: "Finance", marketing: "Marketing", hr: "HR", operations: "Operations", security: "Security", sales: "Sales" };
   const domainCards = Object.entries(domainLabels).map(([key, label]) =>
@@ -1355,6 +1365,8 @@ async function renderExecutive() {
 
   const analysisHtml = renderBusinessAnalysis(state.businessAnalysis);
 
+  const chartCard = (title, canvasId) => `<div class="card"><div class="card-head"><h3 style="font-size:13px">${esc(title)}</h3></div><div class="card-body"><div style="height:220px"><canvas id="${canvasId}"></canvas></div></div></div>`;
+
   setPage(`${pageHeader("Executive Center", "AI CEO Assistant: sintesis lintas-domain jadi satu company health score & rekomendasi strategis.",
     `<button class="button button-primary" data-action="analyze-business">${icon('executive',14)} Analyze My Business</button>
      <button class="button" data-action="executive-generate-weekly">Generate Weekly Brief</button>
@@ -1365,7 +1377,35 @@ async function renderExecutive() {
   </div>
   ${analysisHtml}
   ${briefHtml}
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head"><div><h3>Executive Analytics</h3><span class="subtle">Tren lintas-domain — data nyata, bukan simulasi</span></div><div class="business-quick-actions" style="margin:0">${periodTabs}</div></div>
+    <div class="card-body">
+      <div class="grid grid-3" style="margin-bottom:14px">
+        ${chartCard("Revenue Trend", "exec-revenue-chart")}
+        ${chartCard("Customer Growth", "exec-customer-growth-chart")}
+        ${chartCard("Sales Growth", "exec-sales-growth-chart")}
+      </div>
+      <div class="grid grid-3">
+        ${chartCard("Lead Conversion (%)", "exec-lead-conversion-chart")}
+        ${chartCard("Customer Satisfaction", "exec-satisfaction-chart")}
+        ${chartCard("AI Performance (Quality Score)", "exec-ai-performance-chart")}
+      </div>
+      <div class="grid grid-2" style="margin-top:14px">
+        <div class="card"><div class="card-head"><h3 style="font-size:13px">Lead Distribution</h3></div><div class="card-body"><div style="height:200px"><canvas id="exec-lead-distribution-chart"></canvas></div></div></div>
+        <div class="card"><div class="card-head"><h3 style="font-size:13px">Ringkasan Periode</h3></div><div class="card-body"><p class="subtle" style="font-size:11px;margin:0">Grafik di atas menampilkan data ${trendDays===1?"hari ini":`${trendDays} hari terakhir`}. Belum ada data akan tampak sebagai grafik kosong — ini normal untuk bisnis baru, bukan kesalahan sistem.</p></div></div>
+      </div>
+    </div>
+  </div>
   <div class="card"><div class="card-head"><h3>Riwayat Executive Brief</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada executive brief", "Generate brief weekly/monthly pertama Anda — AI akan menyintesis 6 domain jadi satu rekomendasi strategis.")}</div>`);
+
+  const trendData = state.executiveTrends || {};
+  drawChart("exec-revenue", "#exec-revenue-chart", trendData.revenue_trend || [], "bar");
+  drawChart("exec-customer-growth", "#exec-customer-growth-chart", trendData.customer_growth || [], "line");
+  drawChart("exec-sales-growth", "#exec-sales-growth-chart", trendData.sales_growth || [], "bar");
+  drawChart("exec-lead-conversion", "#exec-lead-conversion-chart", trendData.lead_conversion || [], "line");
+  drawChart("exec-satisfaction", "#exec-satisfaction-chart", trendData.customer_satisfaction || [], "line");
+  drawChart("exec-ai-performance", "#exec-ai-performance-chart", trendData.ai_performance || [], "bar");
+  drawDoughnutChart("exec-lead-distribution", "#exec-lead-distribution-chart", ["Cold", "Warm", "Hot"], [sales.cold || 0, sales.warm || 0, sales.hot || 0]);
 }
 
 function renderBusinessAnalysis(result) {
@@ -2394,6 +2434,7 @@ document.addEventListener("click", async (event) => {
   if(action==="submit-invite-member") await submitInviteMember();
   const disconnectChannel=event.target.closest("[data-disconnect-channel]"); if(disconnectChannel && confirm("Disconnect this channel?")){ try{ await api.disconnectChannel(disconnectChannel.dataset.disconnectChannel); toast("Channel disconnected.","success"); if(state.route==="channels") await renderChannels(); else await renderSettings(); }catch(error){toast(error.message,"error");} }
   const commPeriod=event.target.closest("[data-comm-period]"); if(commPeriod){ state.commCenterDays=Number(commPeriod.dataset.commPeriod); await renderCommunicationCenter(); return; }
+  const execTrendPeriod=event.target.closest("[data-exec-trend-period]"); if(execTrendPeriod){ state.executiveTrendDays=Number(execTrendPeriod.dataset.execTrendPeriod); await renderExecutive(); return; }
   if(action==="manage-member") showMemberRole(event.target.closest("[data-team-user]")?.dataset.teamUser);
   if(action==="submit-member-role") await submitMemberRole();
   const revokeMemberRole=event.target.closest("[data-revoke-member-role]");

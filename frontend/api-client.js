@@ -297,6 +297,7 @@ export const api = {
   opsGenerateReport: (report_type) => request("/api/operations/reports/generate", { method: "POST", body: { report_type } }),
   opsReport: (id) => request(`/api/operations/reports/${id}`),
   executiveDashboard: () => request("/api/executive/dashboard"),
+  executiveTrends: (days = 30) => request(`/api/executive/trends${encodeQuery({ days })}`),
   executiveReports: (params = {}) => request(`/api/executive/reports${encodeQuery(params)}`),
   generateExecutiveReport: (report_type) => request("/api/executive/reports/generate", { method: "POST", body: { report_type } }),
   analyzeBusiness: () => request("/api/executive/analyze", { method: "POST" }),
