@@ -20,3 +20,4 @@ data/
 .tts_vendor/
 .venv-tts/
 *.deb
+.~lock.*#
