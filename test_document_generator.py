@@ -72,3 +72,24 @@ def test_office_formats_are_valid_zip_containers():
         data, _ = dg.generate_document(fmt, SAMPLE_SPEC)
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             assert zf.namelist()
+
+
+def test_normalize_spec_defaults_logo_fields_when_absent():
+    spec = dg.normalize_spec(None)
+    assert spec["logo_path"] is None
+    assert spec["logo_width_inch"] == 1.0
+
+
+def test_generate_pdf_embeds_logo_image_when_logo_path_given():
+    from pypdf import PdfReader
+    import io
+
+    logo_path = "frontend/public/assets/brand/botnesia-clean-logo.png"
+    data = dg.generate_pdf({**SAMPLE_SPEC, "logo_path": logo_path, "logo_width_inch": 0.6})
+    reader = PdfReader(io.BytesIO(data))
+    assert len(list(reader.pages[0].images)) == 1
+
+
+def test_generate_pdf_ignores_invalid_logo_path_without_raising():
+    data = dg.generate_pdf({**SAMPLE_SPEC, "logo_path": "/nonexistent/file.png"})
+    assert data[:5] == b"%PDF-"

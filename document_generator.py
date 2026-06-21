@@ -8,6 +8,8 @@ yang mengubah permintaan user jadi outline):
       "sections": [{"heading": str, "body": str}, ...],
       "table_rows": [[str, ...], ...]  # opsional, header di baris pertama
       "slides": [{"title": str, "bullets": [str, ...]}, ...]  # opsional, khusus PPTX
+      "logo_path": str  # opsional, path file gambar -- khusus PDF, ditaruh di atas judul
+      "logo_width_inch": float  # opsional, default 1.0 -- lebar logo (tinggi proporsional)
     }
 
 Setiap `generate_*` toleran terhadap field yang hilang — selalu balik bytes
@@ -49,19 +51,43 @@ def normalize_spec(raw: dict | None, *, fallback_title: str = "Dokumen") -> dict
         if slide_title or bullets:
             slides.append({"title": slide_title, "bullets": bullets})
 
-    return {"title": title, "sections": sections, "table_rows": table_rows, "slides": slides}
+    logo_path = str(raw.get("logo_path") or "").strip() or None
+    try:
+        logo_width_inch = float(raw.get("logo_width_inch") or 1.0)
+    except (TypeError, ValueError):
+        logo_width_inch = 1.0
+
+    return {
+        "title": title, "sections": sections, "table_rows": table_rows, "slides": slides,
+        "logo_path": logo_path, "logo_width_inch": logo_width_inch,
+    }
 
 
 def generate_pdf(spec: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     spec = normalize_spec(spec)
     styles = getSampleStyleSheet()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4)
-    flow = [Paragraph(escape(spec["title"]), styles["Title"]), Spacer(1, 12)]
+    flow = []
+
+    if spec["logo_path"]:
+        try:
+            reader = ImageReader(spec["logo_path"])
+            iw, ih = reader.getSize()
+            target_w = spec["logo_width_inch"] * inch
+            flow.append(Image(spec["logo_path"], width=target_w, height=target_w * ih / iw))
+            flow.append(Spacer(1, 10))
+        except Exception:
+            pass  # logo_path tidak valid/tidak terbaca -- jangan sampai gagalkan seluruh dokumen
+
+    flow.append(Paragraph(escape(spec["title"]), styles["Title"]))
+    flow.append(Spacer(1, 12))
 
     for section in spec["sections"]:
         if section["heading"]:
