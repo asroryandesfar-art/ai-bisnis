@@ -23,6 +23,7 @@ const state = {
 
 const el = (selector) => document.querySelector(selector);
 const els = (selector) => [...document.querySelectorAll(selector)];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pageRoot = () => el("#page-root");
 
 function parseJwt() {
@@ -32,7 +33,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings","about","founder-story"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1857,6 +1858,72 @@ async function renderFounderStory() {
   </section>`);
 }
 
+const INVESTOR_DEMO_STEPS = ["Collecting Data","Analyzing Revenue","Analyzing Customers","Analyzing Operations","Finding Root Cause","Generating Recommendations","Creating Action Plan","Generating Executive Report","Predicting Business Growth","Executive Conclusion"];
+
+function investorDemoStepperHtml(doneUpTo, activeIndex) {
+  return `<ul class="demo-stepper">${INVESTOR_DEMO_STEPS.map((label, i) => `<li class="${i < doneUpTo ? "done" : ""} ${i === activeIndex ? "active" : ""}"><span class="step-dot">${i < doneUpTo ? "✓" : i + 1}</span><span class="step-label">${esc(label)}</span></li>`).join("")}</ul>`;
+}
+
+async function renderInvestorDemo() {
+  setPage(`<section class="business-command">
+    <section class="business-hero">
+      <div class="business-hero-copy">
+        <span class="eyebrow">INVESTOR DEMO MODE</span>
+        <h2>Lihat AI Workforce Bekerja, Live</h2>
+        <p>Simulasi perusahaan yang sedang mengalami penurunan — AI akan menganalisis data, menemukan root cause, memberi rekomendasi, menyusun action plan, dan memprediksi pemulihan. Semua dijalankan live oleh AI yang sama dengan AI Business Analyst di Executive Center.</p>
+        <div class="business-quick-actions"><button class="button button-primary" data-action="run-investor-demo">${icon("executive",14)} Run Investor Demo</button></div>
+      </div>
+      <div class="business-health-card">
+        <span>Skenario Demo</span>
+        <strong style="font-size:30px">Revenue -15%</strong>
+        <p>Customer -8% &middot; Hot leads turun tajam &middot; Operations &amp; Security menurun</p>
+      </div>
+    </section>
+    <section class="business-panel" id="investor-demo-stepper-panel" style="display:none">
+      <div class="business-section-head"><div><span class="eyebrow">AI WORKING</span><h3>Proses Analisis</h3></div></div>
+      <div style="padding:18px 22px"><div id="investor-demo-stepper"></div></div>
+    </section>
+    <div id="investor-demo-result"></div>
+  </section>`);
+}
+
+function renderInvestorDemoResult(result) {
+  if (!result || result.error) return errorState(result?.error || "Demo gagal dijalankan.");
+  const predicted = result.predicted_improvement || {};
+  return `<div class="demo-banner">${icon("about",14)} Mode Simulasi — seluruh data di bawah ini adalah skenario demo, bukan data bisnis nyata.</div>
+  ${renderBusinessAnalysis(result)}
+  <div class="business-panel" style="margin-top:0">
+    <div class="business-section-head"><div><span class="eyebrow">PREDICTED IMPROVEMENT</span><h3>Prediksi Pemulihan Bisnis</h3></div></div>
+    <div style="padding:20px"><p style="margin:0 0 6px;font-size:28px;font-weight:800;color:var(--green)">+${esc(predicted.revenue_recovery_pct ?? "—")}% Revenue</p>
+    <p style="margin:0 0 10px;color:var(--text-2);font-size:13px">Estimasi dalam ${esc(predicted.timeframe_days ?? "90")} hari jika rekomendasi di atas diterapkan secara konsisten.</p>
+    <p style="margin:0;color:var(--text-3);font-size:11px">${esc(predicted.note || "")}</p></div>
+  </div>`;
+}
+
+async function runInvestorDemoSequence() {
+  const panel = el("#investor-demo-stepper-panel");
+  const stepperEl = el("#investor-demo-stepper");
+  const resultEl = el("#investor-demo-result");
+  if (!panel || !stepperEl || !resultEl) return;
+  panel.style.display = "block";
+  resultEl.innerHTML = "";
+  stepperEl.innerHTML = investorDemoStepperHtml(0, 0);
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  const demoPromise = api.investorDemo().catch((error) => ({ error: error.message }));
+  const pacing = [550, 650, 650, 600];
+  for (let i = 0; i < pacing.length; i++) { await sleep(pacing[i]); stepperEl.innerHTML = investorDemoStepperHtml(i + 1, i + 1); }
+
+  const result = await demoPromise;
+
+  const remainingSteps = [4, 5, 6, 7, 8, 9];
+  for (const i of remainingSteps) { await sleep(480); stepperEl.innerHTML = investorDemoStepperHtml(i + 1, i + 1); }
+  await sleep(300);
+  stepperEl.innerHTML = investorDemoStepperHtml(INVESTOR_DEMO_STEPS.length, -1);
+
+  resultEl.innerHTML = renderInvestorDemoResult(result);
+}
+
 async function renderSettings() {
   loadingPage("Platform Settings","Configure security posture and workspace connectivity.");
   const integrationResult = await settle("integrations",api.integrations());
@@ -2217,7 +2284,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo};
   await renderers[state.route]();
 }
 
@@ -2540,6 +2607,7 @@ document.addEventListener("click", async (event) => {
   if(action==="executive-generate-weekly"){ try{ await api.generateExecutiveReport("weekly"); toast("Weekly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="analyze-business"){ try{ toast("Menganalisis bisnis Anda...","success"); state.businessAnalysis=await api.analyzeBusiness(); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="run-investor-demo"){ await runInvestorDemoSequence(); return; }
   if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }

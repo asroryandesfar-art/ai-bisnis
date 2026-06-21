@@ -115,6 +115,14 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         )
         return result
 
+    @router.post("/demo")
+    async def investor_demo_route(
+        user: Annotated[dict, Depends(require_permission("executive.read"))],
+    ):
+        org_id = user["org_id"]
+        _check_rate_limit(f"executive-demo:{org_id}", 5)
+        return await exe.run_investor_demo(agent=agent)
+
     @router.get("/reports/{report_id}")
     async def get_report(
         report_id: str,
