@@ -1353,15 +1353,47 @@ async function renderExecutive() {
     <td>${relativeTime(r.created_at)}</td>
   </tr>`).join("");
 
+  const analysisHtml = renderBusinessAnalysis(state.businessAnalysis);
+
   setPage(`${pageHeader("Executive Center", "AI CEO Assistant: sintesis lintas-domain jadi satu company health score & rekomendasi strategis.",
-    `<button class="button" data-action="executive-generate-weekly">Generate Weekly Brief</button>
-     <button class="button button-primary" data-action="executive-generate-monthly">Generate Monthly Brief</button>`)}
+    `<button class="button button-primary" data-action="analyze-business">${icon('executive',14)} Analyze My Business</button>
+     <button class="button" data-action="executive-generate-weekly">Generate Weekly Brief</button>
+     <button class="button" data-action="executive-generate-monthly">Generate Monthly Brief</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Company Health Score", `${health.overall ?? "—"}`, health.label || "—", "executive", healthTrend)}
     ${domainCards}
   </div>
+  ${analysisHtml}
   ${briefHtml}
   <div class="card"><div class="card-head"><h3>Riwayat Executive Brief</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada executive brief", "Generate brief weekly/monthly pertama Anda — AI akan menyintesis 6 domain jadi satu rekomendasi strategis.")}</div>`);
+}
+
+function renderBusinessAnalysis(result) {
+  if (!result) return "";
+  const healthKind = { Excellent: "active", Good: "active", Warning: "pending", Critical: "error" }[result.business_health_label] || "default";
+  const analysis = result.analysis || {};
+  const rootCause = (analysis.root_cause_analysis || []).map((item) => `<div class="founder-insight warning" style="margin-bottom:8px"><span></span><div><strong>${esc(item.question)}</strong><p>${esc(item.explanation)}</p></div></div>`).join("");
+  const recs = analysis.recommendations || {};
+  const recBlock = (label, items, kind) => (items || []).length
+    ? `<div style="margin-bottom:10px"><span class="status-badge ${kind}">${esc(label)}</span><ul style="margin:8px 0 0;padding-left:18px">${items.map((i) => `<li style="font-size:12px;margin-bottom:4px">${esc(i)}</li>`).join("")}</ul></div>` : "";
+  const plan = analysis.action_plan || {};
+  const planBlock = (label, items) => `<div class="card" style="flex:1"><div class="card-head"><h3 style="font-size:13px">${esc(label)}</h3></div><div class="card-body">${(items||[]).length ? `<ul style="margin:0;padding-left:18px">${items.map((i) => `<li style="font-size:12px;margin-bottom:6px">${esc(i)}</li>`).join("")}</ul>` : `<span class="subtle" style="font-size:11px">Tidak ada langkah spesifik.</span>`}</div></div>`;
+  const noHistory = result.deltas && result.deltas.has_historical_data === false
+    ? `<p class="subtle" style="font-size:11px;margin:0 0 12px">Belum ada riwayat report sebelumnya — analisis ini berdasarkan kondisi saat ini saja, generate weekly/monthly brief dulu agar root-cause bisa membandingkan tren.</p>` : "";
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><div><h3>AI Business Analyst</h3><span class="subtle">Business Health: ${statusBadge(healthKind, result.business_health_label)}</span></div></div>
+    <div class="card-body">
+      ${noHistory}
+      ${analysis.executive_summary ? `<p style="font-size:13px;margin-bottom:14px">${esc(analysis.executive_summary)}</p>` : ""}
+      ${rootCause ? `<div style="margin-bottom:14px"><div class="subtle" style="font-size:10px;text-transform:uppercase;margin-bottom:6px">Root Cause Analysis</div>${rootCause}</div>` : ""}
+      <div class="subtle" style="font-size:10px;text-transform:uppercase;margin-bottom:6px">Recommendations</div>
+      ${recBlock("Prioritas Tinggi", recs.high, "error")}
+      ${recBlock("Prioritas Sedang", recs.medium, "pending")}
+      ${recBlock("Prioritas Rendah", recs.low, "default")}
+      <div class="subtle" style="font-size:10px;text-transform:uppercase;margin:14px 0 6px">Action Plan</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">${planBlock("7 Hari", plan["7_days"])}${planBlock("30 Hari", plan["30_days"])}${planBlock("90 Hari", plan["90_days"])}</div>
+    </div>
+  </div>`;
 }
 
 async function renderWorkforce() {
@@ -2416,6 +2448,7 @@ document.addEventListener("click", async (event) => {
   if(action==="ops-generate-monthly"){ try{ await api.opsGenerateReport("monthly"); toast("Monthly report dibuat.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="executive-generate-weekly"){ try{ await api.generateExecutiveReport("weekly"); toast("Weekly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="analyze-business"){ try{ toast("Menganalisis bisnis Anda...","success"); state.businessAnalysis=await api.analyzeBusiness(); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }

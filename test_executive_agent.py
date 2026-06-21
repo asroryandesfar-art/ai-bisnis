@@ -200,6 +200,115 @@ def test_generate_executive_brief_returns_structured_data(monkeypatch):
     assert result["growth_recommendations"] == ["A"]
 
 
+# ─── AI Business Analyst (Phase Next 12) ─────────────────────────
+
+def test_business_health_label_four_tiers():
+    assert exe.business_health_label(95) == "Excellent"
+    assert exe.business_health_label(80) == "Good"
+    assert exe.business_health_label(60) == "Warning"
+    assert exe.business_health_label(30) == "Critical"
+
+
+def test_get_latest_synthesis_snapshot_none_when_no_report():
+    pool = FakePool(fetchrow_results=[None])
+    result = asyncio.run(exe.get_latest_synthesis_snapshot(pool, "org-1"))
+    assert result is None
+
+
+def test_get_latest_synthesis_snapshot_parses_json_string_data():
+    import json
+    pool = FakePool(fetchrow_results=[{"data": json.dumps({"synthesis": {"finance": {"revenue_30d_idr": 100}}, "health": {"overall": 70}})}])
+    result = asyncio.run(exe.get_latest_synthesis_snapshot(pool, "org-1"))
+    assert result["synthesis"]["finance"]["revenue_30d_idr"] == 100
+    assert result["health"]["overall"] == 70
+
+
+def test_compute_score_deltas_no_historical_data():
+    deltas = exe.compute_score_deltas({}, {"overall": 80, "by_domain": {}}, None)
+    assert deltas == {"has_historical_data": False}
+
+
+def test_compute_score_deltas_computes_real_changes():
+    current_synthesis = {"finance": {"revenue_30d_idr": 8_000_000, "churn_pct": 5}, "sales": {"cold": 2, "warm": 1, "hot": 1}}
+    current_health = {"overall": 70, "by_domain": {"finance": 60, "sales": 80}}
+    previous = {
+        "synthesis": {"finance": {"revenue_30d_idr": 10_000_000, "churn_pct": 2}, "sales": {"cold": 1, "warm": 1, "hot": 3}},
+        "health": {"overall": 85, "by_domain": {"finance": 90, "sales": 95}},
+    }
+    deltas = exe.compute_score_deltas(current_synthesis, current_health, previous)
+    assert deltas["has_historical_data"] is True
+    assert deltas["overall_score_delta"] == -15
+    assert deltas["revenue_30d_idr_delta"] == -2_000_000
+    assert deltas["hot_leads_delta"] == -2
+    assert deltas["by_domain_delta"]["finance"] == -30
+
+
+def test_analyze_business_returns_none_when_llm_unavailable(monkeypatch):
+    async def fake_call_llm_json(self, messages, temperature=0.4, max_tokens=1536, default=None):
+        out = dict(default or {})
+        out["_llm_unavailable"] = True
+        return out
+
+    monkeypatch.setattr(exe.ExecutiveAgent, "_call_llm_json", fake_call_llm_json)
+    agent = exe.ExecutiveAgent(api_key="test-key")
+    result = asyncio.run(agent.analyze_business({}, {"overall": 80}, {"has_historical_data": False}))
+    assert result is None
+
+
+def test_analyze_business_returns_structured_data(monkeypatch):
+    async def fake_call_llm_json(self, messages, temperature=0.4, max_tokens=1536, default=None):
+        return {
+            "executive_summary": "Ringkasan.",
+            "root_cause_analysis": [{"question": "Mengapa skor turun?", "explanation": "Revenue turun 20%."}],
+            "recommendations": {"high": ["Tagih invoice overdue"], "medium": [], "low": []},
+            "action_plan": {"7_days": ["Hubungi pelanggan overdue"], "30_days": [], "90_days": []},
+        }
+
+    monkeypatch.setattr(exe.ExecutiveAgent, "_call_llm_json", fake_call_llm_json)
+    agent = exe.ExecutiveAgent(api_key="test-key")
+    result = asyncio.run(agent.analyze_business({}, {"overall": 70}, {"has_historical_data": False}))
+    assert result["root_cause_analysis"][0]["question"] == "Mengapa skor turun?"
+    assert result["recommendations"]["high"] == ["Tagih invoice overdue"]
+
+
+def test_analyze_business_normalizes_array_executive_summary(monkeypatch):
+    async def fake_call_llm_json(self, messages, temperature=0.4, max_tokens=2048, default=None):
+        return {
+            "executive_summary": ["Kalimat satu.", "Kalimat dua."],
+            "root_cause_analysis": [], "recommendations": {"high": [], "medium": [], "low": []},
+            "action_plan": {"7_days": [], "30_days": [], "90_days": []},
+        }
+
+    monkeypatch.setattr(exe.ExecutiveAgent, "_call_llm_json", fake_call_llm_json)
+    agent = exe.ExecutiveAgent(api_key="test-key")
+    result = asyncio.run(agent.analyze_business({}, {"overall": 70}, {"has_historical_data": False}))
+    assert result["executive_summary"] == "Kalimat satu. Kalimat dua."
+
+
+def test_run_business_analysis_combines_health_label_and_deltas(monkeypatch):
+    _patch_synthesis(monkeypatch, operations={"health": {"score": 90}}, security={"score": 90})
+    pool = FakePool(fetchrow_results=[None])
+
+    class FakeAgent:
+        async def analyze_business(self, synthesis, health, deltas):
+            return {"executive_summary": "OK", "root_cause_analysis": [], "recommendations": {"high": [], "medium": [], "low": []}, "action_plan": {"7_days": [], "30_days": [], "90_days": []}}
+
+    result = asyncio.run(exe.run_business_analysis(pool, "org-1", agent=FakeAgent()))
+    assert result["business_health_label"] in ("Excellent", "Good", "Warning", "Critical")
+    assert result["deltas"]["has_historical_data"] is False
+    assert result["analysis"]["executive_summary"] == "OK"
+
+
+def test_analyze_business_route_writes_audit_log(monkeypatch):
+    _patch_synthesis(monkeypatch, operations={"health": {"score": 90}}, security={"score": 90})
+    pool = FakePool(fetchrow_results=[None])
+    router = _build_router(pool)
+    handler = _route(router, "/analyze", "POST")
+    result = asyncio.run(handler(user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool))
+    assert "business_health_label" in result
+    assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
+
+
 # ─── Router: RBAC gating ────────────────────────────────────────
 
 def test_router_gates_every_route_with_executive_permission():
@@ -224,7 +333,7 @@ def test_router_gates_every_route_with_executive_permission():
     )
 
     assert requested_keys.count("executive.read") == 3
-    assert requested_keys.count("executive.write") == 1
+    assert requested_keys.count("executive.write") == 2
     assert set(requested_keys) == {"executive.read", "executive.write"}
 
 

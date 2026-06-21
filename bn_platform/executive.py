@@ -92,6 +92,21 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         )
         return _report_out(report)
 
+    @router.post("/analyze")
+    async def analyze_business_route(
+        user: Annotated[dict, Depends(require_permission("executive.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        org_id = user["org_id"]
+        _check_rate_limit(f"executive-analyze:{org_id}", 5)
+        result = await exe.run_business_analysis(pool, org_id, agent=agent)
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
+            action="create", resource_type="business_analysis", resource_id=None,
+            metadata={"business_health_label": result["business_health_label"]},
+        )
+        return result
+
     @router.get("/reports/{report_id}")
     async def get_report(
         report_id: str,
