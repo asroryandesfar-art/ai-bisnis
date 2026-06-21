@@ -299,6 +299,7 @@ export const api = {
   executiveDashboard: () => request("/api/executive/dashboard"),
   executiveReports: (params = {}) => request(`/api/executive/reports${encodeQuery(params)}`),
   generateExecutiveReport: (report_type) => request("/api/executive/reports/generate", { method: "POST", body: { report_type } }),
+  analyzeBusiness: () => request("/api/executive/analyze", { method: "POST" }),
   executiveReport: (id) => request(`/api/executive/reports/${id}`),
   workforceDashboard: () => request("/api/workforce/dashboard"),
   workforceTasks: (params = {}) => request(`/api/workforce/tasks${encodeQuery(params)}`),

@@ -148,6 +148,101 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
     return {"health": health, "synthesis": synthesis}
 
 
+def business_health_label(overall: int) -> str:
+    """Skala 4-tingkat khusus AI Business Analyst (Excellent/Good/Warning/
+    Critical) -- TIDAK mengubah label 3-tingkat (healthy/warning/critical)
+    dari compute_company_health_score() yang sudah dipakai dashboard/CSS
+    existing. Murni mapping baru di atas skor overall yang sama."""
+    if overall >= 90:
+        return "Excellent"
+    if overall >= 75:
+        return "Good"
+    if overall >= 50:
+        return "Warning"
+    return "Critical"
+
+
+async def get_latest_synthesis_snapshot(pool: asyncpg.Pool, org_id: str) -> dict | None:
+    """Snapshot terakhir (weekly/monthly) untuk perbandingan root-cause --
+    reuse ops_reports yang sudah ada, bukan tabel/penyimpanan baru."""
+    row = await pool.fetchrow(
+        """SELECT data FROM ops_reports WHERE org_id=$1 AND source='executive'
+           ORDER BY created_at DESC LIMIT 1""", org_id,
+    )
+    if not row:
+        return None
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    if not data or "synthesis" not in data:
+        return None
+    return {"synthesis": data["synthesis"], "health": data.get("health", {})}
+
+
+def compute_score_deltas(current_synthesis: dict, current_health: dict, previous: dict | None) -> dict:
+    """Bandingkan kondisi sekarang vs snapshot sebelumnya -- basis deterministik
+    untuk root-cause analysis (LLM hanya menarasikan, tidak menghitung).
+    Mengembalikan {} (bukan fabrikasi) kalau belum ada data historis."""
+    if not previous:
+        return {"has_historical_data": False}
+
+    prev_synthesis = previous.get("synthesis", {})
+    prev_health = previous.get("health", {})
+
+    def _delta(curr: float, prev: float) -> float:
+        return round(curr - prev, 2)
+
+    by_domain_delta = {
+        domain: _delta(current_health.get("by_domain", {}).get(domain, 0), prev_health.get("by_domain", {}).get(domain, 0))
+        for domain in ("finance", "marketing", "hr", "operations", "security", "sales")
+    }
+
+    cf, pf = current_synthesis.get("finance", {}), prev_synthesis.get("finance", {})
+    cm, pm = current_synthesis.get("marketing", {}), prev_synthesis.get("marketing", {})
+    cs, ps = current_synthesis.get("sales", {}), prev_synthesis.get("sales", {})
+    chr_, phr = current_synthesis.get("hr", {}), prev_synthesis.get("hr", {})
+    cops, pops = current_synthesis.get("operations", {}), prev_synthesis.get("operations", {})
+
+    return {
+        "has_historical_data": True,
+        "overall_score_delta": _delta(current_health.get("overall", 0), prev_health.get("overall", 0)),
+        "by_domain_delta": by_domain_delta,
+        "revenue_30d_idr_delta": _delta(cf.get("revenue_30d_idr", 0), pf.get("revenue_30d_idr", 0)),
+        "churn_pct_delta": _delta(cf.get("churn_pct", 0), pf.get("churn_pct", 0)),
+        "active_campaigns_delta": _delta(cm.get("active_campaigns", 0), pm.get("active_campaigns", 0)),
+        "hot_leads_delta": _delta(cs.get("hot", 0), ps.get("hot", 0)),
+        "total_leads_delta": _delta(
+            cs.get("cold", 0) + cs.get("warm", 0) + cs.get("hot", 0),
+            ps.get("cold", 0) + ps.get("warm", 0) + ps.get("hot", 0),
+        ),
+        "pending_training_recommendations_delta": _delta(chr_.get("pending_training_recommendations", 0), phr.get("pending_training_recommendations", 0)),
+        "operations_health_score_delta": _delta(cops.get("health", {}).get("score", 0), pops.get("health", {}).get("score", 0)),
+    }
+
+
+async def run_business_analysis(pool: asyncpg.Pool, org_id: str, agent: "ExecutiveAgent | None" = None) -> dict:
+    """Orkestrator 'Analyze My Business' -- TIDAK dipersist ke ops_reports
+    (on-demand, bisa diklik berkali-kali tanpa migrasi schema baru utk
+    report_type baru). health/deltas selalu deterministik; hanya narasi
+    (root cause/recommendations/action plan) yang dari LLM, dan LLM diberi
+    deltas asli supaya tidak mengarang tren yang tidak ada di data."""
+    synthesis = await gather_synthesis_data(pool, org_id)
+    health = compute_company_health_score(synthesis)
+    previous = await get_latest_synthesis_snapshot(pool, org_id)
+    deltas = compute_score_deltas(synthesis, health, previous)
+
+    analysis = None
+    if agent is not None:
+        analysis = await agent.analyze_business(synthesis, health, deltas)
+
+    return {
+        "health": health,
+        "business_health_label": business_health_label(health["overall"]),
+        "deltas": deltas,
+        "analysis": analysis or {},
+    }
+
+
 # ─── AGENT ──────────────────────────────────────────────────────
 
 class ExecutiveAgent(BaseAgent):
@@ -179,6 +274,52 @@ Balas HANYA JSON dengan field: executive_summary (string), growth_recommendation
             "revenue_opportunities": [], "strategic_insights": [],
         }
         result = await self._call_llm_json(messages, temperature=0.4, max_tokens=1024, default=default)
+        if result.get("_llm_unavailable"):
+            return None
+        result.pop("_llm_unavailable", None)
+        return result
+
+    analyze_business_prompt = """Kamu adalah AI Business Analyst dalam sistem
+BotNesia AI Workforce -- diberi data sintesis Finance/Marketing/HR/Operations/
+Security/Sales SAAT INI, skor health, dan deltas (perubahan vs snapshot
+terakhir, bisa kosong kalau belum ada riwayat).
+
+ATURAN PALING PENTING: hanya rujuk angka/tren yang BENAR-BENAR ada di data
+yang diberikan. Kalau deltas.has_historical_data == false, jangan mengarang
+tren naik/turun -- jelaskan kondisi saat ini saja tanpa klaim perbandingan.
+
+WAJIB isi recommendations DAN action_plan dengan minimal 1 item masing-masing
+-- kalau tidak ada masalah besar, beri rekomendasi/langkah untuk MEMPERTAHANKAN
+performa saat ini, jangan dikosongkan begitu saja.
+
+Tugas (semua dalam Bahasa Indonesia), balas HANYA JSON dengan field PERSIS
+seperti ini (jangan ubah tipe data field manapun):
+- executive_summary: SATU STRING (bukan array/list) berisi 3-5 kalimat dalam
+  satu paragraf tentang kondisi bisnis saat ini
+- root_cause_analysis: list of {"question": string, "explanation": string} --
+  jawab pertanyaan yang relevan dari data (mis. "Mengapa skor turun?",
+  "Mengapa sales turun?", "Mengapa conversion rendah?") HANYA untuk hal yang
+  benar-benar terindikasi di data/deltas; list kosong jika tidak ada
+  penurunan signifikan untuk dijelaskan
+- recommendations: {"high": [string], "medium": [string], "low": [string]} --
+  rekomendasi konkret dikelompokkan prioritas, WAJIB minimal 1 item total
+- action_plan: {"7_days": [string], "30_days": [string], "90_days": [string]} --
+  langkah konkret bertahap, realistis untuk UMKM/bisnis kecil-menengah,
+  WAJIB minimal 1 item total"""
+
+    async def analyze_business(self, synthesis: dict, health: dict, deltas: dict) -> dict | None:
+        messages = [
+            {"role": "system", "content": self.analyze_business_prompt + "\n\nOutput harus JSON."},
+            {"role": "user", "content": json.dumps({"health_score": health, "data": synthesis, "deltas": deltas}, default=str)},
+        ]
+        default = {
+            "executive_summary": None, "root_cause_analysis": [],
+            "recommendations": {"high": [], "medium": [], "low": []},
+            "action_plan": {"7_days": [], "30_days": [], "90_days": []},
+        }
+        result = await self._call_llm_json(messages, temperature=0.4, max_tokens=2048, default=default)
+        if isinstance(result.get("executive_summary"), list):
+            result["executive_summary"] = " ".join(str(item) for item in result["executive_summary"])
         if result.get("_llm_unavailable"):
             return None
         result.pop("_llm_unavailable", None)
