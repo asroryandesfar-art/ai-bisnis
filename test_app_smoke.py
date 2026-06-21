@@ -26,6 +26,24 @@ def test_dashboard_and_frontend_assets_are_served():
     assert api_client.status_code == 200
 
 
+def test_root_serves_public_landing_page_not_login_redirect():
+    with TestClient(main.app) as client:
+        response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "BotNesia" in response.text
+    assert "Mulai Gratis" in response.text
+
+
+def test_dashboard_login_still_works_after_landing_page_added():
+    with TestClient(main.app) as client:
+        response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "auth-view" in response.text or "login-form" in response.text
+
+
 def test_frontend_asset_path_traversal_is_blocked():
     with TestClient(main.app) as client:
         response = client.get("/ui/%2e%2e/main.py")
