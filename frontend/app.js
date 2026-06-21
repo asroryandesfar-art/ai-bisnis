@@ -32,7 +32,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings","about","founder-story"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1807,6 +1807,56 @@ async function renderCommunicationCenter() {
   <div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Breakdown per Channel</h3><span class="subtle">${days===1?"Today":days+" hari terakhir"}</span></div></div>${breakdownRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Messages</th><th>Response Rate</th><th>Response Time</th><th>Satisfaction</th><th>AI Resolution</th></tr></thead><tbody>${breakdownRows}</tbody></table></div>`:emptyState("Belum ada data","Data muncul setelah ada pesan masuk dari channel manapun.")}</div>`);
 }
 
+async function renderAbout() {
+  setPage(`<section class="business-command">
+    <section class="business-hero">
+      <div class="business-hero-copy">
+        <img class="business-hero-logo" src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo">
+        <span class="eyebrow">ABOUT BOTNESIA</span>
+        <h2>AI Workforce untuk Setiap Bisnis Indonesia</h2>
+        <p>BotNesia membangun tim AI — Customer Service, Sales, Marketing, Finance, HR, Operations, Security, hingga Executive Assistant — yang bekerja 24/7 untuk bisnis Anda, tanpa perlu tim teknologi mahal.</p>
+      </div>
+    </section>
+    <section class="business-main-grid">
+      <div class="business-panel"><div class="business-section-head"><div><span class="eyebrow">VISION</span><h3>Visi Kami</h3></div></div>
+        <div style="padding:20px"><p style="margin:0;color:var(--text-2);line-height:1.7;font-size:13px">Menjadi platform AI Workforce nomor satu di Indonesia — tempat setiap UMKM hingga perusahaan besar bisa memiliki tim AI selengkap perusahaan teknologi besar, tanpa harus membangun tim engineering sendiri.</p></div></div>
+      <div class="business-panel"><div class="business-section-head"><div><span class="eyebrow">MISSION</span><h3>Misi Kami</h3></div></div>
+        <div style="padding:20px"><p style="margin:0;color:var(--text-2);line-height:1.7;font-size:13px">Membantu jutaan UMKM dan perusahaan Indonesia menggunakan AI tanpa harus memiliki tim teknologi mahal — cukup satu platform, BotNesia menghadirkan tenaga kerja AI yang siap bekerja di berbagai fungsi bisnis sekaligus.</p></div></div>
+    </section>
+    <section class="business-panel">
+      <div class="business-section-head"><div><span class="eyebrow">WHY BOTNESIA EXISTS</span><h3>Mengapa BotNesia Dibangun</h3></div></div>
+      <div style="padding:20px"><p style="margin:0 0 12px;color:var(--text-2);line-height:1.7;font-size:13px">Sebagian besar bisnis di Indonesia — dari toko online kecil hingga perusahaan menengah — tidak punya akses ke tim data scientist atau engineer AI seperti perusahaan besar. Software enterprise yang ada pun sering terlalu mahal dan rumit untuk skala mereka.</p>
+      <p style="margin:0;color:var(--text-2);line-height:1.7;font-size:13px">BotNesia hadir untuk menutup jarak itu: satu platform yang menggabungkan AI Customer Service, Sales, Marketing, Finance, HR, Operations, Security, dan Executive Assistant — semuanya terhubung, semuanya bisa dipantau dan disetujui manusia, dan semuanya bisa dijalankan tanpa tim teknologi internal.</p></div>
+    </section>
+  </section>`);
+}
+
+async function renderFounderStory() {
+  setPage(`<section class="business-command">
+    <section class="business-hero">
+      <div class="business-hero-copy">
+        <span class="eyebrow">FOUNDER STORY</span>
+        <h2>Cerita di Balik BotNesia</h2>
+        <p>Dibangun oleh seseorang yang percaya bahwa AI seharusnya bisa diakses semua bisnis — bukan hanya yang punya tim teknologi besar.</p>
+      </div>
+      <div class="business-health-card">
+        <span>Founder</span>
+        <strong style="font-size:32px">Asrori</strong>
+        <p>Pendiri BotNesia</p>
+      </div>
+    </section>
+    <section class="business-panel">
+      <div class="business-section-head"><div><span class="eyebrow">MISI PENDIRI</span><h3>Mengapa BotNesia Dibangun</h3></div></div>
+      <div style="padding:20px"><p style="margin:0;color:var(--text-2);line-height:1.85;font-size:14px">"Membantu jutaan UMKM dan perusahaan Indonesia menggunakan AI tanpa harus memiliki tim teknologi mahal."</p></div>
+    </section>
+    <section class="business-panel" style="margin-top:16px">
+      <div class="business-section-head"><div><span class="eyebrow">CERITA</span><h3>Dari Mana BotNesia Dimulai</h3></div></div>
+      <div style="padding:20px"><p style="margin:0 0 12px;color:var(--text-2);line-height:1.7;font-size:13px">Asrori melihat dari dekat betapa besar jarak antara bisnis kecil-menengah dengan teknologi AI yang sebenarnya bisa membantu mereka tumbuh — bukan karena teknologinya tidak ada, tapi karena terlalu mahal dan rumit untuk dipasang sendiri.</p>
+      <p style="margin:0;color:var(--text-2);line-height:1.7;font-size:13px">BotNesia dibangun sebagai jawaban atas masalah itu: AI Workforce yang siap pakai, terjangkau, dan tetap mengutamakan kendali manusia di setiap keputusan penting — supaya pemilik bisnis tetap memegang kendali, bukan AI yang berjalan sendiri tanpa pengawasan.</p></div>
+    </section>
+  </section>`);
+}
+
 async function renderSettings() {
   loadingPage("Platform Settings","Configure security posture and workspace connectivity.");
   const integrationResult = await settle("integrations",api.integrations());
@@ -2167,7 +2217,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory};
   await renderers[state.route]();
 }
 
