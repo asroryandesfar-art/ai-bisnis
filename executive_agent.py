@@ -303,6 +303,85 @@ async def run_business_analysis(pool: asyncpg.Pool, org_id: str, agent: "Executi
     }
 
 
+def build_demo_scenario() -> dict:
+    """Skenario sintetis untuk Investor Demo Mode -- perusahaan fiktif yang
+    mengalami penurunan (revenue -15%, customer -8%, konversi turun) supaya
+    AI bisa mendemonstrasikan analisis nyata (root cause/recommendation/
+    action plan dari LLM yang sama dengan analyze_business) TANPA menyentuh
+    data tenant manapun. Tidak pernah dipersist -- murni in-memory."""
+    current = {
+        "finance": {"revenue_30d_idr": 42_500_000, "profit_30d_idr": 1_500_000, "pending_invoices_count": 7,
+                    "pending_invoices_amount_idr": 12_000_000, "overdue_invoices_count": 5,
+                    "mrr_idr": 38_000_000, "arr_idr": 456_000_000, "churn_pct": 15.0},
+        "marketing": {"active_campaigns": 2, "content_draft": 4, "content_scheduled": 3,
+                      "content_ready_to_publish": 1, "content_published": 15, "content_due_now": 8,
+                      "engagement_30d": {"likes": 320, "comments": 40}},
+        "hr": {"candidates_by_status": {"new": 2}, "employees_by_status": {"active": 9},
+               "avg_evaluation_score_90d": 55.0, "pending_training_recommendations": 6},
+        "operations": {"health": {"score": 55, "label": "warning",
+                                   "reasons": ["SLA breach rate 18% (di atas ambang 10%)", "2 workflow gagal minggu ini"]},
+                       "workflow_health": {}, "sla_health": {}, "tenant_activity": {},
+                       "open_alerts_by_severity": {"high": 2, "medium": 3}},
+        "security": {"score": 50, "risk_level": "high", "findings_count": 6,
+                     "open_alerts_by_severity": {"high": 1, "medium": 2}},
+        "sales": {"cold": 55, "warm": 45, "hot": 10},
+    }
+    previous = {
+        "finance": {"revenue_30d_idr": 50_000_000, "profit_30d_idr": 8_000_000, "pending_invoices_count": 2,
+                    "pending_invoices_amount_idr": 3_000_000, "overdue_invoices_count": 0,
+                    "mrr_idr": 48_000_000, "arr_idr": 576_000_000, "churn_pct": 4.0},
+        "marketing": {"active_campaigns": 5, "content_draft": 2, "content_scheduled": 6,
+                      "content_ready_to_publish": 2, "content_published": 30, "content_due_now": 0,
+                      "engagement_30d": {"likes": 900, "comments": 150}},
+        "hr": {"candidates_by_status": {"new": 4}, "employees_by_status": {"active": 9},
+               "avg_evaluation_score_90d": 78.0, "pending_training_recommendations": 2},
+        "operations": {"health": {"score": 90, "label": "healthy", "reasons": []},
+                       "workflow_health": {}, "sla_health": {}, "tenant_activity": {},
+                       "open_alerts_by_severity": {}},
+        "security": {"score": 88, "risk_level": "low", "findings_count": 1, "open_alerts_by_severity": {}},
+        "sales": {"cold": 40, "warm": 40, "hot": 40},
+    }
+    return {"current": current, "previous": previous}
+
+
+async def run_investor_demo(agent: "ExecutiveAgent | None" = None) -> dict:
+    """Orkestrator Investor Demo Mode -- sama persis dengan run_business_analysis
+    (health/deltas deterministik, narasi dari LLM asli lewat analyze_business),
+    tapi sintesisnya skenario sintetis (build_demo_scenario), bukan dari DB.
+    Selalu ditandai is_demo=True supaya tidak pernah disalahartikan sebagai
+    data bisnis nyata."""
+    scenario = build_demo_scenario()
+    synthesis = scenario["current"]
+    previous_synthesis = scenario["previous"]
+    health = compute_company_health_score(synthesis)
+    previous_health = compute_company_health_score(previous_synthesis)
+    previous_snapshot = {"synthesis": previous_synthesis, "health": previous_health}
+    deltas = compute_score_deltas(synthesis, health, previous_snapshot)
+
+    analysis = None
+    if agent is not None:
+        analysis = await agent.analyze_business(synthesis, health, deltas)
+
+    revenue_decline_pct = round(
+        (previous_synthesis["finance"]["revenue_30d_idr"] - synthesis["finance"]["revenue_30d_idr"])
+        / previous_synthesis["finance"]["revenue_30d_idr"] * 100, 1,
+    )
+    predicted_improvement = {
+        "revenue_recovery_pct": revenue_decline_pct,
+        "timeframe_days": 90,
+        "note": "Estimasi ilustratif untuk skenario demo ini berdasarkan pemulihan ke level sebelum penurunan -- bukan prediksi keuangan yang dijamin.",
+    }
+
+    return {
+        "is_demo": True,
+        "health": health,
+        "business_health_label": business_health_label(health["overall"]),
+        "deltas": deltas,
+        "analysis": analysis or {},
+        "predicted_improvement": predicted_improvement,
+    }
+
+
 # ─── AGENT ──────────────────────────────────────────────────────
 
 class ExecutiveAgent(BaseAgent):

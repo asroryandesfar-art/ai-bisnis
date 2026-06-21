@@ -27,6 +27,7 @@ const paths = {
   "workforce-overview":'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   about:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   "founder-story":'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><circle cx="9" cy="9" r="2"/><path d="M14 8h3M14 12h3"/>',
+  "investor-demo":'<path d="m22 12-4-4v3H3v2h15v3z"/><path d="M16 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>',
   multimedia:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 14 4-4 3 3 5-5 4 4"/><path d="M8 21h8"/>',
   team:'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
   security:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
@@ -121,7 +122,7 @@ const navGroups = [
   ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
   ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
   ["SETTINGS", [["team","Team"],["billing","Billing"],["settings","Settings"],["founder","Founder OS"]]],
-  ["COMPANY", [["about","About BotNesia"],["founder-story","Founder Story"]]],
+  ["COMPANY", [["about","About BotNesia"],["founder-story","Founder Story"],["investor-demo","Investor Demo"]]],
 ];
 
 export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
@@ -157,6 +158,7 @@ const routeMeta = {
   "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
   about:["About BotNesia","Visi, misi, dan alasan BotNesia dibangun"],
   "founder-story":["Founder Story","Cerita di balik BotNesia dan misi pendirinya"],
+  "investor-demo":["Investor Demo Mode","AI menganalisis skenario bisnis simulasi secara live — root cause, rekomendasi, action plan, dan prediksi pertumbuhan"],
   multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
   team:["Team & Tenants","People, roles, access, and workspace identity"],
   security:["Security","Keamanan akun, akses tim, dan risiko bisnis."],

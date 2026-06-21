@@ -352,6 +352,48 @@ def test_analyze_business_route_writes_audit_log(monkeypatch):
     assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
 
 
+# ─── Investor Demo Mode (Phase Next 15) ──────────────────────────
+
+def test_build_demo_scenario_represents_a_declining_company():
+    scenario = exe.build_demo_scenario()
+    current, previous = scenario["current"], scenario["previous"]
+    assert current["finance"]["revenue_30d_idr"] < previous["finance"]["revenue_30d_idr"]
+    current_leads = sum(current["sales"].values())
+    previous_leads = sum(previous["sales"].values())
+    assert current_leads < previous_leads
+    assert current["operations"]["health"]["score"] < previous["operations"]["health"]["score"]
+
+
+def test_run_investor_demo_is_always_flagged_as_demo():
+    result = asyncio.run(exe.run_investor_demo(agent=None))
+    assert result["is_demo"] is True
+    assert result["deltas"]["has_historical_data"] is True
+    assert result["deltas"]["revenue_30d_idr_delta"] < 0
+    assert result["health"]["label"] in ("warning", "critical")
+
+
+def test_run_investor_demo_includes_predicted_improvement():
+    result = asyncio.run(exe.run_investor_demo(agent=None))
+    predicted = result["predicted_improvement"]
+    assert predicted["revenue_recovery_pct"] > 0
+    assert predicted["timeframe_days"] == 90
+    assert "ilustratif" in predicted["note"].lower()
+
+
+def test_run_investor_demo_returns_none_analysis_when_llm_unavailable():
+    result = asyncio.run(exe.run_investor_demo(agent=None))
+    assert result["analysis"] == {}
+
+
+def test_demo_route_returns_is_demo_result():
+    pool = FakePool()
+    router = _build_router(pool)
+    handler = _route(router, "/demo", "POST")
+    result = asyncio.run(handler(user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}))
+    assert result["is_demo"] is True
+    assert "predicted_improvement" in result
+
+
 # ─── Router: RBAC gating ────────────────────────────────────────
 
 def test_router_gates_every_route_with_executive_permission():
@@ -375,7 +417,7 @@ def test_router_gates_every_route_with_executive_permission():
         get_agent_config=lambda: {"api_key": ""},
     )
 
-    assert requested_keys.count("executive.read") == 4
+    assert requested_keys.count("executive.read") == 5
     assert requested_keys.count("executive.write") == 2
     assert set(requested_keys) == {"executive.read", "executive.write"}
 
