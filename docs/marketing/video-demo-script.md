@@ -99,7 +99,7 @@ Close-up pada bagian Root Cause Analysis & Recommendations hasil demo — highli
 "BotNesia. Satu platform, satu tim AI Workforce, untuk seluruh bisnis Anda. Coba demonya sekarang, gratis, tanpa kartu kredit."
 
 **Visual yang tampil:**
-Kembali ke landing page (`/`), zoom ke 2 tombol CTA: "Mulai Gratis Sekarang" dan "▶ Lihat AI Bekerja, Live". Logo BotNesia + URL `app.botnesia.id` muncul sebagai penutup.
+Kembali ke landing page (`/`), zoom ke 2 tombol CTA: "Mulai Gratis Sekarang" dan "▶ Lihat AI Bekerja, Live". Logo BotNesia + URL `app.botnesia.uk` muncul sebagai penutup.
 
 **Durasi:** 15s
 

@@ -73,7 +73,7 @@ SPEC = {
             "heading": "Kontak",
             "body": (
                 "Email: asroryandesfar@gmail.com  •  Demo interaktif (tanpa pendaftaran): "
-                "https://app.botnesia.id/demo  •  Website: https://app.botnesia.id"
+                "https://app.botnesia.uk/demo  •  Website: https://app.botnesia.uk"
             ),
         },
         {

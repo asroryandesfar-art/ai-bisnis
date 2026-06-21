@@ -32,8 +32,8 @@ Misi pendiri: *"Membantu jutaan UMKM dan perusahaan Indonesia menggunakan AI tan
 
 ## Kontak
 - Email: asroryandesfar@gmail.com
-- Demo interaktif (tanpa pendaftaran): https://app.botnesia.id/demo
-- Website: https://app.botnesia.id
+- Demo interaktif (tanpa pendaftaran): https://app.botnesia.uk/demo
+- Website: https://app.botnesia.uk
 
 ## Status
 Investor Ready · Government Ready · PDF Ready
