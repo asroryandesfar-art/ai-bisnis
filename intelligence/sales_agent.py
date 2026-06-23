@@ -101,7 +101,7 @@ class SalesAgent(BaseAgent):
     """
     name = "sales_agent"
     skills = ["sales_signal_detection", "objection_detection", "purchase_intent_tracking"]
-    tools: list[str] = []
+    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup"]
     goals = [
         "Mengenali sinyal niat beli, alasan membeli/batal, dan keberatan pelanggan secara real-time.",
         "Memberi rekomendasi angle respons strategis tanpa menambah latensi jawaban chat.",

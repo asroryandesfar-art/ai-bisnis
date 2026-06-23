@@ -253,7 +253,7 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 class MarketingAgent(BaseAgent):
     name = "marketing_agent"
     skills = ["campaign_management", "content_drafting", "content_scheduling", "engagement_analytics"]
-    tools: list[str] = ["channel_messaging"]
+    tools: list[str] = ["channel_messaging", "knowledge_search", "web_search", "browser_open", "memory_lookup"]
     goals = [
         "Membuat draft konten marketing sesuai gaya platform yang diminta.",
         "Mengelola kampanye dan kalender konten tenant serta menganalisis engagement.",
