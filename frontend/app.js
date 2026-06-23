@@ -1,10 +1,10 @@
-import { api, tokenStore, settle } from "/ui/api-client.js";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260624-sidebar-accordion-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
-} from "/ui/components.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js";
+} from "/ui/components.js?v=20260624-sidebar-accordion-1";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260624-sidebar-accordion-1";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
