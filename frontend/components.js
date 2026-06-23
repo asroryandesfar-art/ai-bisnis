@@ -119,21 +119,25 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["COMMAND CENTER", [["dashboard","Dashboard"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
-  ["DIGITAL EMPLOYEES", [["agents","AI Agents"],["chat","AI Chat"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
-  ["TASKS & WORKFLOWS", [["workflow-builder","Automation"],["workforce","Workforce Orchestration"]]],
-  ["COMMUNICATIONS", [["conversations","Inbox"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["channels","Integrations"]]],
-  ["KNOWLEDGE & LEARNING", [["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["learning","Feedback Learning"],["self-learning","Self-Learning Center"],["improvement","AI Improvement"]]],
-  ["BUSINESS HUB", [["analytics","Analytics"],["multimedia","Multimedia Studio"],["handoffs","Customers"]]],
-  ["AGENT OS", [["agent-center","Agent Center"],["routing-logs","Routing Logs"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["MARKETPLACE", [["marketplace","Agent Marketplace"]]],
-  ["ORGANIZATION", [["team","Team"],["billing","Billing"],["security","Security"]]],
-  ["SETTINGS", [["settings","Settings"],["founder","Founder OS"],["about","About BotNesia"],["founder-story","Founder Story"]]],
+  ["command-center","Command Center","dashboard", [["dashboard","Dashboard"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
+  ["workforce","Workforce","agents", [["agents","AI Agents"],["chat","AI Chat"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"],["marketplace","Agent Marketplace"]]],
+  ["tasks","Tasks","workflow-builder", [["workflow-builder","Automation"],["workforce","Workforce Orchestration"]]],
+  ["communications","Communications","communication-center", [["conversations","Inbox"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["channels","Integrations"]]],
+  ["knowledge","Knowledge","knowledge", [["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["learning","Feedback Learning"],["self-learning","Self-Learning Center"],["improvement","AI Improvement"]]],
+  ["business","Business","analytics", [["analytics","Analytics"],["multimedia","Multimedia Studio"],["handoffs","Customers"]]],
+  ["agent-os","Agent OS","agent-center", [["agent-center","Agent Center"],["routing-logs","Routing Logs"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
+  ["organization","Organization","team", [["team","Team"],["security","Security"]]],
+  ["billing","Billing","billing", [["billing","Billing"]]],
+  ["settings","Settings","settings", [["settings","Settings"],["founder","Founder OS"],["about","About BotNesia"],["founder-story","Founder Story"]]],
 ];
 
-export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
-  const groups = navGroups.map(([section, links]) => [section, links.filter(([key]) => key !== "founder" || founderAccess)]).filter(([, links]) => links.length);
-  const items = groups.map(([section, links]) => `<div class="nav-section">${section}</div>${links.map(([key,label]) => `<button class="nav-item ${route===key?'active':''}" data-route="${key}">${icon(key)}<span>${label}</span>${counts[key] !== undefined ? `<span class="nav-count">${counts[key]}</span>` : ''}</button>`).join('')}`).join('');
+export function sidebar({ route, org, user, counts = {}, founderAccess = false, openSections = new Set() }) {
+  const groups = navGroups.map(([key, label, groupIcon, links]) => [key, label, groupIcon, links.filter(([k]) => k !== "founder" || founderAccess)]).filter(([, , , links]) => links.length);
+  const items = groups.map(([key, label, groupIcon, links]) => {
+    const isOpen = openSections.has(key) || links.some(([k]) => k === route);
+    const children = links.map(([k,l]) => `<button class="nav-item ${route===k?'active':''}" data-route="${k}">${icon(k)}<span>${l}</span>${counts[k] !== undefined ? `<span class="nav-count">${counts[k]}</span>` : ''}</button>`).join('');
+    return `<div class="nav-group ${isOpen?'open':''}"><button class="nav-group-toggle" data-nav-toggle="${key}">${icon(groupIcon)}<span>${label}</span><span class="nav-chevron">${icon('arrow',12)}</span></button><div class="nav-group-items">${children}</div></div>`;
+  }).join('');
   return `<div class="sidebar-head"><a class="brand" href="#dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BOTNESIA</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
 }
 

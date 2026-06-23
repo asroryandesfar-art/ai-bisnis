@@ -19,6 +19,7 @@ const state = {
   multimedia: { generating: false, analyzing: false, generatingDoc: false, lastImage: null, lastAnalysis: null, lastDocument: null, history: [] },
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
   speechContext: null, speechSources: new Set(),
+  navOpenSections: new Set(),
 };
 
 const el = (selector) => document.querySelector(selector);
@@ -42,7 +43,7 @@ function closeMobileNav() { el("#sidebar").classList.remove("open"); el("#mobile
 
 function renderChrome() {
   const counts = { agents: state.bots.length, conversations: state.inboxSummary?.by_state?.unread ?? 0, team: state.team.length };
-  el("#sidebar").innerHTML = sidebar({ route:state.route, org:state.org, user:state.user, counts, founderAccess:state.founderAccess });
+  el("#sidebar").innerHTML = sidebar({ route:state.route, org:state.org, user:state.user, counts, founderAccess:state.founderAccess, openSections:state.navOpenSections });
   el("#topbar").innerHTML = topbar({ route:state.route, health:state.health });
 }
 
@@ -2539,6 +2540,13 @@ async function uploadChatImage(input) {
 }
 
 document.addEventListener("click", async (event) => {
+  const navToggle=event.target.closest("[data-nav-toggle]");
+  if(navToggle){
+    const key=navToggle.dataset.navToggle;
+    if(state.navOpenSections.has(key)) state.navOpenSections.delete(key); else state.navOpenSections.add(key);
+    renderChrome();
+    return;
+  }
   const feedbackButton=event.target.closest("[data-feedback-rating]");
   if(feedbackButton){
     const rating=feedbackButton.dataset.feedbackRating;
