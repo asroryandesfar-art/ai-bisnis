@@ -85,6 +85,7 @@ PERMISSIONS: dict[str, str] = {
     "computer_agent.read":    "Melihat riwayat/status task Computer Agent (browser automation)",
     "computer_agent.write":   "Memicu task Computer Agent baca-saja secara manual",
     "computer_agent.approve": "Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent",
+    "execution_log.read":     "Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -99,7 +100,7 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "marketing.read", "marketing.write", "hr.read", "hr.write",
         "operations.read", "operations.write", "workforce.read", "workforce.write",
         "learning.read", "learning.write", "research.read",
-        "computer_agent.read", "computer_agent.write",
+        "computer_agent.read", "computer_agent.write", "execution_log.read",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
     "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read"},

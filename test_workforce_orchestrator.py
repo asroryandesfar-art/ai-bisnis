@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 import workforce_orchestrator as wf
-from bn_platform.workforce import build_workforce_router, TaskCreateRequest, TaskStatusRequest, TaskAssignRequest
+from bn_platform.workforce import build_workforce_router, TaskCreateRequest, TaskStatusRequest, TaskAssignRequest, TaskProgressRequest
 
 
 def _route(router, path, method):
@@ -98,6 +98,47 @@ def test_approve_task_only_updates_when_requires_approval():
     result = asyncio.run(wf.approve_task(pool, org_id="org-1", task_id="t1", approver_id="u1"))
     assert result["approved_by"] == "u1"
     assert "requires_approval=TRUE" in pool.calls[0][1]
+
+
+# ─── SubTask / Progress (AI Agent Platform Phase 4) ──────────────
+
+def test_create_task_with_parent_task_id_inserts():
+    pool = FakePool(fetchrow_results=[{"id": "sub-1", "parent_task_id": "parent-1"}])
+    task = asyncio.run(wf.create_task(
+        pool, org_id="org-1", domain="finance", title="Subtask",
+        parent_task_id="parent-1",
+    ))
+    assert task["parent_task_id"] == "parent-1"
+    insert_call = next(c for c in pool.calls if "INSERT INTO workforce_tasks" in c[1])
+    assert insert_call[2][-1] == "parent-1"
+
+
+def test_update_progress_rejects_out_of_range():
+    pool = FakePool()
+    with pytest.raises(ValueError):
+        asyncio.run(wf.update_progress(pool, org_id="org-1", task_id="t1", progress_pct=150))
+    with pytest.raises(ValueError):
+        asyncio.run(wf.update_progress(pool, org_id="org-1", task_id="t1", progress_pct=-1))
+
+
+def test_update_progress_updates_value():
+    pool = FakePool(fetchrow_results=[{"id": "t1", "progress_pct": 60}])
+    result = asyncio.run(wf.update_progress(pool, org_id="org-1", task_id="t1", progress_pct=60))
+    assert result["progress_pct"] == 60
+    assert any("SET progress_pct=" in c[1] for c in pool.calls)
+
+
+def test_update_progress_404_when_not_found():
+    pool = FakePool(fetchrow_results=[None])
+    result = asyncio.run(wf.update_progress(pool, org_id="org-1", task_id="t1", progress_pct=50))
+    assert result is None
+
+
+def test_list_subtasks_filters_by_parent():
+    pool = FakePool(fetch_results=[[{"id": "sub-1"}, {"id": "sub-2"}]])
+    subtasks = asyncio.run(wf.list_subtasks(pool, org_id="org-1", parent_task_id="parent-1"))
+    assert len(subtasks) == 2
+    assert "parent_task_id=$2" in pool.calls[0][1]
 
 
 # ─── Conflict detection / escalation ─────────────────────────────
@@ -187,8 +228,8 @@ def test_router_gates_every_route_with_workforce_permission():
         get_agent_config=lambda: {"api_key": ""},
     )
 
-    assert requested_keys.count("workforce.read") == 2
-    assert requested_keys.count("workforce.write") == 4
+    assert requested_keys.count("workforce.read") == 3
+    assert requested_keys.count("workforce.write") == 5
     assert requested_keys.count("workforce.approve") == 1
 
 
@@ -233,6 +274,40 @@ def test_update_task_status_route_writes_audit_log():
     ))
     assert result["status"] == "in_progress"
     assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
+
+
+def test_update_progress_route_writes_audit_log():
+    pool = FakePool(fetchrow_results=[{"id": "t1", "progress_pct": 75}])
+    router = _build_router(pool)
+    handler = _route(router, "/tasks/{task_id}/progress", "PATCH")
+    result = asyncio.run(handler(
+        task_id="t1", body=TaskProgressRequest(progress_pct=75),
+        user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool,
+    ))
+    assert result["progress_pct"] == 75
+    assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
+
+
+def test_update_progress_route_422_for_out_of_range():
+    pool = FakePool()
+    router = _build_router(pool)
+    handler = _route(router, "/tasks/{task_id}/progress", "PATCH")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(handler(
+            task_id="t1", body=TaskProgressRequest(progress_pct=200),
+            user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool,
+        ))
+    assert exc.value.status_code == 422
+
+
+def test_list_subtasks_route_returns_subtasks_key():
+    pool = FakePool(fetch_results=[[{"id": "sub-1"}]])
+    router = _build_router(pool)
+    handler = _route(router, "/tasks/{task_id}/subtasks", "GET")
+    result = asyncio.run(handler(
+        task_id="parent-1", user={"org_id": "org-1", "id": "user-1"}, pool=pool,
+    ))
+    assert len(result["subtasks"]) == 1
 
 
 def test_assign_task_route_404_when_not_found():

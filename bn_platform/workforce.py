@@ -28,6 +28,7 @@ class TaskCreateRequest(BaseModel):
     requires_approval: bool = False
     assigned_to: str | None = None
     due_at: datetime | None = None
+    parent_task_id: str | None = None
 
 
 class TaskStatusRequest(BaseModel):
@@ -36,6 +37,10 @@ class TaskStatusRequest(BaseModel):
 
 class TaskAssignRequest(BaseModel):
     assigned_to: str
+
+
+class TaskProgressRequest(BaseModel):
+    progress_pct: int
 
 
 def build_workforce_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
@@ -75,7 +80,7 @@ def build_workforce_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
                 description=body.description, priority=body.priority,
                 source_type=body.source_type, source_id=body.source_id,
                 requires_approval=body.requires_approval, assigned_to=body.assigned_to,
-                due_at=body.due_at, created_by=user["id"],
+                due_at=body.due_at, created_by=user["id"], parent_task_id=body.parent_task_id,
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc))
@@ -105,6 +110,35 @@ def build_workforce_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
             metadata={"status": body.status},
         )
         return task
+
+    @router.patch("/tasks/{task_id}/progress")
+    async def update_task_progress_route(
+        task_id: str, body: TaskProgressRequest,
+        user: Annotated[dict, Depends(require_permission("workforce.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        try:
+            task = await wf.update_progress(pool, org_id=user["org_id"], task_id=task_id,
+                                             progress_pct=body.progress_pct)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        if not task:
+            raise HTTPException(404, "Task tidak ditemukan")
+        await write_audit_log(
+            pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+            action="update", resource_type="workforce_task", resource_id=task_id,
+            metadata={"progress_pct": body.progress_pct},
+        )
+        return task
+
+    @router.get("/tasks/{task_id}/subtasks")
+    async def list_subtasks_route(
+        task_id: str,
+        user: Annotated[dict, Depends(require_permission("workforce.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        subtasks = await wf.list_subtasks(pool, org_id=user["org_id"], parent_task_id=task_id)
+        return {"subtasks": subtasks}
 
     @router.patch("/tasks/{task_id}/assign")
     async def assign_task_route(
