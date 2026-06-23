@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import agent_os
+
 from . import conversation_memory, faq_agent, knowledge_agent, sales_agent
 from .config import cfg
 from .db import get_pool
@@ -55,6 +57,7 @@ async def persist_intelligence(
                 "uncertainty_band": result.uncertainty_band,
                 "uncertainty_score": result.uncertainty_score,
                 "uncertainty_reasons": result.uncertainty_reasons,
+                "agent_os_trace": agent_os.build_execution_report(result),
             },
         )
     except Exception:

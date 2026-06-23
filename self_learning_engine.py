@@ -58,7 +58,7 @@ async def analyze_complaint_resolutions(pool: asyncpg.Pool, org_id: str, days: i
         """SELECT reason, COUNT(*) AS resolved_cnt,
                   array_agg(resolution_note ORDER BY resolved_at DESC) AS notes
            FROM human_queue
-           WHERE org_id=$1 AND status='resolved' AND resolution_note IS NOT NULL
+           WHERE org_id=$1 AND status='resolved'
              AND resolved_at >= NOW() - (INTERVAL '1 day' * $2)
            GROUP BY reason HAVING COUNT(*) >= $3""",
         org_id, days, _MIN_SAMPLE,
@@ -71,11 +71,13 @@ async def analyze_complaint_resolutions(pool: asyncpg.Pool, org_id: str, days: i
 
 
 async def analyze_successful_approaches(pool: asyncpg.Pool, org_id: str, days: int = 90) -> list[dict]:
+    # conversation_analysis.quality_score disimpan skala 0-1 (bukan 0-10) -- *10 saat
+    # dibaca supaya avg_quality_score tetap konsisten dgn teks insight "X/10" di run_learning_scan.
     rows = await pool.fetch(
-        """SELECT intent, COUNT(*) AS cnt, ROUND(AVG(quality_score)::numeric, 1) AS avg_quality
+        """SELECT intent, COUNT(*) AS cnt, ROUND(AVG(quality_score)::numeric * 10, 1) AS avg_quality
            FROM conversation_analysis
            WHERE org_id=$1 AND intent IS NOT NULL AND outcome IN ('resolved','purchased')
-             AND quality_score >= 8 AND analyzed_at >= NOW() - (INTERVAL '1 day' * $2)
+             AND quality_score >= 0.8 AND analyzed_at >= NOW() - (INTERVAL '1 day' * $2)
            GROUP BY intent HAVING COUNT(*) >= $3""",
         org_id, days, _MIN_SAMPLE,
     )
@@ -145,6 +147,21 @@ async def run_learning_scan(pool: asyncpg.Pool, org_id: str, agent: "SelfLearnin
         ))
 
     return created
+
+
+async def run_learning_scan_all_orgs(pool: asyncpg.Pool, days: int = 90) -> dict:
+    """Wrapper untuk job terjadwal (celery_app.py beat_schedule) -- scan semua
+    org dengan bot aktif, bukan cuma satu org seperti POST /learning/scan
+    manual. Tanpa `agent` (no LLM) supaya job malam tetap murni SQL,
+    deterministik, dan tidak bergantung pada API key/model config."""
+    org_rows = await pool.fetch("SELECT DISTINCT org_id FROM bots WHERE status IN ('active', 'training')")
+    summary = {}
+    for r in org_rows:
+        org_id = str(r["org_id"])
+        created = await run_learning_scan(pool, org_id, agent=None, days=days)
+        if created:
+            summary[org_id] = len(created)
+    return summary
 
 
 # ─── REVIEW & QUERY ─────────────────────────────────────────────
