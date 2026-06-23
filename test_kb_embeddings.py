@@ -3,12 +3,12 @@ Knowledge Base retrieval sebelumnya cuma punya satu provider embedding: hash
 lokal (SHA1 feature-hashing) di main.py::_text_to_embedding -- cukup untuk
 pengelompokan kasar, tapi tidak menangkap kemiripan makna sungguhan.
 
-kb_embeddings.py menambah provider OpenAI text-embedding-3-small (opsional,
-graceful-degradation seperti image_providers.py/web_search_agent.py) dan
-main.py::_generate_kb_embedding memilih provider mana yang dipakai. Karena
-chunk lama (hash) dan baru (OpenAI) hidup di vector space berbeda walau
-dimensinya sama, main.py::_score_kb_candidate membandingkan model tag tiap
-chunk sebelum menghitung cosine similarity-nya.
+kb_embeddings.py menambah dua provider embedding semantik sungguhan: lokal
+(sentence-transformers, gratis, prioritas utama) dan OpenAI text-embedding-3-
+small (cadangan). main.py::_generate_kb_embedding memilih provider mana yang
+dipakai (lokal -> OpenAI -> hash). Karena tiap provider hidup di vector space
+berbeda, main.py::_score_kb_candidate membandingkan model tag tiap chunk
+sebelum menghitung cosine similarity-nya.
 """
 import asyncio
 
@@ -90,35 +90,83 @@ def test_generate_openai_embedding_returns_none_on_http_error(monkeypatch):
 
 
 # ─────────────────────────────────────────────────────────────────
-# main._generate_kb_embedding — pemilihan provider
+# kb_embeddings.generate_local_embedding
 # ─────────────────────────────────────────────────────────────────
 
-def test_generate_kb_embedding_falls_back_to_hash_without_openai_key(monkeypatch):
-    monkeypatch.setattr(main.cfg, "openai_api_key", "")
+def test_generate_local_embedding_returns_none_for_empty_text():
+    result = asyncio.run(kbe.generate_local_embedding("   "))
+    assert result is None
+
+
+def test_generate_local_embedding_returns_none_when_dependency_unavailable(monkeypatch):
+    monkeypatch.setattr(kbe, "_load_local_model", lambda: None)
+    result = asyncio.run(kbe.generate_local_embedding("halo dunia"))
+    assert result is None
+
+
+def test_generate_local_embedding_success(monkeypatch):
+    class _FakeModel:
+        def encode(self, text, normalize_embeddings=True):
+            return [0.1, 0.2, 0.3]
+
+    monkeypatch.setattr(kbe, "_load_local_model", lambda: _FakeModel())
+    result = asyncio.run(kbe.generate_local_embedding("halo dunia"))
+    assert result == [0.1, 0.2, 0.3]
+
+
+# ─────────────────────────────────────────────────────────────────
+# main._generate_kb_embedding — pemilihan provider (lokal -> OpenAI -> hash)
+# ─────────────────────────────────────────────────────────────────
+
+def test_generate_kb_embedding_uses_local_when_available(monkeypatch):
+    async def fake_local(text):
+        return [0.7] * 384
+
+    monkeypatch.setattr(kbe, "generate_local_embedding", fake_local)
     vec, model = asyncio.run(main._generate_kb_embedding("contoh teks"))
-    assert model == f"hash-emb-{main.cfg.kb_embedding_dim or main.KB_EMBED_DIM}"
-    assert vec == main._text_to_embedding("contoh teks")
+    assert model == kbe.LOCAL_EMBEDDING_TAG
+    assert vec[0] == 0.7
 
 
-def test_generate_kb_embedding_uses_openai_when_key_present_and_call_succeeds(monkeypatch):
-    monkeypatch.setattr(main.cfg, "openai_api_key", "sk-test")
+def test_generate_kb_embedding_falls_back_to_openai_when_local_unavailable(monkeypatch):
+    async def fake_local_none(text):
+        return None
 
-    async def fake_generate(text, api_key, dim):
+    async def fake_openai(text, api_key, dim):
         return [0.5] * dim
 
-    monkeypatch.setattr(kbe, "generate_openai_embedding", fake_generate)
+    monkeypatch.setattr(kbe, "generate_local_embedding", fake_local_none)
+    monkeypatch.setattr(main.cfg, "openai_api_key", "sk-test")
+    monkeypatch.setattr(kbe, "generate_openai_embedding", fake_openai)
+
     vec, model = asyncio.run(main._generate_kb_embedding("contoh teks"))
     assert model == kbe.OPENAI_EMBEDDING_TAG
     assert vec[0] == 0.5
 
 
-def test_generate_kb_embedding_falls_back_to_hash_when_openai_call_fails(monkeypatch):
-    monkeypatch.setattr(main.cfg, "openai_api_key", "sk-test")
-
-    async def fake_generate_fails(text, api_key, dim):
+def test_generate_kb_embedding_falls_back_to_hash_when_both_unavailable(monkeypatch):
+    async def fake_local_none(text):
         return None
 
-    monkeypatch.setattr(kbe, "generate_openai_embedding", fake_generate_fails)
+    monkeypatch.setattr(kbe, "generate_local_embedding", fake_local_none)
+    monkeypatch.setattr(main.cfg, "openai_api_key", "")
+
+    vec, model = asyncio.run(main._generate_kb_embedding("contoh teks"))
+    assert model == f"hash-emb-{main.cfg.kb_embedding_dim or main.KB_EMBED_DIM}"
+    assert vec == main._text_to_embedding("contoh teks")
+
+
+def test_generate_kb_embedding_falls_back_to_hash_when_local_and_openai_both_fail(monkeypatch):
+    async def fake_local_none(text):
+        return None
+
+    async def fake_openai_fails(text, api_key, dim):
+        return None
+
+    monkeypatch.setattr(kbe, "generate_local_embedding", fake_local_none)
+    monkeypatch.setattr(main.cfg, "openai_api_key", "sk-test")
+    monkeypatch.setattr(kbe, "generate_openai_embedding", fake_openai_fails)
+
     vec, model = asyncio.run(main._generate_kb_embedding("contoh teks"))
     assert model.startswith("hash-emb-")
     assert vec == main._text_to_embedding("contoh teks")

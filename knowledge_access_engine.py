@@ -50,11 +50,46 @@ FRESHNESS_HINTS = (
     "baru-baru ini", "update terbaru", "hari ini", "saat ini",
 )
 
+# Pertanyaan "siapa pemegang jabatan/posisi X" — jawabannya inheren bisa
+# berubah seiring waktu (pemilu, reshuffle, pergantian CEO, dst.) walau
+# kalimatnya tidak mengandung kata "terbaru"/"sekarang" secara eksplisit.
+# Bug nyata yang ditemukan: "Siapa presiden Indonesia?" dijawab pakai data
+# training (bisa sudah tidak menjabat) tanpa disclaimer sama sekali.
+OFFICEHOLDER_PATTERN = re.compile(
+    r"siapa\s+(yang\s+menjadi\s+)?"
+    r"(presiden|wakil\s+presiden|gubernur|wali\s*kota|bupati|menteri|"
+    r"perdana\s+menteri|raja|ratu|paus|ceo|ketua\s+umum|sekjen|sekretaris\s+jenderal|"
+    r"panglima|kapolri|jaksa\s+agung|rektor|kepala\s+(daerah|negara|sekolah))\b",
+    re.IGNORECASE,
+)
+
 
 def is_freshness_query(text: str) -> bool:
-    """True jika pertanyaan menyiratkan butuh data/informasi terkini."""
+    """True jika pertanyaan menyiratkan butuh data/informasi terkini --
+    termasuk pertanyaan "siapa pemegang jabatan X saat ini" yang jawabannya
+    bisa berubah walau tidak memakai kata "terbaru"/"sekarang" secara harfiah."""
     lower = (text or "").lower()
-    return any(hint in lower for hint in FRESHNESS_HINTS)
+    return any(hint in lower for hint in FRESHNESS_HINTS) or bool(OFFICEHOLDER_PATTERN.search(lower))
+
+
+def is_officeholder_question(text: str) -> bool:
+    """True khusus untuk pertanyaan "siapa pemegang jabatan X" (subset dari
+    is_freshness_query). Dipakai sebagai safeguard DETERMINISTIK terpisah dari
+    instruksi prompt (REALTIME_KNOWLEDGE_BLOCK) -- LLM tidak selalu menaati
+    instruksi itu untuk fakta yang sangat kuat tertanam di training data (mis.
+    "siapa presiden Indonesia" dijawab pakai data lama tanpa disclaimer sama
+    sekali, walau instruksinya sudah ada di system prompt). Jika tidak ada web
+    search hasil nyata yang dipakai, supervisor.py menambahkan
+    OFFICEHOLDER_DISCLAIMER ke jawaban secara paksa (bukan cuma berharap LLM
+    patuh)."""
+    return bool(OFFICEHOLDER_PATTERN.search((text or "").lower()))
+
+
+OFFICEHOLDER_DISCLAIMER = (
+    "_Catatan: jabatan di atas bisa berubah sewaktu-waktu (pemilu, reshuffle, "
+    "pergantian kepemimpinan) dan jawaban ini berdasarkan data training BotNesia "
+    "yang mungkin sudah tidak terkini. Mohon cek sumber resmi terbaru untuk memastikan._"
+)
 
 
 def select_knowledge_sources(text: str, history: list | None = None) -> dict:

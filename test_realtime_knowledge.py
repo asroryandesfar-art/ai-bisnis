@@ -27,6 +27,36 @@ def test_is_freshness_query_false_for_generic_question():
     assert not kae.is_freshness_query("Bagaimana cara menghubungkan WhatsApp?")
 
 
+# ── Regression: pertanyaan "siapa pemegang jabatan X" inheren bisa berubah
+# (pemilu/reshuffle/pergantian CEO) walau tidak mengandung kata
+# "terbaru"/"sekarang" secara harfiah. Bug nyata: "Siapa presiden Indonesia?"
+# dijawab pakai data training tanpa disclaimer freshness sama sekali. ──────
+
+def test_is_freshness_query_detects_officeholder_questions():
+    assert kae.is_freshness_query("Siapa presiden Indonesia?")
+    assert kae.is_freshness_query("Siapa gubernur DKI Jakarta?")
+    assert kae.is_freshness_query("Siapa CEO Tesla sekarang?")
+    assert kae.is_freshness_query("Siapa menteri keuangan saat ini?")
+
+
+def test_is_freshness_query_does_not_flag_unrelated_science_question():
+    # "hukum" Newton sama sekali tidak menyentuh pola officeholder.
+    assert not kae.is_freshness_query("Jelaskan hukum Newton")
+
+
+def test_select_knowledge_sources_flags_officeholder_question_as_needs_fresh_data():
+    routing = kae.select_knowledge_sources("Siapa presiden Indonesia?", [])
+    assert routing["needs_fresh_data"] is True
+    assert "web_search:general" in routing["reasons"]
+
+
+def test_reasoning_controller_adds_realtime_block_for_officeholder_question():
+    from reasoning_controller import ReasoningController
+    rc = ReasoningController()
+    brief = rc.analyze({"user_message": "Siapa presiden Indonesia?", "messages": []})
+    assert kae.REALTIME_KNOWLEDGE_BLOCK.splitlines()[0] in brief["style_guidance"]
+
+
 # ─────────────────────────────────────────────────────────────────
 # 2) select_knowledge_sources — needs_fresh_data & web_search:general
 # ─────────────────────────────────────────────────────────────────
@@ -101,17 +131,11 @@ def test_reasoning_controller_omits_realtime_block_for_generic_question():
 
 
 # ─────────────────────────────────────────────────────────────────
-# 4) web_search_agent.search — skipped (no key), error, success
+# 4) web_search_agent.search — SearXNG utama, Tavily cadangan
 # ─────────────────────────────────────────────────────────────────
 
-def test_search_skipped_without_api_key():
-    result = asyncio.run(wsa.search("AI terbaru", api_key=""))
-    assert result["success"] is False
-    assert result["skipped"] is True
-
-
-def test_search_unsupported_provider():
-    result = asyncio.run(wsa.search("AI terbaru", api_key="key123", provider="bing"))
+def test_search_skipped_without_any_provider():
+    result = asyncio.run(wsa.search("AI terbaru"))
     assert result["success"] is False
     assert result["skipped"] is True
 
@@ -127,9 +151,10 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, response, captured):
-        self._response = response
-        self._captured = captured
+    def __init__(self, get_response=None, post_response=None, captured=None):
+        self._get_response = get_response
+        self._post_response = post_response
+        self._captured = captured if captured is not None else []
 
     async def __aenter__(self):
         return self
@@ -137,41 +162,86 @@ class _FakeAsyncClient:
     async def __aexit__(self, *exc):
         return False
 
+    async def get(self, url, params=None):
+        self._captured.append(("get", url, params))
+        if self._get_response is None:
+            raise RuntimeError("unexpected GET in test")
+        return self._get_response
+
     async def post(self, url, json=None, headers=None):
-        self._captured.append((url, json))
-        return self._response
+        self._captured.append(("post", url, json))
+        if self._post_response is None:
+            raise RuntimeError("unexpected POST in test")
+        return self._post_response
 
 
-def _patch_client(monkeypatch, response):
+def _patch_client(monkeypatch, get_response=None, post_response=None):
     captured = []
     monkeypatch.setattr(wsa, "httpx", type("M", (), {
-        "AsyncClient": lambda timeout=None: _FakeAsyncClient(response, captured),
+        "AsyncClient": lambda timeout=None: _FakeAsyncClient(get_response, post_response, captured),
         "HTTPError": wsa.httpx.HTTPError,
     }))
     return captured
 
 
-def test_search_success_returns_ranked_results(monkeypatch):
+def test_search_searxng_success_is_primary_and_skips_tavily(monkeypatch):
+    response = _FakeResponse(200, {
+        "results": [
+            {"title": "Artikel A", "url": "https://a.com/x", "content": "Isi A", "score": 0.5, "publishedDate": "2026-06-10"},
+            {"title": "Artikel B", "url": "https://b.com/y", "content": "Isi B", "score": 0.9, "publishedDate": "2026-06-12"},
+        ]
+    })
+    captured = _patch_client(monkeypatch, get_response=response)
+
+    result = asyncio.run(wsa.search("AI terbaru", searxng_url="http://localhost:8080", tavily_api_key="test-key"))
+    assert result["success"] is True
+    assert result["provider"] == "searxng"
+    assert len(result["results"]) == 2
+    assert captured[0][0] == "get"
+    assert captured[0][2]["q"] == "AI terbaru"
+    assert len(captured) == 1  # Tavily tidak pernah dipanggil karena SearXNG sukses
+
+
+def test_search_falls_back_to_tavily_when_searxng_fails(monkeypatch):
+    get_response = _FakeResponse(500, {}, text="searxng down")
+    post_response = _FakeResponse(200, {
+        "results": [
+            {"title": "Artikel A", "url": "https://a.com/x", "content": "Isi A", "score": 0.5, "published_date": "2026-06-10"},
+        ]
+    })
+    captured = _patch_client(monkeypatch, get_response=get_response, post_response=post_response)
+
+    result = asyncio.run(wsa.search("AI terbaru", searxng_url="http://localhost:8080", tavily_api_key="test-key"))
+    assert result["success"] is True
+    assert result["provider"] == "tavily"
+    assert result["fallback_from"] == "searxng"
+    assert captured[0][0] == "get"
+    assert captured[1][0] == "post"
+    assert captured[1][2]["api_key"] == "test-key"
+
+
+def test_search_tavily_only_success_when_searxng_not_configured(monkeypatch):
     response = _FakeResponse(200, {
         "results": [
             {"title": "Artikel A", "url": "https://a.com/x", "content": "Isi A", "score": 0.5, "published_date": "2026-06-10"},
             {"title": "Artikel B", "url": "https://b.com/y", "content": "Isi B", "score": 0.9, "published_date": "2026-06-12"},
         ]
     })
-    captured = _patch_client(monkeypatch, response)
+    captured = _patch_client(monkeypatch, post_response=response)
 
-    result = asyncio.run(wsa.search("AI terbaru", api_key="test-key"))
+    result = asyncio.run(wsa.search("AI terbaru", tavily_api_key="test-key"))
     assert result["success"] is True
+    assert result["provider"] == "tavily"
     assert len(result["results"]) == 2
-    assert captured[0][1]["api_key"] == "test-key"
-    assert captured[0][1]["query"] == "AI terbaru"
+    assert captured[0][2]["api_key"] == "test-key"
+    assert captured[0][2]["query"] == "AI terbaru"
 
 
-def test_search_http_error(monkeypatch):
+def test_search_http_error_with_no_fallback_left(monkeypatch):
     response = _FakeResponse(500, {}, text="server error")
-    _patch_client(monkeypatch, response)
+    _patch_client(monkeypatch, post_response=response)
 
-    result = asyncio.run(wsa.search("AI terbaru", api_key="test-key"))
+    result = asyncio.run(wsa.search("AI terbaru", tavily_api_key="test-key"))
     assert result["success"] is False
     assert "error" in result
 
@@ -250,7 +320,7 @@ def test_supervisor_uses_web_search_when_api_key_configured(monkeypatch):
         captured["system"] = messages[0]["content"]
         return "Jawaban dengan sumber."
 
-    async def fake_search(query, api_key, provider="tavily", max_results=5):
+    async def fake_search(query, *, searxng_url="", tavily_api_key="", max_results=5):
         return {
             "success": True,
             "provider": "tavily",
@@ -267,7 +337,7 @@ def test_supervisor_uses_web_search_when_api_key_configured(monkeypatch):
     monkeypatch.setattr(sup.web_search_agent, "search", fake_search)
 
     supervisor = _build_supervisor()
-    context = _base_context(_search_api_key="tavily-key", _search_api_provider="tavily")
+    context = _base_context(_search_api_key="tavily-key", _searxng_url="")
     result = asyncio.run(supervisor.process(context))
 
     assert result.web_search_used is True
@@ -294,3 +364,69 @@ def test_supervisor_skips_web_search_without_api_key(monkeypatch):
     assert result.web_search_results == []
     # REALTIME_KNOWLEDGE_BLOCK tetap disisipkan walau web search tidak aktif.
     assert kae.REALTIME_KNOWLEDGE_BLOCK.splitlines()[0] in captured["system"]
+
+
+# ── Regression: safeguard deterministik OFFICEHOLDER_DISCLAIMER -- LLM tidak
+# selalu menaati instruksi REALTIME_KNOWLEDGE_BLOCK untuk fakta yang kuat
+# tertanam di training data (mis. "siapa presiden Indonesia" dijawab pakai
+# data lama tanpa disclaimer apapun). Disclaimer ini ditambahkan secara paksa
+# di supervisor.py, bukan cuma berharap LLM patuh ke instruksi prompt. ─────
+
+def test_officeholder_disclaimer_appended_when_no_web_search_used(monkeypatch):
+    async def fake_call_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
+        return "Presiden Indonesia saat ini adalah Joko Widodo."
+
+    monkeypatch.setattr(BaseAgent, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(BaseAgent, "_call_llm_json", _fake_call_llm_json_default)
+
+    supervisor = _build_supervisor()
+    context = _base_context(user_message="Siapa presiden Indonesia?")
+    result = asyncio.run(supervisor.process(context))
+
+    assert result.web_search_used is False
+    assert kae.OFFICEHOLDER_DISCLAIMER in result.final_answer
+
+
+def test_officeholder_disclaimer_not_appended_when_web_search_used(monkeypatch):
+    async def fake_call_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
+        return "Berdasarkan hasil pencarian, presiden Indonesia saat ini adalah X."
+
+    async def fake_search(query, *, searxng_url="", tavily_api_key="", max_results=5):
+        return {
+            "success": True,
+            "provider": "tavily",
+            "query": query,
+            "results": [
+                {"title": "Profil Presiden", "url": "https://example.com/presiden", "snippet": "Info resmi.", "score": 0.9, "published_date": "2026-06-20"},
+            ],
+        }
+
+    monkeypatch.setattr(BaseAgent, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(BaseAgent, "_call_llm_json", _fake_call_llm_json_default)
+
+    import supervisor as sup
+    monkeypatch.setattr(sup.web_search_agent, "search", fake_search)
+
+    supervisor = _build_supervisor()
+    context = _base_context(
+        user_message="Siapa presiden Indonesia sekarang?",
+        _search_api_key="tavily-key", _searxng_url="",
+    )
+    result = asyncio.run(supervisor.process(context))
+
+    assert result.web_search_used is True
+    assert kae.OFFICEHOLDER_DISCLAIMER not in result.final_answer
+
+
+def test_officeholder_disclaimer_not_appended_for_unrelated_question(monkeypatch):
+    async def fake_call_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
+        return "Hukum Newton menjelaskan gerak benda."
+
+    monkeypatch.setattr(BaseAgent, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(BaseAgent, "_call_llm_json", _fake_call_llm_json_default)
+
+    supervisor = _build_supervisor()
+    context = _base_context(user_message="Jelaskan hukum Newton")
+    result = asyncio.run(supervisor.process(context))
+
+    assert kae.OFFICEHOLDER_DISCLAIMER not in result.final_answer
