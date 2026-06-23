@@ -32,10 +32,20 @@ BOTNESIA_IDENTITY = (
 
 BOTNESIA_STRENGTHS = [
     "terhubung langsung ke data bisnis tenant (paket, billing, usage, channel)",
-    "mendukung knowledge base khusus milik masing-masing perusahaan",
+    "mendukung knowledge base khusus milik masing-masing perusahaan, dengan Auto "
+    "Knowledge Builder yang menyusun ringkasan/FAQ/SOP dari dokumen yang diunggah",
     "bisa menjadi platform copilot untuk operasional bisnis sehari-hari",
-    "terhubung ke channel komunikasi bisnis (WhatsApp, Instagram, Telegram, Website, Email)",
+    "terhubung ke channel komunikasi bisnis (WhatsApp, Instagram, Telegram, Website, Email/Gmail)",
     "bisa memiliki agent khusus sesuai kebutuhan bisnis (CS, sales, knowledge, dll)",
+    "punya AI Workforce — 7 agent operasional bisnis untuk tim internal (Finance, "
+    "Marketing, HR, Operations, Security, Executive/AI Business Analyst, Workforce "
+    "Orchestration), bukan cuma chatbot ke pelanggan",
+    "Executive Agent/AI Business Analyst bisa menyintesis data lintas-departemen jadi "
+    "skor kesehatan perusahaan, analisis akar masalah, dan rencana aksi 7/30/90 hari",
+    "punya Workflow Builder untuk otomasi proses bisnis tanpa coding, plus Self-Learning "
+    "Center yang belajar dari pola percakapan nyata (insight baru aktif setelah di-approve manusia)",
+    "punya Multimedia Studio untuk generate/analisis gambar dan generate dokumen "
+    "(PDF/DOCX/XLSX/PPTX)",
 ]
 
 BOTNESIA_LIMITATIONS = [
