@@ -27,6 +27,7 @@ from workforce_orchestrator import WorkforceOrchestratorAgent
 from self_learning_engine import SelfLearningAgent
 from general_ai_agent import GeneralAIAgent
 from research_agent import ResearchAgent
+from agent_registry import AdminAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -408,6 +409,10 @@ class SupervisorAgent:
         # Agent OS Phase 1 — Research Agent. Dipanggil hanya dari endpoint
         # terautentikasi (/api/research/run), tidak dari chat publik.
         self.research_agent = ResearchAgent(**fast_kwargs)
+
+        # AI Agent Platform Phase 5 — Admin Agent (agent directory + platform
+        # overview, dipanggil hanya dari endpoint terautentikasi /api/agent-center/*).
+        self.admin_agent = AdminAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

@@ -100,6 +100,12 @@ class SalesAgent(BaseAgent):
     conversation_memory.persist_conversation, setelah jawaban terkirim).
     """
     name = "sales_agent"
+    skills = ["sales_signal_detection", "objection_detection", "purchase_intent_tracking"]
+    tools: list[str] = []
+    goals = [
+        "Mengenali sinyal niat beli, alasan membeli/batal, dan keberatan pelanggan secara real-time.",
+        "Memberi rekomendasi angle respons strategis tanpa menambah latensi jawaban chat.",
+    ]
     system_prompt = (
         "Kamu adalah Sales Intelligence Agent dalam sistem multi-agent BotNesia. "
         "Tugasmu: kenali sinyal niat beli, alasan membeli/batal, dan keberatan "

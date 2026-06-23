@@ -75,6 +75,11 @@ class KnowledgeAgent(BaseAgent):
     `update_graph_from_conversation()` setelah jawaban terkirim.
     """
     name = "knowledge_agent"
+    skills = ["entity_extraction", "knowledge_graph_building"]
+    tools: list[str] = []
+    goals = [
+        "Mengenali entitas (produk, masalah, topik) yang disebut pelanggan agar bisa dirajut menjadi peta pengetahuan bisnis.",
+    ]
     system_prompt = (
         "Kamu adalah Knowledge Graph Agent dalam sistem multi-agent BotNesia. "
         "Tugasmu: mengenali entitas (produk, masalah, topik) yang disebut "

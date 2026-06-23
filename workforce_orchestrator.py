@@ -195,6 +195,11 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 
 class WorkforceOrchestratorAgent(BaseAgent):
     name = "workforce_orchestrator_agent"
+    skills = ["task_coordination", "conflict_detection", "escalation"]
+    tools: list[str] = []
+    goals = [
+        "Mengoordinasikan task lintas-agent dan mendeteksi konflik/eskalasi tanpa mengambil keputusan otomatis.",
+    ]
     system_prompt = """Kamu adalah Workforce Orchestrator dalam sistem multi-agent
 BotNesia (AI Workforce) -- bertugas memberi saran (BUKAN keputusan) saat dua
 task lintas-agent terdeteksi berkonflik (menargetkan sumber yang sama).

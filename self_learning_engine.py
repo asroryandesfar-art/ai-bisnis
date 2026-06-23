@@ -227,6 +227,11 @@ async def build_organizational_learning_context(pool: asyncpg.Pool, org_id: str,
 
 class SelfLearningAgent(BaseAgent):
     name = "self_learning_agent"
+    skills = ["insight_distillation", "trend_detection"]
+    tools: list[str] = []
+    goals = [
+        "Mendistilasi data agregat mentah jadi insight actionable satu kalimat untuk manusia.",
+    ]
     system_prompt = """Kamu adalah Self Learning Agent dalam sistem multi-agent
 BotNesia (AI Workforce) -- bertugas mendistilasi data agregat mentah jadi
 satu kalimat insight yang actionable (Bahasa Indonesia, 1 kalimat, jelas

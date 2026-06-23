@@ -25,6 +25,7 @@ const paths = {
   workforce:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/>',
   "self-learning":'<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>',
   "workforce-overview":'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  "agent-center":'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><circle cx="15.5" cy="8.5" r="1.5"/><path d="M7 16c1.2-1.5 3-2 5-2s3.8.5 5 2"/>',
   about:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   "founder-story":'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><circle cx="9" cy="9" r="2"/><path d="M14 8h3M14 12h3"/>',
   "investor-demo":'<path d="m22 12-4-4v3H3v2h15v3z"/><path d="M16 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>',
@@ -119,7 +120,7 @@ export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"curr
 
 const navGroups = [
   ["BUSINESS", [["dashboard","Dashboard"],["conversations","Inbox"],["handoffs","Customers"],["marketing","Sales"],["marketing","Marketing"],["finance","Finance"]]],
-  ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
+  ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["agent-center","Agent Center"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
   ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
   ["SETTINGS", [["team","Team"],["billing","Billing"],["settings","Settings"],["founder","Founder OS"]]],
   ["COMPANY", [["about","About BotNesia"],["founder-story","Founder Story"],["investor-demo","Investor Demo"]]],
@@ -155,6 +156,7 @@ const routeMeta = {
   workforce:["Workforce Orchestration","AI Workforce: koordinasi task lintas-agent, deteksi konflik, eskalasi, dan human approval workflow"],
   "self-learning":["Self-Learning Center","AI Workforce: insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot"],
   "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
+  "agent-center":["Agent Center","Direktori semua AI agent, execution log lintas-sistem, dan antrian approval Computer Agent"],
   "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
   about:["About BotNesia","Visi, misi, dan alasan BotNesia dibangun"],
   "founder-story":["Founder Story","Cerita di balik BotNesia dan misi pendirinya"],
