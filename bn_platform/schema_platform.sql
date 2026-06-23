@@ -915,6 +915,38 @@ CREATE TABLE IF NOT EXISTS organizational_memory (
 CREATE INDEX IF NOT EXISTS idx_org_memory_org_status ON organizational_memory(org_id, status, category);
 
 -- ============================================================
+-- 10i. COMPUTER AGENT (AI Agent Platform Phase 3)
+-- ============================================================
+-- Browser automation tasks (navigate/read/screenshot/click/fill/submit) yang
+-- dipicu dari chat (publik maupun tenant) atau endpoint internal. Aksi
+-- baca-saja (read) auto-execute dan tetap tercatat di sini untuk audit trail;
+-- aksi tulis (write: click/fill/submit) WAJIB approval manusia sebelum
+-- dieksekusi (requires_approval/approved_by/approved_at), mirror pola
+-- workforce_tasks tapi tabel terpisah karena bentuk datanya beda
+-- (target_url/plan/result), bukan menumpangi domain CHECK constraint
+-- workforce_tasks yang sudah dipakai 6 agent lain.
+CREATE TABLE IF NOT EXISTS computer_agent_tasks (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id            UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id            UUID REFERENCES bots(id) ON DELETE SET NULL,
+    conversation_id   UUID,
+    goal              TEXT NOT NULL,
+    action_type       TEXT NOT NULL CHECK (action_type IN ('read','write')),
+    status            TEXT NOT NULL DEFAULT 'pending_approval' CHECK (status IN ('completed','pending_approval','approved','rejected','failed')),
+    target_url        TEXT,
+    plan              JSONB NOT NULL DEFAULT '[]'::jsonb,
+    result            JSONB,
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    approved_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_at       TIMESTAMPTZ,
+    rejected_reason   TEXT,
+    created_by        UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_computer_agent_tasks_org_status ON computer_agent_tasks(org_id, status);
+
+-- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
 -- ============================================================
 
@@ -982,7 +1014,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('learning.read',      'learning',      'Melihat insight organizational memory (Self-Learning Company)'),
  ('learning.write',     'learning',      'Menjalankan learning scan (membuat insight kandidat)'),
  ('learning.approve',   'learning',      'Menyetujui/menolak insight yang akan memengaruhi jawaban bot'),
- ('research.read',      'research',      'Menjalankan riset web/lead discovery (Research Agent)')
+ ('research.read',      'research',      'Menjalankan riset web/lead discovery (Research Agent)'),
+ ('computer_agent.read',    'computer_agent', 'Melihat riwayat/status task Computer Agent (browser automation)'),
+ ('computer_agent.write',   'computer_agent', 'Memicu task Computer Agent baca-saja secara manual'),
+ ('computer_agent.approve', 'computer_agent', 'Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1015,7 +1050,8 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
                 'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
-                'learning.read', 'learning.write', 'research.read')
+                'learning.read', 'learning.write', 'research.read',
+                'computer_agent.read', 'computer_agent.write')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
