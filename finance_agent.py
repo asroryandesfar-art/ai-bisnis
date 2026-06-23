@@ -351,6 +351,12 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 
 class FinanceAgent(BaseAgent):
     name = "finance_agent"
+    skills = ["invoice_management", "expense_tracking", "revenue_reporting", "cashflow_forecasting"]
+    tools: list[str] = []
+    goals = [
+        "Mengelola invoice, pembayaran, dan pengeluaran tenant secara akurat berbasis data ledger internal.",
+        "Menghasilkan laporan revenue/profit/cashflow dan forecast yang bisa ditindaklanjuti.",
+    ]
     system_prompt = """Kamu adalah Finance Agent dalam sistem multi-agent BotNesia (AI Workforce).
 
 Tugas: ekstrak niat keuangan dari teks staf tenant (Bahasa Indonesia) menjadi

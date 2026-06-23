@@ -250,6 +250,12 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 
 class HRAgent(BaseAgent):
     name = "hr_agent"
+    skills = ["candidate_screening", "interview_question_generation", "employee_evaluation", "training_recommendation"]
+    tools: list[str] = []
+    goals = [
+        "Membantu proses rekrutmen dan evaluasi karyawan secara objektif berbasis bukti.",
+        "Merekomendasikan training yang relevan untuk pengembangan karyawan.",
+    ]
     system_prompt = """Kamu adalah HR Agent dalam sistem multi-agent BotNesia (AI Workforce).
 
 Tugas: bantu proses HR bisnis tenant -- screening CV, scoring kandidat,
