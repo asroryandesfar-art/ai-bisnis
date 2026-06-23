@@ -886,6 +886,16 @@ CREATE TABLE IF NOT EXISTS workforce_tasks (
 CREATE INDEX IF NOT EXISTS idx_workforce_tasks_org_status ON workforce_tasks(org_id, status, due_at);
 CREATE INDEX IF NOT EXISTS idx_workforce_tasks_domain     ON workforce_tasks(org_id, domain);
 
+-- SubTask + Progress% (AI Agent Platform Phase 4 -- Task Execution Engine).
+-- Sengaja TIDAK ada cascade/rollup otomatis (progress_pct parent tidak
+-- dihitung ulang dari subtask, status 'completed' tidak mensyaratkan 100%)
+-- -- murni field deklaratif untuk fase ini, bukan otomasi penuh.
+ALTER TABLE workforce_tasks
+    ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES workforce_tasks(id) ON DELETE SET NULL;
+ALTER TABLE workforce_tasks
+    ADD COLUMN IF NOT EXISTS progress_pct INT NOT NULL DEFAULT 0 CHECK (progress_pct BETWEEN 0 AND 100);
+CREATE INDEX IF NOT EXISTS idx_workforce_tasks_parent ON workforce_tasks(parent_task_id);
+
 -- ============================================================
 -- 10h. SELF LEARNING COMPANY (AI Workforce Phase 8)
 -- ============================================================
@@ -945,6 +955,62 @@ CREATE TABLE IF NOT EXISTS computer_agent_tasks (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_computer_agent_tasks_org_status ON computer_agent_tasks(org_id, status);
+
+-- ============================================================
+-- 10j. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4)
+-- ============================================================
+-- Empat sistem task/eksekusi di platform ini (agent_executions untuk
+-- pipeline chat, workforce_tasks untuk AI Workforce, computer_agent_tasks
+-- untuk browser automation, workflow_executions untuk Workflow Builder)
+-- masing-masing punya tabel sendiri dan TIDAK pernah disatukan jadi satu
+-- permukaan query. View ini MURNI membaca (UNION ALL) ke-4 sumber yang
+-- sudah ada -- tidak ada tabel/write-path baru, tidak ada perubahan ke
+-- agent_observability.py/workflow_engine.py/computer_agent.py. Fondasi untuk
+-- Agent Center dashboard (Fase 5).
+CREATE OR REPLACE VIEW agent_execution_log AS
+SELECT
+    'chat_agent'::text     AS source_type,
+    ae.id                  AS source_id,
+    ae.tenant_id            AS org_id,
+    ae.agent_name           AS label,
+    ae.status               AS status,
+    ae.execution_start      AS started_at,
+    ae.execution_end        AS finished_at,
+    ae.metadata             AS detail
+FROM agent_executions ae
+UNION ALL
+SELECT
+    'workforce_task',
+    wt.id,
+    wt.org_id,
+    wt.title,
+    wt.status,
+    wt.created_at,
+    COALESCE(wt.completed_at, wt.escalated_at),
+    jsonb_build_object('domain', wt.domain, 'priority', wt.priority, 'progress_pct', wt.progress_pct)
+FROM workforce_tasks wt
+UNION ALL
+SELECT
+    'computer_agent',
+    cat.id,
+    cat.org_id,
+    cat.goal,
+    cat.status,
+    cat.created_at,
+    cat.updated_at,
+    cat.result
+FROM computer_agent_tasks cat
+UNION ALL
+SELECT
+    'workflow',
+    we.id,
+    we.org_id,
+    we.trigger_type,
+    we.status,
+    we.started_at,
+    we.finished_at,
+    we.trigger_payload
+FROM workflow_executions we;
 
 -- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
@@ -1017,7 +1083,8 @@ INSERT INTO permissions (key, category, description) VALUES
  ('research.read',      'research',      'Menjalankan riset web/lead discovery (Research Agent)'),
  ('computer_agent.read',    'computer_agent', 'Melihat riwayat/status task Computer Agent (browser automation)'),
  ('computer_agent.write',   'computer_agent', 'Memicu task Computer Agent baca-saja secara manual'),
- ('computer_agent.approve', 'computer_agent', 'Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent')
+ ('computer_agent.approve', 'computer_agent', 'Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent'),
+ ('execution_log.read',     'execution_log',  'Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1051,7 +1118,7 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
                 'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
                 'learning.read', 'learning.write', 'research.read',
-                'computer_agent.read', 'computer_agent.write')
+                'computer_agent.read', 'computer_agent.write', 'execution_log.read')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)

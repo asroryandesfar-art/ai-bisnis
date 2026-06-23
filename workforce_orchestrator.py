@@ -35,7 +35,8 @@ async def create_task(pool: asyncpg.Pool, *, org_id: str, domain: str, title: st
                        description: str | None = None, priority: str = "medium",
                        source_type: str | None = None, source_id: str | None = None,
                        requires_approval: bool = False, assigned_to: str | None = None,
-                       due_at: datetime | None = None, created_by: str | None = None) -> dict:
+                       due_at: datetime | None = None, created_by: str | None = None,
+                       parent_task_id: str | None = None) -> dict:
     if domain not in DOMAINS:
         raise ValueError(f"domain tidak valid: {domain}")
     if priority not in PRIORITIES:
@@ -44,13 +45,32 @@ async def create_task(pool: asyncpg.Pool, *, org_id: str, domain: str, title: st
     row = await pool.fetchrow(
         """INSERT INTO workforce_tasks (id, org_id, domain, title, description, priority,
                                          source_type, source_id, requires_approval, assigned_to,
-                                         due_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *""",
+                                         due_at, created_by, parent_task_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *""",
         task_id, org_id, domain, title, description, priority,
         source_type, str(source_id) if source_id else None, requires_approval,
         str(assigned_to) if assigned_to else None, due_at, str(created_by) if created_by else None,
+        str(parent_task_id) if parent_task_id else None,
     )
     return dict(row)
+
+
+async def update_progress(pool: asyncpg.Pool, *, org_id: str, task_id: str, progress_pct: int) -> dict | None:
+    if not (0 <= progress_pct <= 100):
+        raise ValueError("progress_pct harus di antara 0-100")
+    row = await pool.fetchrow(
+        "UPDATE workforce_tasks SET progress_pct=$1, updated_at=NOW() WHERE id=$2 AND org_id=$3 RETURNING *",
+        progress_pct, task_id, org_id,
+    )
+    return dict(row) if row else None
+
+
+async def list_subtasks(pool: asyncpg.Pool, *, org_id: str, parent_task_id: str) -> list[dict]:
+    rows = await pool.fetch(
+        "SELECT * FROM workforce_tasks WHERE org_id=$1 AND parent_task_id=$2 ORDER BY created_at",
+        org_id, parent_task_id,
+    )
+    return [dict(r) for r in rows]
 
 
 async def list_tasks(pool: asyncpg.Pool, *, org_id: str, domain: str | None = None,

@@ -5893,6 +5893,7 @@ try:
     from bn_platform.workforce import build_workforce_router
     from bn_platform.research import build_research_router
     from bn_platform.computer_agent import build_computer_agent_router
+    from bn_platform.execution_log import build_execution_log_router
     from bn_platform.self_learning import build_self_learning_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
@@ -6123,6 +6124,14 @@ try:
     )
     app.include_router(
         build_computer_agent_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_execution_log_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,
