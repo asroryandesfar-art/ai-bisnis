@@ -957,14 +957,38 @@ CREATE TABLE IF NOT EXISTS computer_agent_tasks (
 CREATE INDEX IF NOT EXISTS idx_computer_agent_tasks_org_status ON computer_agent_tasks(org_id, status);
 
 -- ============================================================
--- 10j. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4)
+-- 10j. AGENT TASK EXECUTIONS (AI Workforce Phase 2 -- Task Engine)
 -- ============================================================
--- Empat sistem task/eksekusi di platform ini (agent_executions untuk
+-- Log Goal->Plan->Subtasks->Tool Selection->Execution->Verification->Report
+-- (task_engine.run_agent_task()) untuk SETIAP digital employee yang
+-- menjalankan goal bebas (bukan single-intent seperti
+-- finance_agent.parse_intent() dkk, yang TETAP tidak berubah/tidak
+-- menulis ke tabel ini). Cabang ke-5 di VIEW agent_execution_log di bawah.
+CREATE TABLE IF NOT EXISTS agent_task_executions (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id        UUID REFERENCES bots(id) ON DELETE SET NULL,
+    agent_name    TEXT NOT NULL,
+    goal          TEXT NOT NULL,
+    plan          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tool_calls    JSONB NOT NULL DEFAULT '[]'::jsonb,
+    verification  JSONB,
+    report        TEXT,
+    status        TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','failed')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_task_executions_org ON agent_task_executions(org_id, created_at DESC);
+
+-- ============================================================
+-- 10k. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4)
+-- ============================================================
+-- Lima sistem task/eksekusi di platform ini (agent_executions untuk
 -- pipeline chat, workforce_tasks untuk AI Workforce, computer_agent_tasks
--- untuk browser automation, workflow_executions untuk Workflow Builder)
--- masing-masing punya tabel sendiri dan TIDAK pernah disatukan jadi satu
--- permukaan query. View ini MURNI membaca (UNION ALL) ke-4 sumber yang
--- sudah ada -- tidak ada tabel/write-path baru, tidak ada perubahan ke
+-- untuk browser automation, workflow_executions untuk Workflow Builder,
+-- agent_task_executions untuk Task Engine §10j) masing-masing punya tabel
+-- sendiri dan TIDAK pernah disatukan jadi satu permukaan query. View ini
+-- MURNI membaca (UNION ALL) ke-5 sumber yang sudah ada -- tidak ada
+-- write-path baru di view ini, tidak ada perubahan ke
 -- agent_observability.py/workflow_engine.py/computer_agent.py. Fondasi untuk
 -- Agent Center dashboard (Fase 5).
 CREATE OR REPLACE VIEW agent_execution_log AS
@@ -1010,7 +1034,18 @@ SELECT
     we.started_at,
     we.finished_at,
     we.trigger_payload
-FROM workflow_executions we;
+FROM workflow_executions we
+UNION ALL
+SELECT
+    'agent_task',
+    ate.id,
+    ate.org_id,
+    ate.agent_name,
+    ate.status,
+    ate.created_at,
+    ate.created_at,
+    jsonb_build_object('goal', ate.goal, 'report', ate.report, 'tool_call_count', jsonb_array_length(ate.tool_calls))
+FROM agent_task_executions ate;
 
 -- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates

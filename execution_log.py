@@ -2,11 +2,12 @@
 execution_log.py — Unified Execution Log (AI Agent Platform Phase 4).
 
 Modul data murni (tanpa LLM, tanpa class agent) yang membaca VIEW
-`agent_execution_log` (lihat bn_platform/schema_platform.sql §10j) --
-gabungan UNION ALL dari 4 sistem task/eksekusi yang sudah ada:
+`agent_execution_log` (lihat bn_platform/schema_platform.sql §10k) --
+gabungan UNION ALL dari 5 sistem task/eksekusi yang sudah ada:
 agent_executions (per-agent dalam pipeline chat, dipopulasi
 agent_observability.py), workforce_tasks (AI Workforce), computer_agent_tasks
-(browser automation), workflow_executions (Workflow Builder). Tidak ada
+(browser automation), workflow_executions (Workflow Builder),
+agent_task_executions (Task Engine, lihat task_engine.py). Tidak ada
 write-path baru di modul ini -- murni query atas data yang sudah ada,
 fondasi untuk Agent Center dashboard (Fase 5).
 """
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 import asyncpg
 
-SOURCE_TYPES = ("chat_agent", "workforce_task", "computer_agent", "workflow")
+SOURCE_TYPES = ("chat_agent", "workforce_task", "computer_agent", "workflow", "agent_task")
 
 
 async def list_execution_log(
