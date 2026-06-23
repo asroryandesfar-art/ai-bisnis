@@ -30,3 +30,7 @@ reportlab==4.2.5
 # --- Investor-Readiness Assets (marketing screenshot capture, dev-only) ---
 # Setelah pip install, jalankan sekali: python3 -m playwright install chromium
 playwright==1.60.0
+
+# --- Knowledge Base local semantic embedding (gratis, tanpa API key) ---
+# Download model (~470MB) otomatis saat panggilan pertama, sekali saja (cached).
+sentence-transformers==5.6.0

@@ -6,11 +6,14 @@ terbaru di luar berita/finansial (yang sudah ditangani `news_fetcher.py` /
 `finance_fetcher.py`). Sebelumnya `tool_registry.general_web_search` ditandai
 `available: False` karena belum ada API key search engine — modul ini
 mengimplementasikan tool tersebut secara pluggable dan TETAP jujur (Truthfulness
-Policy): jika `SEARCH_API_KEY` belum diisi di `.env`, `search()` langsung
-mengembalikan `{"success": False, "skipped": True, ...}` tanpa panggilan
-network, supaya pipeline tetap berjalan tanpa fitur ini sampai key ditambahkan.
+Policy): jika tidak ada provider yang terkonfigurasi sama sekali, `search()`
+langsung mengembalikan `{"success": False, "skipped": True, ...}` tanpa
+panggilan network, supaya pipeline tetap berjalan tanpa fitur ini.
 
-Provider default: Tavily (https://tavily.com) — REST API sederhana, free tier.
+Provider utama: SearXNG (self-hosted/instance pihak ketiga, gratis, tanpa API
+key) via `SEARXNG_URL`. Tavily (https://tavily.com, berbayar/free-tier
+terbatas) jadi CADANGAN — dipanggil otomatis hanya kalau SearXNG tidak
+dikonfigurasi atau panggilannya gagal (network error/HTTP error/JSON kosong).
 """
 from __future__ import annotations
 
@@ -21,30 +24,93 @@ import httpx
 _TIMEOUT = 10.0
 
 
-async def search(query: str, api_key: str, provider: str = "tavily", max_results: int = 5) -> dict:
-    """Cari di web menggunakan provider yang dikonfigurasi.
+async def search(
+    query: str,
+    *,
+    searxng_url: str = "",
+    tavily_api_key: str = "",
+    max_results: int = 5,
+) -> dict:
+    """Cari di web. Urutan provider: SearXNG dulu, Tavily sebagai cadangan.
 
     Returns dict:
-      - tidak terkonfigurasi: {"success": False, "skipped": True, "reason": "..."}
-      - error HTTP/koneksi:   {"success": False, "error": "..."}
-      - sukses: {"success": True, "provider": ..., "query": ..., "results": [...]}
+      - tidak ada provider terkonfigurasi: {"success": False, "skipped": True, "reason": "..."}
+      - semua provider yang terkonfigurasi gagal: {"success": False, "error": "..."}
+      - sukses: {"success": True, "provider": "searxng"|"tavily", "query": ..., "results": [...]}
         tiap item: {"title", "url", "snippet", "score", "published_date"?}
+        Kalau SearXNG gagal lalu Tavily berhasil, hasil sukses juga membawa
+        "fallback_from": "searxng" supaya pemanggil tahu itu bukan jalur utama.
     """
-    if not (api_key or "").strip():
+    searxng_url = (searxng_url or "").strip()
+    tavily_api_key = (tavily_api_key or "").strip()
+
+    if not searxng_url and not tavily_api_key:
         return {
             "success": False,
             "skipped": True,
-            "reason": "SEARCH_API_KEY belum dikonfigurasi — general web search tidak aktif.",
+            "reason": "SEARXNG_URL/SEARCH_API_KEY belum dikonfigurasi — general web search tidak aktif.",
         }
 
-    provider = (provider or "tavily").strip().lower()
-    if provider == "tavily":
-        return await _search_tavily(query, api_key, max_results)
+    last_error = None
+    tried_searxng = False
+
+    if searxng_url:
+        result = await _search_searxng(query, searxng_url, max_results)
+        if result.get("success"):
+            return result
+        last_error = result.get("error") or result.get("reason")
+        tried_searxng = True
+
+    if tavily_api_key:
+        result = await _search_tavily(query, tavily_api_key, max_results)
+        if result.get("success"):
+            if tried_searxng:
+                result["fallback_from"] = "searxng"
+            return result
+        last_error = result.get("error") or last_error
+
+    return {"success": False, "error": last_error or "Semua provider web search gagal."}
+
+
+async def _search_searxng(query: str, base_url: str, max_results: int) -> dict:
+    base_url = base_url.rstrip("/")
+    params = {"q": query, "format": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(f"{base_url}/search", params=params)
+    except httpx.HTTPError as exc:
+        return {"success": False, "error": str(exc)}
+
+    if r.status_code >= 400:
+        return {"success": False, "error": (r.text or "")[:300]}
+
+    try:
+        data = r.json()
+    except Exception:
+        return {
+            "success": False,
+            "error": "SearXNG tidak mengembalikan JSON — pastikan format 'json' "
+            "diaktifkan di settings.yml instance ini.",
+        }
+
+    raw_results = data.get("results") or []
+    results = []
+    for item in raw_results[: max(1, min(10, max_results))]:
+        if not isinstance(item, dict):
+            continue
+        results.append({
+            "title": str(item.get("title") or "").strip(),
+            "url": str(item.get("url") or "").strip(),
+            "snippet": str(item.get("content") or "").strip(),
+            "score": item.get("score"),
+            "published_date": item.get("publishedDate"),
+        })
 
     return {
-        "success": False,
-        "skipped": True,
-        "reason": f"Provider web search '{provider}' belum didukung.",
+        "success": True,
+        "provider": "searxng",
+        "query": query,
+        "results": results,
     }
 
 

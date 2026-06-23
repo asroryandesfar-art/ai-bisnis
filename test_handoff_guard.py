@@ -206,3 +206,51 @@ def test_escalation_agent_flags_account_ownership():
         "cs_confidence": 0.9,
     }))
     assert "account_ownership" in result.output["trigger_factors"]
+
+
+# ── 5. Regression: kata "hukum" sendirian (bukan frasa legal) tidak boleh
+# salah memicu handoff -- "hukum Newton"/"hukum kekekalan energi" adalah
+# pertanyaan sains umum, bukan ancaman legal. Bug nyata: escalation.py dulu
+# punya hit(["polisi", "hukum", "pengacara"]) sendiri (lebih longgar dari
+# handoff_guard.LEGAL_TERMS yang sudah pakai frasa "tuntut hukum"/"ancaman
+# hukum"), jadi "Jelaskan hukum Newton" terdeteksi legal_threat dan dijawab
+# dengan benar TAPI lalu ditambahi pesan handoff yang tidak nyambung. ────
+
+def test_escalation_agent_does_not_flag_hukum_newton_as_legal_threat():
+    agent = EscalationAgent()
+    result = asyncio.run(agent.run({
+        "user_message": "Jelaskan hukum Newton",
+        "messages": [],
+        "cs_confidence": 0.9,
+    }))
+    assert "legal_threat" not in result.output["trigger_factors"]
+    assert result.output["should_escalate"] is False
+
+
+def test_escalation_agent_does_not_flag_hukum_kekekalan_energi_as_legal_threat():
+    agent = EscalationAgent()
+    result = asyncio.run(agent.run({
+        "user_message": "Apa hukum kekekalan energi?",
+        "messages": [],
+        "cs_confidence": 0.9,
+    }))
+    assert "legal_threat" not in result.output["trigger_factors"]
+
+
+def test_escalation_agent_still_flags_real_legal_threat_phrase():
+    agent = EscalationAgent()
+    result = asyncio.run(agent.run({
+        "user_message": "Kalau tidak diselesaikan saya akan tuntut hukum",
+        "messages": [],
+        "cs_confidence": 0.9,
+    }))
+    assert "legal_threat" in result.output["trigger_factors"]
+    assert result.output["should_escalate"] is True
+
+
+def test_hukum_newton_does_not_trigger_handoff_via_is_handoff_allowed():
+    allowed, category = is_handoff_allowed(
+        trigger_factors=[], message="Jelaskan hukum Newton",
+    )
+    assert allowed is False
+    assert category is None

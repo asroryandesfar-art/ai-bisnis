@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from base import BaseAgent, AgentResult
+from handoff_guard import LEGAL_TERMS
 
 
 class EscalationAgent(BaseAgent):
@@ -26,7 +27,6 @@ Catatan: output agent ini hanya untuk internal sistem (tidak ditampilkan ke user
         "bohong",
         "lapor",
         "polisi",
-        "hukum",
         "pengacara",
         "viral",
         "media",
@@ -81,8 +81,10 @@ Catatan: output agent ini hanya untuk internal sistem (tidak ditampilkan ke user
             trigger_factors.append("request_human")
             reason = "User meminta bicara dengan manusia"
 
-        # 2) Legal / publik
-        if hit(["polisi", "hukum", "pengacara"]):
+        # 2) Legal / publik — pakai daftar frasa dari handoff_guard.LEGAL_TERMS
+        # (bukan kata "hukum" sendirian) supaya tidak false-positive di
+        # pertanyaan sains/umum seperti "hukum Newton"/"hukum kekekalan energi".
+        if hit(list(LEGAL_TERMS)):
             should_escalate = True
             urgency = "high"
             recommended_team = "management"

@@ -174,8 +174,10 @@ class Settings(BaseSettings):
     news_max_concurrency: int = 3
     news_rss_feeds:       str = ""  # comma-separated news source URLs: RSS/Atom/article links (optional)
     # Real-Time Knowledge Layer — general web search (WebSearchAgent)
-    search_api_provider: str = "tavily"
-    search_api_key:      str = ""  # optional: Tavily API key (https://tavily.com)
+    # Urutan provider: SearXNG dulu (gratis, self-hosted, tanpa API key),
+    # Tavily sebagai cadangan otomatis kalau SearXNG tidak terkonfigurasi/gagal.
+    searxng_url:          str = ""  # contoh: http://localhost:8080 (base URL instance SearXNG)
+    search_api_key:       str = ""  # optional, cadangan: Tavily API key (https://tavily.com)
     kb_embedding_dim:     int = 256
     pinecone_api_key:     str = ""
     pinecone_index:       str = "botnesia-chunks"
@@ -4843,7 +4845,7 @@ async def chat(
             "_cheap_model": cfg.groq_cheap_model,
             "_strong_model": cfg.groq_model,
             "_search_api_key": cfg.search_api_key,
-            "_search_api_provider": cfg.search_api_provider,
+            "_searxng_url": cfg.searxng_url,
             "kb_chunks_count": len(relevant_chunks),
         }
         result = await supervisor.process(intelligence_context)
@@ -5138,14 +5140,22 @@ def _chunk_text(text: str, size: int = 350) -> list[str]:
 
 
 async def _generate_kb_embedding(text: str, dim: int | None = None) -> tuple[list[float], str]:
-    """Embedding semantik sungguhan (OpenAI) kalau OPENAI_API_KEY terisi,
-    fallback ke hash lokal kalau tidak/API gagal. Model tag dikembalikan
-    supaya _score_kb_candidate tahu kapan dua vektor sebanding (provider sama)."""
+    """Embedding semantik sungguhan: provider lokal (sentence-transformers,
+    gratis, prioritas utama) -> OpenAI (cadangan, kalau lokal gagal load DAN
+    OPENAI_API_KEY terisi) -> hash lokal (fallback terakhir kalau keduanya
+    tidak tersedia). Model tag dikembalikan supaya _score_kb_candidate tahu
+    kapan dua vektor sebanding (provider sama)."""
     dim = int(dim or cfg.kb_embedding_dim or KB_EMBED_DIM)
+
+    vec = await kb_embeddings.generate_local_embedding(text)
+    if vec is not None:
+        return vec, kb_embeddings.LOCAL_EMBEDDING_TAG
+
     if cfg.openai_api_key:
         vec = await kb_embeddings.generate_openai_embedding(text, cfg.openai_api_key, dim)
         if vec is not None:
             return vec, kb_embeddings.OPENAI_EMBEDDING_TAG
+
     return _text_to_embedding(text, dim), f"hash-emb-{dim}"
 
 

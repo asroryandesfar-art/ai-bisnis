@@ -38,7 +38,12 @@ from reasoning_controller import ReasoningController
 import reflection_engine
 import tool_registry
 import groq_knowledge
-from knowledge_access_engine import format_website_reading, WEBSITE_READER_BLOCK
+from knowledge_access_engine import (
+    OFFICEHOLDER_DISCLAIMER,
+    format_website_reading,
+    is_officeholder_question,
+    WEBSITE_READER_BLOCK,
+)
 import web_search_agent
 from web_search_agent import format_web_search_context, WEB_SEARCH_BLOCK
 from agent_observability import observe_agent, trace_request
@@ -477,8 +482,8 @@ class SupervisorAgent:
         if "web_search:general" in knowledge_routing.get("reasons", {}):
             search_result = await web_search_agent.search(
                 ctx.get("user_message") or "",
-                api_key=ctx.get("_search_api_key", ""),
-                provider=ctx.get("_search_api_provider", "tavily"),
+                searxng_url=ctx.get("_searxng_url", ""),
+                tavily_api_key=ctx.get("_search_api_key", ""),
             )
             if search_result.get("success"):
                 web_search_context = format_web_search_context(
@@ -888,6 +893,25 @@ class SupervisorAgent:
                     )
             else:
                 errors.append(f"uncertainty_engine: {uncertainty_result.error}")
+
+        # ── Safeguard deterministik: pertanyaan "siapa pemegang jabatan X"
+        # (presiden/gubernur/CEO/dst.) dijawab AI dari data training yang bisa
+        # sudah usang. Tidak cukup andalkan instruksi prompt (REALTIME_KNOWLEDGE_
+        # BLOCK) -- LLM kadang tetap menjawab percaya diri tanpa disclaimer untuk
+        # fakta yang sangat kuat tertanam di training data. Hanya dipasang kalau
+        # TIDAK ada web search nyata yang dipakai (kalau web search aktif & dipakai,
+        # jawabannya sudah berbasis data live, disclaimer ini tidak perlu).
+        if (
+            not llm_unavailable
+            and not web_search_used
+            and is_officeholder_question(context.get("user_message", ""))
+            and OFFICEHOLDER_DISCLAIMER not in cs_answer
+        ):
+            cs_answer = cs_answer.rstrip() + "\n\n" + OFFICEHOLDER_DISCLAIMER
+            cs_result = AgentResult(
+                agent="cs_agent", success=True,
+                output={**(cs_result.output or {}), "answer": cs_answer}, latency_ms=0,
+            )
 
         enriched = {
             **ctx,
