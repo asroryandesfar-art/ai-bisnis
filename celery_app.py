@@ -49,6 +49,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=cfg.nightly_job_hour, minute=cfg.nightly_job_minute),
         "args": (),
     },
+    "self-learning-nightly-scan": {
+        "task": "intelligence.run_learning_scan_all_orgs",
+        # 30 menit setelah nightly-auto-learning, supaya tidak kontensi pool/DB bersamaan.
+        "schedule": crontab(hour=cfg.nightly_job_hour, minute=(cfg.nightly_job_minute + 30) % 60),
+        "args": (),
+    },
 }
 
 
@@ -71,6 +77,25 @@ def run_daily_learning_task(self, bot_id: str | None = None):
         return _run_async(run_daily_learning(bot_id))
     except Exception as exc:
         logger.exception("run_daily_learning_task gagal")
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(name="intelligence.run_learning_scan_all_orgs", bind=True, max_retries=2, default_retry_delay=300)
+def run_learning_scan_all_orgs_task(self):
+    """Job Self-Learning malam hari -- agregasi sales pattern/complaint resolution/
+    successful approach jadi organizational_memory candidate insight, semua org
+    dengan bot aktif (lihat self_learning_engine.run_learning_scan_all_orgs)."""
+    from intelligence.db import get_pool
+    from self_learning_engine import run_learning_scan_all_orgs
+
+    async def _run():
+        pool = await get_pool()
+        return await run_learning_scan_all_orgs(pool)
+
+    try:
+        return _run_async(_run())
+    except Exception as exc:
+        logger.exception("run_learning_scan_all_orgs_task gagal")
         raise self.retry(exc=exc)
 
 
