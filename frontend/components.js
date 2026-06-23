@@ -119,11 +119,16 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["BUSINESS", [["dashboard","Dashboard"],["conversations","Inbox"],["handoffs","Customers"],["marketing","Sales"],["marketing","Marketing"],["finance","Finance"]]],
-  ["AI WORKFORCE", [["agents","Supervisor"],["chat","AI Chat"],["agents","AI Agents"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["workforce","Workforce Orchestration"],["agent-center","Agent Center"],["self-learning","Self-Learning Center"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
-  ["OPERATIONS", [["conversations","Conversations"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["analytics","Analytics"],["routing-logs","Routing Logs"],["learning","Feedback Learning"],["improvement","AI Improvement"],["observability","AI Observability"],["costs","Cost Intelligence"],["security","Security"],["workflow-builder","Automation"],["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["channels","Integrations"],["marketplace","Agent Marketplace"],["multimedia","Multimedia Studio"]]],
-  ["SETTINGS", [["team","Team"],["billing","Billing"],["settings","Settings"],["founder","Founder OS"]]],
-  ["COMPANY", [["about","About BotNesia"],["founder-story","Founder Story"],["investor-demo","Investor Demo"]]],
+  ["COMMAND CENTER", [["dashboard","Dashboard"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
+  ["DIGITAL EMPLOYEES", [["agents","AI Agents"],["chat","AI Chat"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"]]],
+  ["TASKS & WORKFLOWS", [["workflow-builder","Automation"],["workforce","Workforce Orchestration"]]],
+  ["COMMUNICATIONS", [["conversations","Inbox"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["channels","Integrations"]]],
+  ["KNOWLEDGE & LEARNING", [["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["learning","Feedback Learning"],["self-learning","Self-Learning Center"],["improvement","AI Improvement"]]],
+  ["BUSINESS HUB", [["analytics","Analytics"],["multimedia","Multimedia Studio"],["handoffs","Customers"]]],
+  ["AGENT OS", [["agent-center","Agent Center"],["routing-logs","Routing Logs"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
+  ["MARKETPLACE", [["marketplace","Agent Marketplace"]]],
+  ["ORGANIZATION", [["team","Team"],["billing","Billing"],["security","Security"]]],
+  ["SETTINGS", [["settings","Settings"],["founder","Founder OS"],["about","About BotNesia"],["founder-story","Founder Story"]]],
 ];
 
 export function sidebar({ route, org, user, counts = {}, founderAccess = false }) {
