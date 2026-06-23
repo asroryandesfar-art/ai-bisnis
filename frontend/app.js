@@ -33,7 +33,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","agent-center","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -1541,6 +1541,80 @@ async function createWorkforceTaskPrompt() {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function renderAgentCenter() {
+  loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent.");
+  const results = await Promise.all([
+    settle("overview", api.agentCenterOverview()),
+    settle("agents", api.agentCenterAgents()),
+    settle("executionLog", api.executionLogList({ limit: 20 })),
+    settle("caPending", api.computerAgentTasks({ status: "pending_approval", limit: 20 })),
+  ]);
+  const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
+  const failed = results.filter((r) => !r.ok);
+
+  const overview = data.overview || {};
+  const agents = data.agents?.agents || [];
+  const logEntries = data.executionLog?.entries || [];
+  const caPending = data.caPending?.tasks || [];
+
+  const bySourceType = overview.execution_log?.by_source_type || {};
+  const totalLogEntries = Object.values(bySourceType).reduce((sum, v) => sum + Number(v || 0), 0);
+  const workforcePendingApproval = overview.workforce?.pending_approval_count || 0;
+  const caPendingCount = overview.computer_agent_pending_approval_count || 0;
+
+  const channelLabel = (c) => (c === "chat_pipeline" ? "Chat Pipeline" : "Authenticated API");
+  const channelBadge = (c) => statusBadge(c === "chat_pipeline" ? "active" : "default", channelLabel(c));
+
+  const agentRows = agents.map((a) => `<tr>
+    <td><span class="table-title">${esc(a.name)}</span></td>
+    <td>${statusBadge("default", a.category)}</td>
+    <td>${channelBadge(a.channel)}</td>
+    <td>${a.skills.length}</td>
+    <td>${a.tools.length}</td>
+  </tr>`).join("");
+
+  const logStatusKind = (s) => (s === "success" || s === "completed" ? "active" : (s === "failed" || s === "rejected" ? "error" : "pending"));
+  const logRows = logEntries.map((e) => `<tr>
+    <td>${statusBadge("default", e.source_type)}</td>
+    <td><span class="table-title">${esc(e.label || "—")}</span></td>
+    <td>${statusBadge(logStatusKind(e.status), e.status)}</td>
+    <td>${relativeTime(e.started_at)}</td>
+  </tr>`).join("");
+
+  const caRows = caPending.map((t) => `<tr>
+    <td><span class="table-title">${esc(t.goal || "—")}</span></td>
+    <td>${esc(t.target_url || "—")}</td>
+    <td>${relativeTime(t.created_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button button-primary" data-ca-approve="${esc(t.id)}">Approve</button>
+      <button class="button button-danger" data-ca-reject="${esc(t.id)}">Reject</button>
+    </div></td>
+  </tr>`).join("");
+
+  const failedNote = failed.length
+    ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((r) => `${r.label}: ${r.error.message}`).join(" · "))}</p></div></div>`
+    : "";
+
+  setPage(`${pageHeader("Agent Center", "Direktori AI agent, execution log lintas-sistem, dan antrian approval Computer Agent dalam satu tampilan.",
+    `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
+    ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
+    ${metricCard("Workforce Approval", formatNumber(workforcePendingApproval), "Task menunggu human approval", "workforce", workforcePendingApproval ? "trend-down" : "trend-up")}
+    ${metricCard("Computer Agent Approval", formatNumber(caPendingCount), "Aksi tulis menunggu persetujuan", "security", caPendingCount ? "trend-down" : "trend-up")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3></div>
+    ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Computer Agent — Menunggu Approval</h3></div>
+    ${caRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Goal</th><th>Target URL</th><th>Dibuat</th><th></th></tr></thead><tbody>${caRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada aksi Computer Agent yang menunggu approval saat ini.")}
+  </div>
+  <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3></div>
+    ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
+  </div>
+  ${failedNote}`);
+}
+
 async function renderLearning() {
   loadingPage("Self-Learning Center", "Insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot.");
   let dashboard, insightsResult;
@@ -2284,7 +2358,7 @@ async function toggleRecording(button) {
 
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo};
   await renderers[state.route]();
 }
 
@@ -2612,6 +2686,8 @@ document.addEventListener("click", async (event) => {
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
+  const caApprove=event.target.closest("[data-ca-approve]"); if(caApprove){ try{ await api.computerAgentApprove(caApprove.dataset.caApprove); toast("Aksi Computer Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  const caReject=event.target.closest("[data-ca-reject]"); if(caReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.computerAgentReject(caReject.dataset.caReject, reason); toast("Task ditolak.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="learning-scan"){ try{ const result=await api.learningScan(); toast(`Scan selesai: ${result.insights?.length||0} insight diperbarui.`,"success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const learningStatus=event.target.closest("[data-learning-status]"); if(learningStatus){ const [id,status]=learningStatus.dataset.learningStatus.split(":"); try{ await api.updateLearningInsight(id,status); toast("Insight diperbarui.","success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }

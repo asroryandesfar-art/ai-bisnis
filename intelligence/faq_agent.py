@@ -49,6 +49,11 @@ class FAQAgent(BaseAgent):
     `conversation_memory.persist_conversation`.
     """
     name = "faq_agent"
+    skills = ["faq_matching", "semantic_question_search"]
+    tools: list[str] = []
+    goals = [
+        "Mengenali apakah pertanyaan pengguna sudah pernah terjawab (FAQ) dan menyumbangkan jawaban siap pakai bila cocok.",
+    ]
     system_prompt = (
         "Kamu adalah FAQ Agent dalam sistem multi-agent BotNesia. "
         "Tugasmu: mengenali apakah pertanyaan pengguna sudah pernah terjawab "

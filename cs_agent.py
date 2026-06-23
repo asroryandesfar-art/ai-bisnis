@@ -17,6 +17,12 @@ SYNTHESIS_SYSTEM_PROMPT = (
 
 class CSAgent(BaseAgent):
     name = "cs_agent"
+    skills = ["customer_conversation", "intent_understanding", "refusal_handling"]
+    tools: list[str] = []
+    goals = [
+        "Menjawab pertanyaan pelanggan secara langsung berguna menggunakan konteks percakapan + knowledge base.",
+        "Menjaga jawaban jujur dan bebas placeholder/karangan saat data spesifik belum tersedia.",
+    ]
     system_prompt = """Kamu adalah asisten AI bisnis BotNesia yang menggunakan Groq untuk menjawab pertanyaan pengguna.
 
 Tugasmu:
