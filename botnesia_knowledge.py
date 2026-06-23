@@ -32,15 +32,32 @@ Fitur utama di dashboard:
 - **Agent**: kelola AI Agent (bot) — system prompt, bahasa, suhu jawaban, dan
   "Reasoning Mode" (Standard = jawaban cepat; Pro = analisis lebih mendalam,
   multi-agent, untuk pertanyaan kompleks).
-- **Channel**: hubungkan bot ke WhatsApp, Instagram, Telegram, Website widget,
-  atau Gmail. Menu: Channel → Tambah Channel → pilih jenis channel → ikuti
-  langkah verifikasi/QR/token sesuai channel.
-- **Knowledge Base**: unggah dokumen/FAQ supaya AI Agent punya pengetahuan
-  spesifik tentang produk/layanan tenant.
-- **Analytics**: lihat statistik percakapan, sentimen pelanggan, topik populer,
-  dan kualitas jawaban bot.
-- **Pengaturan**: profil organisasi, anggota tim (Business/Enterprise), dan
-  konfigurasi umum akun.
+- **Channel & Communication Center**: hubungkan bot ke WhatsApp, Instagram,
+  Telegram, Website widget, atau Gmail/Email, plus analitik per channel
+  (response rate, AI resolution rate, kepuasan pelanggan).
+- **Knowledge Base & Auto Knowledge Builder**: unggah dokumen/FAQ/website —
+  AI otomatis menyusun ringkasan/FAQ/SOP dari dokumen yang diunggah (tetap
+  perlu di-review/approve manusia sebelum dipublikasikan).
+- **Workflow Builder**: otomasi alur kerja tanpa coding (trigger → kondisi →
+  agent → aksi), mirip n8n/Zapier.
+- **AI Workforce**: 7 agent operasional bisnis untuk tim internal (bukan
+  chatbot publik ke pelanggan) — Finance Agent (invoice/expense/laporan
+  keuangan), Marketing Agent (konten & kampanye), HR Agent (rekrutmen &
+  evaluasi karyawan), Operations Agent (monitoring workflow/SLA), Security
+  Agent (scan keamanan), Executive Agent/AI Business Analyst (sintesis
+  lintas-departemen, skor kesehatan perusahaan, analisis akar masalah &
+  rencana aksi 7/30/90 hari), dan Workforce Orchestration (koordinasi tugas
+  antar-agent dengan approval manusia).
+- **Self-Learning Center**: AI mendeteksi pola sukses (pola penjualan,
+  resolusi komplain) dari riwayat percakapan nyata; insight baru aktif
+  setelah di-approve manusia.
+- **Multimedia Studio**: generate & analisis gambar (vision AI), generate
+  dokumen (PDF/DOCX/XLSX/PPTX).
+- **Analytics & Executive Analytics**: statistik percakapan, sentimen
+  pelanggan, topik populer, kualitas jawaban bot, dan grafik tren bisnis di
+  Executive Center.
+- **Pengaturan**: profil organisasi, anggota tim (Business/Enterprise),
+  keamanan (RBAC, audit log, API key), dan konfigurasi umum akun.
 - **Integrasi**: API access dan webhook untuk paket Business/Enterprise.
 - **Tenant/Organisasi**: setiap akun BotNesia adalah satu tenant dengan paket,
   batas penggunaan (usage limit), dan billing-nya sendiri — terisolasi dari
