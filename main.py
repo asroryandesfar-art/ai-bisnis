@@ -108,6 +108,7 @@ import vision_engine
 import document_generator
 import storage_backend
 import kb_embeddings
+import computer_agent
 from finance_fetcher import (
     build_crypto_market_context,
     build_stock_market_context,
@@ -1214,6 +1215,7 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, channel, created_at DESC);",
         "ALTER TABLE bots ADD COLUMN IF NOT EXISTS reasoning_mode TEXT NOT NULL DEFAULT 'standard';",
         "ALTER TABLE bots ADD COLUMN IF NOT EXISTS handoff_confidence_threshold FLOAT;",
+        "ALTER TABLE bots ADD COLUMN IF NOT EXISTS computer_agent_enabled BOOLEAN NOT NULL DEFAULT FALSE;",
         """
         CREATE TABLE IF NOT EXISTS feedback_records (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1515,6 +1517,7 @@ class BotUpdateReq(BaseModel):
     language:      str | None = None
     status:        str | None = None
     reasoning_mode: str | None = None
+    computer_agent_enabled: bool | None = None
 
 class ChatReq(BaseModel):
     message:    str = Field(max_length=2000)
@@ -4535,6 +4538,7 @@ async def chat(
     # 1. Load bot config
     bot = await pool.fetchrow(
         """SELECT b.id, b.org_id, b.system_prompt, b.language, b.temperature, b.reasoning_mode,
+                  b.computer_agent_enabled,
                   o.plan, o.billing_status, o.conv_limit
            FROM bots b
            JOIN organizations o ON o.id = b.org_id
@@ -4824,6 +4828,68 @@ async def chat(
             except Exception as exc:
                 logger.warning("Chat+Image error conv=%s: %s", conv_id, exc)
 
+    # 7.7 Chat + Computer Agent: deteksi & jalankan browsing (AI Agent Platform
+    # Phase 3). Opt-in per bot (default FALSE -- bot lama tidak terpengaruh).
+    # Aksi baca-saja auto-execute (mirip Chat+Image); aksi tulis (klik/isi
+    # form/submit) TIDAK pernah auto-execute -- hanya disimpan sebagai task
+    # pending_approval, dieksekusi nanti lewat endpoint approve setelah
+    # disetujui staf tenant (lihat bn_platform/computer_agent.py).
+    chat_ca_screenshot_url: str | None = None
+    if bot.get("computer_agent_enabled") and computer_agent.looks_like_computer_agent_request(body.message):
+        ca_retry_after = _check_media_cooldown(f"chat-computer-agent:{bot_id}", "computer_agent")
+        if ca_retry_after == 0:
+            try:
+                ca_agent = computer_agent.ComputerAgent(
+                    api_key=cfg.groq_api_key, model=cfg.groq_cheap_model or cfg.groq_model,
+                    base_url=(cfg.groq_base_url or "").strip() or None,
+                )
+                ca_steps = await ca_agent.plan_actions(body.message)
+                if computer_agent.is_write_plan(ca_steps):
+                    await computer_agent.create_task(
+                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
+                        goal=body.message, steps=ca_steps, status="pending_approval",
+                        created_by=user_meta.get("userId"),
+                    )
+                    system = (
+                        system
+                        + "\n\n## Permintaan butuh approval\n"
+                          "Permintaan user melibatkan aksi yang mengubah sesuatu di situs lain "
+                          "(klik/isi form/submit) -- sistem TIDAK menjalankannya otomatis, sudah "
+                          "dicatat dan menunggu persetujuan tim. Beri tahu user secara singkat dan "
+                          "sopan bahwa permintaannya sedang menunggu persetujuan tim sebelum dijalankan."
+                    )
+                else:
+                    ca_result = await ca_agent.execute_read_only(ca_steps)
+                    await computer_agent.create_task(
+                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
+                        goal=body.message, steps=ca_steps,
+                        status="completed" if ca_result.get("success") else "failed",
+                        result=ca_result, created_by=user_meta.get("userId"),
+                    )
+                    if ca_result.get("success"):
+                        chat_ca_screenshot_url = ca_result.get("screenshot_url")
+                        screenshot_note = (
+                            "\n\nSistem juga sudah mengambil screenshot halaman ini dan akan "
+                            "menampilkannya langsung di chat -- sebutkan itu, jangan bilang tidak bisa "
+                            "mengambil screenshot." if chat_ca_screenshot_url else ""
+                        )
+                        system = (
+                            system
+                            + "\n\n## Hasil Computer Agent\n"
+                            + (ca_result.get("text") or "(halaman tidak punya teks yang bisa dibaca -- jangan mengarang isi halaman, katakan jujur kalau tidak ada teks yang terbaca)")
+                            + screenshot_note
+                            + "\n\n" + computer_agent.COMPUTER_AGENT_DATA_BLOCK
+                        )
+                    else:
+                        system = (
+                            system
+                            + "\n\n## Computer Agent gagal\n"
+                            + f"Sistem gagal menjalankan permintaan ({ca_result.get('error')}). "
+                              "Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
+                        )
+            except Exception as exc:
+                logger.warning("Chat+ComputerAgent error conv=%s: %s", conv_id, exc)
+
     # 8. Panggil AI (Multi-Agent pipeline buatan kamu)
     t_start = time.monotonic()
     agent_meta: dict | None = None
@@ -5053,6 +5119,7 @@ async def chat(
         "follow_up_questions":  follow_up_questions,
         "image_url":            chat_image_url,
         "image_provider":       chat_image_provider,
+        "computer_agent_screenshot_url": chat_ca_screenshot_url,
     }
 
     # Observability: log request (best-effort).
@@ -5825,6 +5892,7 @@ try:
     from bn_platform.executive import build_executive_router
     from bn_platform.workforce import build_workforce_router
     from bn_platform.research import build_research_router
+    from bn_platform.computer_agent import build_computer_agent_router
     from bn_platform.self_learning import build_self_learning_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
@@ -6047,6 +6115,14 @@ try:
     )
     app.include_router(
         build_research_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_computer_agent_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,
