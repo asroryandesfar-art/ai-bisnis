@@ -416,7 +416,7 @@ async def frontend_asset(asset_path: str):
     return FileResponse(
         requested,
         media_type=media_types.get(requested.suffix.lower(), "application/octet-stream"),
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": "no-store"},
     )
 
 @app.get("/assets/{asset_path:path}", include_in_schema=False)
