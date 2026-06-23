@@ -221,6 +221,24 @@ class BaseAgent:
 
         return {"final_answer": "", "tool_calls": executed_calls, "rounds": max_rounds}
 
+    async def run_task(
+        self,
+        goal: str,
+        *,
+        pool: Any,
+        org_id: str,
+        bot_id: str | None = None,
+        ctx: dict | None = None,
+    ) -> dict:
+        """Jalankan satu goal bebas/multi-step lewat Task Engine
+        (task_engine.run_agent_task) menggunakan `self.tools` agent ini.
+        Pintu masuk BARU yang dipakai bersama jalur intent-classify lama
+        (mis. finance_agent.parse_intent()) yang TIDAK diubah -- lihat
+        task_engine.py untuk detail Plan->Subtasks->Tool Selection->
+        Execution->Verification->Report."""
+        import task_engine
+        return await task_engine.run_agent_task(self, goal, pool=pool, org_id=org_id, bot_id=bot_id, ctx=ctx)
+
     async def _call_llm_json(
         self,
         messages:    list[dict],

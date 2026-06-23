@@ -251,7 +251,7 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 class HRAgent(BaseAgent):
     name = "hr_agent"
     skills = ["candidate_screening", "interview_question_generation", "employee_evaluation", "training_recommendation"]
-    tools: list[str] = []
+    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup"]
     goals = [
         "Membantu proses rekrutmen dan evaluasi karyawan secara objektif berbasis bukti.",
         "Merekomendasikan training yang relevan untuk pengembangan karyawan.",
