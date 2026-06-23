@@ -25,6 +25,8 @@ from security_agent import SecurityAgent
 from executive_agent import ExecutiveAgent
 from workforce_orchestrator import WorkforceOrchestratorAgent
 from self_learning_engine import SelfLearningAgent
+from general_ai_agent import GeneralAIAgent
+from research_agent import ResearchAgent
 from intent_classifier import IntentClassifier, heuristic_complexity
 from planner_agent import PlannerAgent, DEFAULT_PLAN
 from reasoning_agent import ReasoningAgent
@@ -396,6 +398,16 @@ class SupervisorAgent:
         # (/api/learning/scan); injeksi ke chat (main.py) murni baca data
         # 'approved', tanpa LLM, tanpa lewat agent ini.
         self.self_learning_agent = SelfLearningAgent(**fast_kwargs)
+
+        # Agent OS Phase 1 — General AI Agent. Registrasi untuk identitas/
+        # kelengkapan registry; jawaban chat publik untuk pertanyaan umum
+        # tetap dari cs_agent.py + GENERAL_AI_BLOCK (general_ai_engine.py),
+        # bukan dari agent ini.
+        self.general_ai_agent = GeneralAIAgent(**fast_kwargs)
+
+        # Agent OS Phase 1 — Research Agent. Dipanggil hanya dari endpoint
+        # terautentikasi (/api/research/run), tidak dari chat publik.
+        self.research_agent = ResearchAgent(**fast_kwargs)
 
         # Adaptive reasoning pipeline
         self.socratic_engine   = SocraticReasoningEngine(**fast_kwargs)

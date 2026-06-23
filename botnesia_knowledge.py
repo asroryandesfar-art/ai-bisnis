@@ -48,6 +48,11 @@ Fitur utama di dashboard:
   lintas-departemen, skor kesehatan perusahaan, analisis akar masalah &
   rencana aksi 7/30/90 hari), dan Workforce Orchestration (koordinasi tugas
   antar-agent dengan approval manusia).
+- **Agent OS**: lapisan transparansi di balik setiap jawaban — planning →
+  tool selection → execution → verification → retry → reporting — plus 2
+  agent tambahan: General AI Agent (jawab pertanyaan umum di luar topik
+  bisnis tenant, bukan hanya FAQ perusahaan) dan Research Agent (riset web/
+  lead discovery via endpoint internal, perlu konfigurasi search provider).
 - **Self-Learning Center**: AI mendeteksi pola sukses (pola penjualan,
   resolusi komplain) dari riwayat percakapan nyata; insight baru aktif
   setelah di-approve manusia.

@@ -73,6 +73,7 @@ from multi_step_thinking_engine import (
     MULTI_STEP_THINKING_BLOCK,
     count_sub_questions,
 )
+from general_ai_engine import GENERAL_AI_BLOCK, is_general_ai_request
 
 
 # Pesan follow-up singkat yang harus dijawab dengan melanjutkan konteks
@@ -137,6 +138,8 @@ class ReasoningController:
         )
         needs_prioritization = is_business_strategy and multiple_problems
 
+        is_general_ai = (not is_meta) and (not is_business_strategy) and is_general_ai_request(text)
+
         if is_comparison:
             intent_type = "comparison"
         elif is_self_awareness:
@@ -179,6 +182,8 @@ class ReasoningController:
             blocks.append(FOUNDER_COACH_BLOCK)
             if needs_prioritization:
                 blocks.append(PRIORITIZATION_BLOCK)
+        if is_general_ai:
+            blocks.append(GENERAL_AI_BLOCK)
         if detected_goal:
             blocks.append(GOAL_TRACKING_BLOCK)
         elif has_tracked:
@@ -206,6 +211,7 @@ class ReasoningController:
             "is_followup": is_followup,
             "is_business_strategy": is_business_strategy,
             "needs_prioritization": needs_prioritization,
+            "is_general_ai": is_general_ai,
             "needs_honesty_emphasis": needs_honesty_emphasis,
             "overclaim_risk": overclaim_risk,
             "knowledge_routing": knowledge_routing,

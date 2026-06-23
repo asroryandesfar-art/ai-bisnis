@@ -46,6 +46,10 @@ BOTNESIA_STRENGTHS = [
     "Center yang belajar dari pola percakapan nyata (insight baru aktif setelah di-approve manusia)",
     "punya Multimedia Studio untuk generate/analisis gambar dan generate dokumen "
     "(PDF/DOCX/XLSX/PPTX)",
+    "punya Agent OS — lapisan transparansi pipeline (planning → tool selection → "
+    "execution → verification → retry → reporting) di balik setiap jawaban, plus "
+    "General AI Agent (siap menjawab pertanyaan umum di luar topik bisnis tenant) "
+    "dan Research Agent (riset web/lead discovery, perlu konfigurasi search provider)",
 ]
 
 BOTNESIA_LIMITATIONS = [

@@ -81,6 +81,7 @@ PERMISSIONS: dict[str, str] = {
     "learning.read":       "Melihat insight organizational memory (Self-Learning Company)",
     "learning.write":      "Menjalankan learning scan (membuat insight kandidat)",
     "learning.approve":    "Menyetujui/menolak insight yang akan memengaruhi jawaban bot",
+    "research.read":       "Menjalankan riset web/lead discovery (Research Agent)",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -94,10 +95,10 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "team.read", "billing.read", "finance.read", "finance.write",
         "marketing.read", "marketing.write", "hr.read", "hr.write",
         "operations.read", "operations.write", "workforce.read", "workforce.write",
-        "learning.read", "learning.write",
+        "learning.read", "learning.write", "research.read",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
-    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read"},
+    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read"},
 }
 
 ROLE_ORDER = ["owner", "admin", "manager", "agent", "viewer"]
