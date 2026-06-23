@@ -12,6 +12,11 @@ Policy (`identity_agent.py`).
 Satu kapabilitas baru di modul ini: `read_website()` — Website Reader yang
 SSRF-safe untuk membaca URL spesifik yang dikirim pengguna (bukan free-form
 web search, yang membutuhkan API key search engine yang belum dikonfigurasi).
+
+Sejak Phase 2 ("Tool Framework"), katalog ini diperluas dari sumber
+pengetahuan murni menjadi katalog tool universal: termasuk tool aksi/output
+(channel_messaging, email_reader, document_generator) selain sumber
+pengetahuan -- tetap tidak ada eksekusi otomatis di sini, hanya katalog.
 """
 from __future__ import annotations
 
@@ -126,11 +131,59 @@ TOOL_REGISTRY: dict[str, dict] = {
             "internalnya sendiri (billing/usage/conversation_analysis via self_knowledge)."
         ),
     },
+    "channel_messaging": {
+        "category": "messaging",
+        "description": (
+            "Kirim pesan keluar ke WhatsApp/Instagram/Facebook/Telegram via "
+            "konektor channel nyata (bukan stub). Catatan jujur: saat ini "
+            "ChannelManager.send_message() hanya dipanggil dari 2 jalur -- "
+            "auto-reply pesan masuk (webhook) dan balasan manual dashboard "
+            "omnichannel -- BELUM ada jalur generik bagi agent AI manapun "
+            "untuk mengirim pesan proaktif di luar dua flow tersebut."
+        ),
+        "available": True,
+        "implementation": "bn_platform.channel_manager.ChannelManager.send_message",
+    },
+    "email_reader": {
+        "category": "user_context",
+        "description": (
+            "Baca email Gmail masuk (polling unread, OAuth) dan masukkan ke "
+            "pipeline chat. HANYA membaca/mark-as-read -- BotNesia TIDAK "
+            "mengirim email keluar (scope OAuth gmail.send tidak diaktifkan)."
+        ),
+        "available": True,
+        "implementation": "main._gmail_poll_loop / main._gmail_list_unread",
+    },
+    "document_generator": {
+        "category": "content_generation",
+        "description": (
+            "Generate dokumen PDF/DOCX/XLSX/PPTX dari spesifikasi struktur "
+            "(judul, bagian, tabel, dll), dipakai Multimedia Studio."
+        ),
+        "available": True,
+        "implementation": "document_generator.generate_document",
+    },
+    "calendar": {
+        "category": "connected_business_systems",
+        "description": "Integrasi kalender eksternal (Google/Outlook Calendar).",
+        "available": False,
+        "unavailable_reason": (
+            "Belum diimplementasikan — tidak ada integrasi Google/Outlook "
+            "Calendar di codebase ini. 'Content calendar' di marketing_agent.py "
+            "adalah metadata penjadwalan kampanye internal, bukan kalender "
+            "eksternal yang terhubung."
+        ),
+    },
     "general_web_search": {
         "category": "web_search",
         "description": "Pencarian web bebas (search engine API) untuk topik di luar berita/finansial.",
         "available": False,
-        "unavailable_reason": "Tidak ada API key search engine (Serper/Tavily/Bing) yang terkonfigurasi.",
+        "unavailable_reason": (
+            "Sudah diimplementasikan via web_search_agent.search() (SearXNG "
+            "primer, Tavily fallback) tapi SEARXNG_URL/SEARCH_API_KEY di .env "
+            "saat ini kosong — belum dikonfigurasi, bukan belum dibangun."
+        ),
+        "implementation": "web_search_agent.search",
     },
 }
 
@@ -141,6 +194,18 @@ def available_tools() -> list[str]:
 
 def describe_tool(name: str) -> dict:
     return dict(TOOL_REGISTRY.get(name) or {})
+
+
+def web_search_status(*, searxng_url: str = "", tavily_api_key: str = "") -> dict:
+    """Cek ketersediaan general_web_search secara real-time dari config milik
+    caller (mis. main.py's cfg) tanpa tool_registry.py mengimpor main.py
+    (hindari circular import). Pure function, tidak melakukan I/O."""
+    if searxng_url or tavily_api_key:
+        return {"available": True, "reason": "SEARXNG_URL atau SEARCH_API_KEY terkonfigurasi."}
+    return {
+        "available": False,
+        "reason": "SEARXNG_URL dan SEARCH_API_KEY kosong — general_web_search belum dikonfigurasi.",
+    }
 
 
 # ============================================================

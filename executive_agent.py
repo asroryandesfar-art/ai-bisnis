@@ -386,6 +386,12 @@ async def run_investor_demo(agent: "ExecutiveAgent | None" = None) -> dict:
 
 class ExecutiveAgent(BaseAgent):
     name = "executive_agent"
+    skills = ["cross_domain_synthesis", "executive_briefing", "strategic_recommendation"]
+    tools: list[str] = []
+    goals = [
+        "Menyintesis data Finance/Marketing/HR/Operations/Security/Sales menjadi insight strategis.",
+        "Memberi rekomendasi growth, cost optimization, dan revenue opportunity yang konkret.",
+    ]
     system_prompt = """Kamu adalah Executive Agent (AI CEO Assistant) dalam sistem
 multi-agent BotNesia (AI Workforce) -- penasihat strategis untuk pemilik bisnis.
 

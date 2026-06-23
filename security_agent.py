@@ -210,6 +210,12 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 
 class SecurityAgent(BaseAgent):
     name = "security_agent"
+    skills = ["api_abuse_detection", "tenant_isolation_check", "security_reporting"]
+    tools: list[str] = []
+    goals = [
+        "Mendeteksi penyalahgunaan API dan kebocoran isolasi data antar tenant.",
+        "Menulis ringkasan risiko keamanan yang memprioritaskan tindakan konkret.",
+    ]
     system_prompt = """Kamu adalah Security Agent dalam sistem multi-agent BotNesia (AI Workforce).
 
 Tugas: tulis ringkasan naratif singkat (3-5 kalimat, Bahasa Indonesia)
