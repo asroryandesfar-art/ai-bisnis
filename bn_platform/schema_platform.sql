@@ -981,7 +981,8 @@ INSERT INTO permissions (key, category, description) VALUES
  ('workforce.approve',  'workforce',     'Menyetujui task yang butuh human approval'),
  ('learning.read',      'learning',      'Melihat insight organizational memory (Self-Learning Company)'),
  ('learning.write',     'learning',      'Menjalankan learning scan (membuat insight kandidat)'),
- ('learning.approve',   'learning',      'Menyetujui/menolak insight yang akan memengaruhi jawaban bot')
+ ('learning.approve',   'learning',      'Menyetujui/menolak insight yang akan memengaruhi jawaban bot'),
+ ('research.read',      'research',      'Menjalankan riset web/lead discovery (Research Agent)')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1014,7 +1015,7 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'team.read', 'billing.read', 'finance.read', 'finance.write',
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
                 'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
-                'learning.read', 'learning.write')
+                'learning.read', 'learning.write', 'research.read')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -1026,7 +1027,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read', 'learning.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read', 'learning.read', 'research.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)
