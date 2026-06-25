@@ -14,6 +14,7 @@ from fastapi import HTTPException
 import finance_agent as fa
 from bn_platform.finance import (
     build_finance_router, InvoiceCreateRequest, ExpenseCreateRequest, InvoiceStatusRequest,
+    RunTaskRequest,
 )
 
 
@@ -245,7 +246,7 @@ def test_router_gates_every_route_with_finance_permission():
     )
 
     assert requested_keys.count("finance.read") == 10
-    assert requested_keys.count("finance.write") == 6
+    assert requested_keys.count("finance.write") == 7
     assert requested_keys.count("finance.approve") == 1
     assert set(requested_keys) == {"finance.read", "finance.write", "finance.approve"}
 
@@ -279,6 +280,30 @@ def test_create_invoice_route_writes_audit_log():
         user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool,
     ))
     assert result["customer_name"] == "Budi"
+    assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
+
+
+def test_run_task_route_delegates_to_task_engine_and_writes_audit_log(monkeypatch):
+    captured = {}
+
+    async def fake_run_agent_task(agent, goal, *, pool, org_id, bot_id=None, ctx=None):
+        captured["goal"] = goal
+        captured["org_id"] = org_id
+        return {"status": "completed", "report": "ok"}
+
+    import task_engine
+    monkeypatch.setattr(task_engine, "run_agent_task", fake_run_agent_task)
+
+    pool = FakePool()
+    router = _build_router(pool)
+    handler = _route(router, "/run-task", "POST")
+    result = asyncio.run(handler(
+        body=RunTaskRequest(goal="Cek invoice belum lunas"),
+        user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool,
+    ))
+    assert result["status"] == "completed"
+    assert captured["goal"] == "Cek invoice belum lunas"
+    assert captured["org_id"] == "org-1"
     assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
 
 

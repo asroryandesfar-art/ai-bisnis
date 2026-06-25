@@ -33,6 +33,11 @@ class AlertStatusRequest(BaseModel):
     status: str
 
 
+class RunTaskRequest(BaseModel):
+    goal: str
+    bot_id: str | None = None
+
+
 class ReportGenerateRequest(BaseModel):
     report_type: str
 
@@ -165,5 +170,21 @@ def build_operations_router(*, get_pool: GetPool, get_current_user: GetCurrentUs
         if not row:
             raise HTTPException(404, "Laporan tidak ditemukan")
         return _report_out(dict(row))
+
+    # ── Task Engine: goal bebas multi-step lewat Operations Agent's tools ──
+    @router.post("/run-task")
+    async def run_task(
+        body: RunTaskRequest,
+        user: Annotated[dict, Depends(require_permission("operations.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        _check_rate_limit(f"operations-run-task:{user['org_id']}", 5)
+        result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
+        await write_audit_log(
+            pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+            action="create", resource_type="agent_task_execution",
+            metadata={"goal": body.goal, "status": result.get("status")},
+        )
+        return result
 
     return router
