@@ -165,7 +165,7 @@ const routeMeta = {
   workforce:["Workforce Orchestration","AI Workforce: koordinasi task lintas-agent, deteksi konflik, eskalasi, dan human approval workflow"],
   "self-learning":["Self-Learning Center","AI Workforce: insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot"],
   "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
-  "agent-center":["Agent Center","Direktori semua AI agent, execution log lintas-sistem, dan antrian approval Computer Agent"],
+  "agent-center":["Agent Center","Direktori semua AI agent, jalankan Run Task lewat Task Engine, execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging"],
   "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
   about:["About BotNesia","Visi, misi, dan alasan BotNesia dibangun"],
   "founder-story":["Founder Story","Cerita di balik BotNesia dan misi pendirinya"],
