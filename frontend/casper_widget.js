@@ -4,7 +4,7 @@
 
 (function () {
   function getToken() {
-    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
+    return localStorage.getItem('bn_token') || sessionStorage.getItem('bn_token') || '';
   }
 
   function buildButton() {
@@ -114,10 +114,6 @@
     topbar.appendChild(btn);
   }
 
-  // Retry injection until topbar renders (app.js mounts async)
-  let attempts = 0;
-  const timer = setInterval(() => {
-    inject();
-    if (document.getElementById('casper-anchor-btn') || ++attempts > 30) clearInterval(timer);
-  }, 500);
+  // Re-inject on every SPA navigation — topbar gets re-rendered when page changes.
+  setInterval(inject, 800);
 })();
