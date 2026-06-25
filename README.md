@@ -11,6 +11,13 @@ Live at **[botnesia.uk](https://botnesia.uk)**. Built and run by one founder,
 serving real tenants today — not a demo shell.
 
 > Submitted to **Casper Agentic Buildathon 2026**.
+> 🎤 [Pitch Deck](docs/hackathon/PITCH_DECK.md) · [60s Elevator Pitch](docs/hackathon/ELEVATOR_PITCH.md) · [3-Min Demo Script](docs/hackathon/DEMO_SCRIPT.md) · [Architecture Diagrams](docs/hackathon/DIAGRAMS.md) · [Feature List](docs/hackathon/FEATURES.md) · [Roadmap](docs/hackathon/ROADMAP.md)
+
+| | | | |
+|---|---|---|---|
+| ✔ Multi-Agent Collaboration | ✔ Autonomous AI | ✔ Long-Term Memory | ✔ Knowledge Engine |
+| ✔ AI Workflow Automation | ✔ Human Approval Gate | ✔ Enterprise SaaS | ✔ Multi-Tenant |
+| ✔ Secure Production Architecture | ✔ 911 Automated Tests | ✔ 25 Wired AI Agents | ✔ 5 Live Channels |
 
 ---
 
@@ -113,3 +120,40 @@ python3 -m pytest -q   # 911 tests, full backend coverage
 FastAPI + asyncpg (PostgreSQL 16 + pgvector) · Groq (Llama 4) for LLM
 inference · vanilla JS SPA frontend (no build step) · Cloudflare Tunnel for
 HTTPS · Midtrans/Xendit for billing.
+
+## Folder structure
+
+```
+ai bisnis/
+├── main.py                  # FastAPI app, auth, chat pipeline entrypoint, routing
+├── supervisor.py            # SupervisorAgent — multi-agent orchestration (_process())
+├── base.py                  # BaseAgent — shared LLM-call/tool-call/safe_run contract
+├── task_engine.py           # Goal→Plan→Subtasks→Tool Selection→Execution→Verification
+├── tool_executor.py         # Real LLM function-calling tool catalog + executors
+├── *_agent.py               # One file per agent (cs, sales, knowledge, memory, finance,
+│                             #   marketing, hr, operations, security, executive, ...)
+├── channel_messaging.py     # Human-approval-gated outbound messaging persistence
+├── bn_platform/              # Business Platform: RBAC, billing, security, omnichannel,
+│   ├── rbac.py               #   knowledge builder, workflow engine routers, channel
+│   ├── billing.py            #   connectors (bn_platform/channels/) — one router file
+│   ├── security.py           #   per domain, mounted under /api in main.py
+│   └── ...
+├── intelligence/             # Conversation Memory, FAQ Engine, Sales Intelligence,
+│   └── ...                   #   Knowledge Graph (pre-existing intelligence layer)
+├── frontend/                 # Vanilla-JS dashboard SPA, no build step
+│   ├── app.js                #   all page renderers + event dispatch
+│   ├── components.js          #   shared UI primitives (icons, cards, nav, modals)
+│   ├── api-client.js          #   typed fetch wrapper, one method per endpoint
+│   └── landing.html           #   public marketing page (served at /)
+├── docs/                     # Architecture, API, Database, Deployment, Security docs
+│   └── hackathon/             #   pitch deck, demo script, diagrams, feature list, roadmap
+├── schema.sql / bn_platform/schema_platform.sql   # Full DB schema (idempotent migrations)
+├── test_*.py                 # 911 backend tests, one file per module/feature
+└── requirements.txt
+```
+
+## License
+
+All rights reserved — see [`LICENSE`](LICENSE). This repository is public
+for hackathon judging, investor, and partner evaluation purposes; it is
+not licensed for reuse, modification, or redistribution.
