@@ -52,6 +52,32 @@ def _hash_to_correlation_id(hex_hash: str) -> int:
     return int(hex_hash[:16], 16) & 0x7FFF_FFFF_FFFF_FFFF
 
 
+# Fallback: a known live testnet validator, used when RPC query fails.
+_FALLBACK_PROPOSER = bytes.fromhex(
+    "01c26fa809f1a4a5949d899137c76fd2a261e35c5427036f0fdd6dabc68068e5a1"
+)
+
+
+async def _get_proposer_key() -> bytes:
+    """Return the most-recent block proposer's account key (always a funded validator)."""
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.post(
+                CASPER_RPC,
+                json={"jsonrpc": "2.0", "id": 1, "method": "chain_get_block", "params": {}},
+            )
+            data = resp.json()
+        bws = data["result"]["block_with_signatures"]
+        block = bws.get("block", bws)
+        header = block.get("header", {})
+        proposer_hex = header.get("proposer", "")
+        if proposer_hex:
+            return bytes.fromhex(proposer_hex)
+    except Exception:
+        pass
+    return _FALLBACK_PROPOSER
+
+
 async def anchor_session(org_id: str, session_id: str, summary: str) -> dict:
     """
     Build and submit a Casper transfer deploy whose correlation_id encodes the
@@ -62,10 +88,15 @@ async def anchor_session(org_id: str, session_id: str, summary: str) -> dict:
 
     pvk = _load_keypair()
     params = pycspr.create_deploy_parameters(account=pvk, chain_name=CASPER_CHAIN)
+
+    # Casper 2.0 rejects self-transfers ("Invalid purse"); use the most-recent
+    # block proposer as the recipient — it is always a live, funded validator.
+    # The hash anchor lives in correlation_id; the recipient is irrelevant.
+    target_key = await _get_proposer_key()
     deploy = pycspr.create_transfer(
         params=params,
-        amount=2_500_000_000,   # 2.5 CSPR (minimum transfer)
-        target=pvk.account_key,  # self-transfer — no CSPR leaves the account net
+        amount=2_500_000_000,   # 2.5 CSPR minimum transfer (testnet only)
+        target=target_key,
         correlation_id=correlation_id,
     )
     approval = pycspr.create_deploy_approval(deploy, pvk)
