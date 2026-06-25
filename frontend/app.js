@@ -1,10 +1,10 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260624-sidebar-accordion-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260625-agent-center-runtask-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
-} from "/ui/components.js?v=20260624-sidebar-accordion-1";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260624-sidebar-accordion-1";
+} from "/ui/components.js?v=20260625-agent-center-runtask-1";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260625-agent-center-runtask-1";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
@@ -17,6 +17,7 @@ const state = {
   wfSelectedNodeId: null, wfLinkFrom: null, wfDrag: null,
   chatSession: null, charts: {}, loading: false,
   multimedia: { generating: false, analyzing: false, generatingDoc: false, lastImage: null, lastAnalysis: null, lastDocument: null, history: [] },
+  agentTaskRun: { running: false, lastResult: null, lastError: null },
   analyticsDays: 30, observabilityDays: 7, recorder: null, recordingStream: null, recordingChunks: [], speakReplies: true, speechRunId: 0, speechAudio: null,
   speechContext: null, speechSources: new Set(),
   navOpenSections: new Set(),
@@ -736,6 +737,26 @@ async function generateMultimediaDocument(form) {
   } catch (error) { toast(error.message, "error"); }
   state.multimedia.generatingDoc = false;
   await renderMultimedia();
+}
+
+async function runAgentTask(form) {
+  const data = Object.fromEntries(new FormData(form));
+  const fn = AGENT_RUN_TASK_FN[data.agent];
+  if (!fn) return;
+  state.agentTaskRun.running = true;
+  state.agentTaskRun.lastError = null;
+  await renderAgentCenter();
+  try {
+    const result = await api[fn](data.goal);
+    state.agentTaskRun.lastResult = result;
+    toast(result.status === "completed" ? "Task selesai." : "Task selesai, tapi verifikasi tidak lolos.", result.status === "completed" ? "success" : "error");
+  } catch (error) {
+    state.agentTaskRun.lastError = error.message;
+    state.agentTaskRun.lastResult = null;
+    toast(error.message, "error");
+  }
+  state.agentTaskRun.running = false;
+  await renderAgentCenter();
 }
 
 const WF_CATEGORY_META = {
@@ -1542,13 +1563,16 @@ async function createWorkforceTaskPrompt() {
   } catch (error) { toast(error.message, "error"); }
 }
 
+const AGENT_RUN_TASK_FN = { finance: "financeRunTask", marketing: "marketingRunTask", hr: "hrRunTask", operations: "opsRunTask" };
+
 async function renderAgentCenter() {
-  loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent.");
+  loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging.");
   const results = await Promise.all([
     settle("overview", api.agentCenterOverview()),
     settle("agents", api.agentCenterAgents()),
     settle("executionLog", api.executionLogList({ limit: 20 })),
     settle("caPending", api.computerAgentTasks({ status: "pending_approval", limit: 20 })),
+    settle("cmPending", api.channelMessagingTasks({ status: "pending_approval", limit: 20 })),
   ]);
   const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
   const failed = results.filter((r) => !r.ok);
@@ -1557,11 +1581,36 @@ async function renderAgentCenter() {
   const agents = data.agents?.agents || [];
   const logEntries = data.executionLog?.entries || [];
   const caPending = data.caPending?.tasks || [];
+  const cmPending = data.cmPending?.tasks || [];
 
   const bySourceType = overview.execution_log?.by_source_type || {};
   const totalLogEntries = Object.values(bySourceType).reduce((sum, v) => sum + Number(v || 0), 0);
   const workforcePendingApproval = overview.workforce?.pending_approval_count || 0;
   const caPendingCount = overview.computer_agent_pending_approval_count || 0;
+  const cmPendingCount = cmPending.length;
+
+  const run = state.agentTaskRun;
+  const runResultPanel = run.lastError
+    ? `<div class="card-body"><p class="subtle" style="color:var(--red);margin:0">${esc(run.lastError)}</p></div>`
+    : run.lastResult
+    ? `<div class="card-body" style="display:grid;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statusBadge(run.lastResult.status === "completed" ? "active" : "error", run.lastResult.status)}<span class="subtle" style="font-size:10px">${esc(run.lastResult.agent_name || "")}</span></div>
+        <div style="white-space:pre-wrap;font-size:12px;line-height:1.6">${esc(run.lastResult.report || "(tidak ada report)")}</div>
+        ${run.lastResult.verification ? `<p class="subtle" style="margin:0;font-size:10px">Verifikasi: ${esc(run.lastResult.verification.reasoning || "")}</p>` : ""}
+      </div>`
+    : "";
+
+  const cmRows = cmPending.map((t) => `<tr>
+    <td>${statusBadge("default", t.channel)}</td>
+    <td><span class="table-title">${esc(t.recipient || "—")}</span></td>
+    <td>${esc(t.message || "—")}</td>
+    <td>${esc(t.agent_name || "—")}</td>
+    <td>${relativeTime(t.created_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button button-primary" data-cm-approve="${esc(t.id)}">Approve</button>
+      <button class="button button-danger" data-cm-reject="${esc(t.id)}">Reject</button>
+    </div></td>
+  </tr>`).join("");
 
   const channelLabel = (c) => (c === "chat_pipeline" ? "Chat Pipeline" : "Authenticated API");
   const channelBadge = (c) => statusBadge(c === "chat_pipeline" ? "active" : "default", channelLabel(c));
@@ -1596,19 +1645,39 @@ async function renderAgentCenter() {
     ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((r) => `${r.label}: ${r.error.message}`).join(" · "))}</p></div></div>`
     : "";
 
-  setPage(`${pageHeader("Agent Center", "Direktori AI agent, execution log lintas-sistem, dan antrian approval Computer Agent dalam satu tampilan.",
+  setPage(`${pageHeader("Agent Center", "Direktori AI agent, execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging dalam satu tampilan.",
     `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
     ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
     ${metricCard("Workforce Approval", formatNumber(workforcePendingApproval), "Task menunggu human approval", "workforce", workforcePendingApproval ? "trend-down" : "trend-up")}
     ${metricCard("Computer Agent Approval", formatNumber(caPendingCount), "Aksi tulis menunggu persetujuan", "security", caPendingCount ? "trend-down" : "trend-up")}
+    ${metricCard("Channel Messaging Approval", formatNumber(cmPendingCount), "Pesan keluar menunggu persetujuan", "communication-center", cmPendingCount ? "trend-down" : "trend-up")}
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head"><div><h3>${icon('agent-center',16)} Run Task</h3><span class="subtle">Jalankan goal bebas lewat Task Engine (Goal→Plan→Subtasks→Tool Selection→Execution→Verification→Report)</span></div></div>
+    <form data-agent-run-task-form class="card-body" style="display:grid;gap:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="select" name="agent">
+          <option value="finance">Finance Agent</option>
+          <option value="marketing">Marketing Agent</option>
+          <option value="hr">HR Agent</option>
+          <option value="operations">Operations Agent</option>
+        </select>
+      </div>
+      <textarea class="input" name="goal" rows="3" placeholder="Contoh: Cek semua invoice yang belum lunas dan ringkas totalnya" required></textarea>
+      <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${run.running?'disabled':''}>${icon('send',14)} ${run.running?'Menjalankan...':'Run Task'}</button></div>
+    </form>
+    ${runResultPanel}
   </div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3></div>
     ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
   </div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Computer Agent — Menunggu Approval</h3></div>
     ${caRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Goal</th><th>Target URL</th><th>Dibuat</th><th></th></tr></thead><tbody>${caRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada aksi Computer Agent yang menunggu approval saat ini.")}
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Channel Messaging — Menunggu Approval</h3><span class="subtle">Pesan keluar yang dibuat agent lewat Run Task -- BELUM terkirim sampai disetujui</span></div></div>
+    ${cmRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Penerima</th><th>Pesan</th><th>Dibuat oleh</th><th>Dibuat</th><th></th></tr></thead><tbody>${cmRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada pesan keluar yang menunggu approval saat ini.")}
   </div>
   <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3></div>
     ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
@@ -2696,6 +2765,8 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const caApprove=event.target.closest("[data-ca-approve]"); if(caApprove){ try{ await api.computerAgentApprove(caApprove.dataset.caApprove); toast("Aksi Computer Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const caReject=event.target.closest("[data-ca-reject]"); if(caReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.computerAgentReject(caReject.dataset.caReject, reason); toast("Task ditolak.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  const cmApprove=event.target.closest("[data-cm-approve]"); if(cmApprove){ try{ const result=await api.channelMessagingApprove(cmApprove.dataset.cmApprove); const sendResult=parseFeatures(result.result); toast(result.status==="sent"?"Pesan berhasil dikirim.":"Approved, tapi pengiriman gagal: "+(sendResult.error||"unknown"),result.status==="sent"?"success":"error"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  const cmReject=event.target.closest("[data-cm-reject]"); if(cmReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.channelMessagingReject(cmReject.dataset.cmReject, reason); toast("Pesan ditolak, tidak akan dikirim.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="learning-scan"){ try{ const result=await api.learningScan(); toast(`Scan selesai: ${result.insights?.length||0} insight diperbarui.`,"success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const learningStatus=event.target.closest("[data-learning-status]"); if(learningStatus){ const [id,status]=learningStatus.dataset.learningStatus.split(":"); try{ await api.updateLearningInsight(id,status); toast("Insight diperbarui.","success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }
   const opsAlertStatus=event.target.closest("[data-ops-alert-status]"); if(opsAlertStatus){ const [id,status]=opsAlertStatus.dataset.opsAlertStatus.split(":"); try{ await api.opsUpdateAlert(id,status); toast("Alert diperbarui.","success"); await renderOperations(); }catch(error){ toast(error.message,"error"); } return; }
@@ -2764,6 +2835,7 @@ document.addEventListener("submit", async (event) => {
   if(event.target.matches("[data-multimedia-image-form]")){ event.preventDefault(); await generateMultimediaImage(event.target); }
   if(event.target.matches("[data-multimedia-analyze-form]")){ event.preventDefault(); await analyzeMultimediaImage(event.target); }
   if(event.target.matches("[data-multimedia-document-form]")){ event.preventDefault(); await generateMultimediaDocument(event.target); }
+  if(event.target.matches("[data-agent-run-task-form]")){ event.preventDefault(); await runAgentTask(event.target); }
 });
 
 document.addEventListener("change", async (event) => {
