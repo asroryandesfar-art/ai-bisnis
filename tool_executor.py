@@ -224,6 +224,26 @@ TOOL_SCHEMAS: dict[str, dict] = {
             },
         },
     },
+    "channel_messaging": {
+        "type": "function",
+        "function": {
+            "name": "channel_messaging",
+            "description": (
+                "Kirim pesan ke pelanggan lewat WhatsApp/Telegram/Instagram/Facebook. "
+                "PENTING: pesan TIDAK langsung terkirim -- akan menunggu approval staf tenant dulu "
+                "sebelum benar-benar dikirim (safety gate, sama seperti aksi tulis Computer Agent)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram", "facebook"]},
+                    "recipient": {"type": "string", "description": "ID/nomor penerima pesan, sesuai channel"},
+                    "message": {"type": "string", "description": "Isi pesan yang ingin dikirim"},
+                },
+                "required": ["channel", "recipient", "message"],
+            },
+        },
+    },
 }
 
 # table -> (kolom yang boleh dibaca, kolom yang boleh dipakai sebagai filter_value)
@@ -389,6 +409,22 @@ async def _exec_email_reader(args: dict, ctx: dict) -> dict:
     return {"success": True, "unread_count": len(emails), "emails": emails}
 
 
+async def _exec_channel_messaging(args: dict, ctx: dict) -> dict:
+    """TIDAK PERNAH mengirim langsung -- hanya membuat baris pending_approval.
+    Pengiriman sungguhan hanya lewat channel_messaging.approve_task() setelah
+    manusia menyetujui (lihat docstring modul channel_messaging.py)."""
+    import channel_messaging as cm
+    pool = ctx["pool"]
+    task = await cm.create_task(
+        pool, org_id=ctx["org_id"], bot_id=ctx.get("bot_id"), agent_name=ctx.get("agent_name", "unknown"),
+        channel=args.get("channel", ""), recipient=args.get("recipient", ""), message=args.get("message", ""),
+    )
+    return {
+        "success": True, "status": "pending_approval", "task_id": str(task["id"]),
+        "note": "Pesan BELUM terkirim -- menunggu approval staf tenant sebelum benar-benar dikirim ke pelanggan.",
+    }
+
+
 _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "knowledge_search": _exec_knowledge_search,
     "memory_lookup": _exec_memory_lookup,
@@ -401,6 +437,7 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "news_search": _exec_news_search,
     "document_generator": _exec_document_generator,
     "email_reader": _exec_email_reader,
+    "channel_messaging": _exec_channel_messaging,
 }
 
 

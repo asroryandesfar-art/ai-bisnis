@@ -22,9 +22,11 @@ def test_no_digital_employee_has_empty_placeholder_tools():
 
 def test_every_declared_tool_either_has_real_executor_or_is_documented_label():
     """Setiap nama di agent.tools harus: (a) ada di TOOL_SCHEMAS (executable
-    nyata), ATAU (b) label lama yang sudah dikenal (channel_messaging,
-    didokumentasikan tool_registry.py, tidak diubah Phase 1-3)."""
-    known_labels = {"channel_messaging"}
+    nyata -- termasuk channel_messaging sejak Phase 7, lihat
+    test_tool_executor.py untuk eksekutornya), ATAU (b) label lain yang
+    belum diwire (tidak ada lagi saat ini, set kosong dijaga untuk masa
+    depan)."""
+    known_labels: set[str] = set()
     for cls in AGENT_CLASSES:
         for tool_name in cls.tools:
             assert tool_name in tool_executor.TOOL_SCHEMAS or tool_name in known_labels, (

@@ -40,7 +40,7 @@ async def run_agent_task(
     kalau tidak dikirim)."""
     extra_ctx = dict(ctx or {})
     tool_ctx = {
-        "pool": pool, "org_id": org_id, "bot_id": bot_id,
+        "pool": pool, "org_id": org_id, "bot_id": bot_id, "agent_name": agent.name,
         "groq_api_key": extra_ctx.pop("groq_api_key", agent.api_key),
         "groq_model": extra_ctx.pop("groq_model", agent.model),
         "groq_base_url": extra_ctx.pop("groq_base_url", agent.base_url),
@@ -85,10 +85,15 @@ async def run_agent_task(
     subtask_results: list[dict] = []
     all_tool_calls: list[dict] = []
     for subtask in subtasks:
+        # Sertakan goal ASLI, bukan cuma subtask yang sudah diabstraksi --
+        # subtask LLM-generated kadang membuang detail konkret (nomor
+        # telepon, isi pesan, dst), ditemukan live lewat channel_messaging
+        # (Phase 7): model mengisi placeholder ("nomor_penerima") karena
+        # detail asli tidak ada di pesan user subtask itu sendiri.
         exec_result = await agent._call_llm_with_tools(
             [
                 {"role": "system", "content": task_system_prompt},
-                {"role": "user", "content": subtask},
+                {"role": "user", "content": f"Goal keseluruhan: {goal}\n\nSubtask yang harus dikerjakan sekarang: {subtask}"},
             ],
             tools=tool_schemas, tool_ctx=tool_ctx,
         )
