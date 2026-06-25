@@ -175,3 +175,52 @@ def test_document_generator_executor_works_without_pool(monkeypatch):
         "document_generator", {"format": "pdf", "title": "Tanpa Pool"}, ctx={"org_id": "org-1"},
     ))
     assert result["success"] is True
+
+
+# ─── Phase 6: email_reader ────────────────────────────────────────
+
+def test_email_reader_returns_honest_error_when_gmail_not_connected(monkeypatch):
+    import main as m
+
+    async def fake_integ(pool, org_id):
+        return {"gmail": {}}
+
+    monkeypatch.setattr(m, "_get_integrations_auto", fake_integ)
+
+    result = asyncio.run(te.execute_tool(
+        "email_reader", {}, ctx={"pool": object(), "org_id": "org-1"},
+    ))
+    assert result["success"] is False
+    assert "belum terhubung" in result["error"]
+
+
+def test_email_reader_returns_unread_emails_when_connected(monkeypatch):
+    import main as m
+
+    async def fake_integ(pool, org_id):
+        return {"gmail": {"access_token": "tok", "refresh_token": ""}}
+
+    async def fake_get_token(access_token, refresh_token):
+        return access_token
+
+    async def fake_list_unread(token, max_results=5):
+        return ["msg-1"]
+
+    async def fake_get_message(token, message_id):
+        return {"payload": {"headers": [
+            {"name": "Subject", "value": "Pertanyaan produk"},
+            {"name": "From", "value": "calon@pelanggan.com"},
+        ]}, "snippet": "Halo, saya mau tanya..."}
+
+    monkeypatch.setattr(m, "_get_integrations_auto", fake_integ)
+    monkeypatch.setattr(m, "_gmail_get_access_token", fake_get_token)
+    monkeypatch.setattr(m, "_gmail_list_unread", fake_list_unread)
+    monkeypatch.setattr(m, "_gmail_get_message", fake_get_message)
+
+    result = asyncio.run(te.execute_tool(
+        "email_reader", {"max_results": 3}, ctx={"pool": object(), "org_id": "org-1"},
+    ))
+    assert result["success"] is True
+    assert result["unread_count"] == 1
+    assert result["emails"][0]["subject"] == "Pertanyaan produk"
+    assert result["emails"][0]["from"] == "calon@pelanggan.com"

@@ -287,7 +287,7 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 class OperationsAgent(BaseAgent):
     name = "operations_agent"
     skills = ["workflow_health_monitoring", "sla_monitoring", "alerting", "operational_reporting"]
-    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup", "document_generator"]
+    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup", "document_generator", "email_reader"]
     goals = [
         "Mendeteksi masalah workflow/SLA secara dini dan membuat alert yang actionable.",
         "Menulis ringkasan operasional yang fokus ke insight, bukan sekadar angka.",
