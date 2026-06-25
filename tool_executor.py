@@ -71,9 +71,16 @@ TOOL_SCHEMAS: dict[str, dict] = {
         "function": {
             "name": "database_query",
             "description": (
-                "Query data internal tenant sendiri dari tabel yang diizinkan: "
-                "finance_invoices, hr_candidates, sales_signals, workforce_tasks, conversation_analysis. "
-                "Selalu otomatis dibatasi ke org tenant ini saja."
+                "Query data internal tenant sendiri dari tabel yang diizinkan. "
+                "Selalu otomatis dibatasi ke org tenant ini saja. filter_value HARUS persis salah satu "
+                "nilai enum di bawah (bukan ekspresi SQL seperti \"status = 'x'\"), atau dikosongkan untuk "
+                "ambil semua baris terbaru: "
+                "finance_invoices (filter by status: draft|sent|paid|overdue|cancelled), "
+                "hr_candidates (filter by status: new|screened|interview|offered|hired|rejected), "
+                "sales_signals (filter by signal_type: pre_purchase_question|reason_buy|reason_cancel|"
+                "objection_price|objection_product|objection_service), "
+                "workforce_tasks (filter by status: pending|in_progress|blocked|completed|cancelled|escalated), "
+                "conversation_analysis (filter by intent, nilai bebas sesuai intent yang ada di tenant ini)."
             ),
             "parameters": {
                 "type": "object",
@@ -82,7 +89,7 @@ TOOL_SCHEMAS: dict[str, dict] = {
                         "type": "string",
                         "enum": ["finance_invoices", "hr_candidates", "sales_signals", "workforce_tasks", "conversation_analysis"],
                     },
-                    "filter_value": {"type": "string", "description": "Nilai filter opsional (lihat filter_column yang diizinkan per tabel)"},
+                    "filter_value": {"type": "string", "description": "Nilai filter opsional -- persis salah satu enum yang relevan, lihat description tool ini"},
                 },
                 "required": ["table"],
             },
