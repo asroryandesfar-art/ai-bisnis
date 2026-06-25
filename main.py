@@ -5852,6 +5852,38 @@ async def ready():
     return {"status": "ok"}
 
 
+# ───────────────────────────────────────────────────────────────────────
+# CASPER BLOCKCHAIN INTEGRATION — Casper Agentic Buildathon 2026
+# Anchors AI session hashes to Casper Testnet so agent activity is
+# permanently verifiable on-chain. Judges can look up the deploy_hash
+# on https://testnet.cspr.live
+# ───────────────────────────────────────────────────────────────────────
+class CasperAnchorRequest(BaseModel):
+    session_id: str
+    summary: str = ""
+
+
+@app.post("/api/casper/anchor")
+async def casper_anchor(
+    req: CasperAnchorRequest,
+    user=Depends(get_current_user),
+):
+    """Submit a signed Casper transfer deploy whose correlation_id encodes the
+    SHA-256 of the AI session data. Returns deploy_hash verifiable on
+    testnet.cspr.live."""
+    try:
+        import casper_anchor as _ca
+        result = await _ca.anchor_session(
+            org_id=str(user["org_id"]),
+            session_id=req.session_id,
+            summary=req.summary,
+        )
+        return result
+    except Exception as exc:
+        logger.error("casper_anchor error: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # PHASE 2 — BUSINESS PLATFORM (bn_platform) WIRING
 #
