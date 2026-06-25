@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 import hr_agent as hr
-from .security import write_audit_log
+from .security import _check_rate_limit, write_audit_log
 
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
 GetCurrentUser = Callable[..., Awaitable[dict]]
@@ -72,6 +72,11 @@ class TrainingRecommendRequest(BaseModel):
 class TrainingCreateRequest(BaseModel):
     training_name: str
     reason: str | None = None
+
+
+class RunTaskRequest(BaseModel):
+    goal: str
+    bot_id: str | None = None
 
 
 class TrainingStatusRequest(BaseModel):
@@ -506,5 +511,21 @@ def build_hr_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             metadata={"status": body.status},
         )
         return row
+
+    # ── Task Engine: goal bebas multi-step lewat HR Agent's tools ──
+    @router.post("/run-task")
+    async def run_task(
+        body: RunTaskRequest,
+        user: Annotated[dict, Depends(require_permission("hr.write"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        _check_rate_limit(f"hr-run-task:{user['org_id']}", 5)
+        result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
+        await write_audit_log(
+            pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+            action="create", resource_type="agent_task_execution",
+            metadata={"goal": body.goal, "status": result.get("status")},
+        )
+        return result
 
     return router

@@ -188,16 +188,15 @@ class BaseAgent:
                     if resp.status_code == 429 and attempt < 2:
                         await asyncio.sleep(2 ** attempt)
                         continue
-                    if resp.status_code == 400:
-                        # Model kadang gagal menghasilkan tool_call yang valid
-                        # (Groq: "tool_use_failed") -- ini kegagalan generasi LLM,
-                        # bukan bug pemanggil, jadi degradasi seperti _call_llm_json,
+                    if resp.status_code >= 400:
+                        # Kegagalan LLM (400 "tool_use_failed", 429 quota habis
+                        # setelah retry, 5xx, dst) -- bukan bug pemanggil, jadi
+                        # degradasi seperti _call_llm_json's except Exception,
                         # bukan crash satu task gara-gara satu round gagal.
                         return {
                             "final_answer": "", "tool_calls": executed_calls,
                             "rounds": round_no + 1, "_llm_unavailable": True,
                         }
-                    resp.raise_for_status()
                     data = resp.json() or {}
                     break
 

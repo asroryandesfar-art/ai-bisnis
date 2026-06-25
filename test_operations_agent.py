@@ -12,7 +12,9 @@ import pytest
 from fastapi import HTTPException
 
 import operations_agent as ops
-from bn_platform.operations import build_operations_router, AlertStatusRequest, ReportGenerateRequest
+from bn_platform.operations import (
+    build_operations_router, AlertStatusRequest, ReportGenerateRequest, RunTaskRequest,
+)
 
 
 def _route(router, path, method):
@@ -266,7 +268,7 @@ def test_router_gates_every_route_with_operations_permission():
     )
 
     assert requested_keys.count("operations.read") == 4
-    assert requested_keys.count("operations.write") == 3
+    assert requested_keys.count("operations.write") == 4
     assert set(requested_keys) == {"operations.read", "operations.write"}
 
 
@@ -284,6 +286,30 @@ def _build_router(pool):
         get_pool=get_pool, get_current_user=get_current_user,
         require_permission=require_permission, get_agent_config=lambda: {"api_key": ""},
     )
+
+
+def test_run_task_route_delegates_to_task_engine_and_writes_audit_log(monkeypatch):
+    captured = {}
+
+    async def fake_run_agent_task(agent, goal, *, pool, org_id, bot_id=None, ctx=None):
+        captured["goal"] = goal
+        captured["org_id"] = org_id
+        return {"status": "completed", "report": "ok"}
+
+    import task_engine
+    monkeypatch.setattr(task_engine, "run_agent_task", fake_run_agent_task)
+
+    pool = FakePool()
+    router = _build_router(pool)
+    handler = _route(router, "/run-task", "POST")
+    result = asyncio.run(handler(
+        body=RunTaskRequest(goal="Cek kesehatan workflow minggu ini"),
+        user={"org_id": "org-1", "id": "user-1", "email": "owner@example.com"}, pool=pool,
+    ))
+    assert result["status"] == "completed"
+    assert captured["goal"] == "Cek kesehatan workflow minggu ini"
+    assert captured["org_id"] == "org-1"
+    assert any("INSERT INTO audit_logs" in c[1] for c in pool.calls)
 
 
 def test_update_alert_route_writes_audit_log():
