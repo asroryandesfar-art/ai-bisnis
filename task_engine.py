@@ -71,12 +71,23 @@ async def run_agent_task(
     tool_schemas = tool_executor.available_tool_schemas(relevant_tools)
 
     # ── 2/3. SUBTASKS -> TOOL SELECTION -> EXECUTION ─────────────
+    # Catatan: sengaja TIDAK pakai agent.system_prompt di sini -- itu prompt
+    # untuk parse_intent() (mis. FinanceAgent-nya menyuruh "Balas HANYA JSON
+    # dengan field: action..."), yang kalau ikut dikirim ke tool-calling loop
+    # bikin model bingung antara format tool_call OpenAI-compatible vs format
+    # JSON-aksi lama-nya sendiri -- terbukti live menyebabkan Groq menolak
+    # generasi tool_call dengan 400 tool_use_failed.
+    task_system_prompt = (
+        f"Kamu adalah {agent.name} yang sedang mengerjakan satu subtask dari sebuah goal. "
+        "Gunakan tools yang tersedia kalau perlu data nyata, lalu jawab subtask ini dengan "
+        "kalimat biasa (bukan JSON aksi internal)."
+    )
     subtask_results: list[dict] = []
     all_tool_calls: list[dict] = []
     for subtask in subtasks:
         exec_result = await agent._call_llm_with_tools(
             [
-                {"role": "system", "content": agent.system_prompt},
+                {"role": "system", "content": task_system_prompt},
                 {"role": "user", "content": subtask},
             ],
             tools=tool_schemas, tool_ctx=tool_ctx,
