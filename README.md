@@ -115,11 +115,27 @@ python3 -m pytest -q   # 911 tests, full backend coverage
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Auth/JWT/RBAC, rate limiting, audit logging |
 | [`docs/COST_INTELLIGENCE.md`](docs/COST_INTELLIGENCE.md) | Per-tenant AI cost tracking |
 
+## Casper Blockchain Integration
+
+BotNesia anchors AI session hashes to the **Casper Testnet** blockchain for immutable audit trails.
+
+| | |
+|---|---|
+| **Endpoint** | `POST /api/casper/anchor` (authenticated) |
+| **What's stored** | SHA-256 of `{org_id, session_id, summary}` as `correlation_id` in a signed Casper transfer deploy |
+| **Network** | Casper 2.0 Testnet (`casper-test`) via `https://node.testnet.casper.network/rpc` |
+| **UI** | "Anchor to Casper" button in the dashboard topbar — shows deploy hash + explorer link on success |
+| **Verify** | Any deploy hash is verifiable at `https://testnet.cspr.live/deploy/<hash>` |
+| **Account** | `012c833458db430f3c7d1cd629dc5206fd2979e7f750c97c75d799948436807783` |
+| **Files** | `casper_anchor.py` · `frontend/casper_widget.js` · `POST /api/casper/anchor` in `main.py` |
+
+> Why Casper? Every AI agent decision becomes permanently verifiable — no one can alter what an agent decided after the fact. Foundational for auditable autonomous AI.
+
 ## Tech stack
 
 FastAPI + asyncpg (PostgreSQL 16 + pgvector) · Groq (Llama 4) for LLM
 inference · vanilla JS SPA frontend (no build step) · Cloudflare Tunnel for
-HTTPS · Midtrans/Xendit for billing.
+HTTPS · Midtrans/Xendit for billing · **Casper Testnet** for on-chain AI session anchoring.
 
 ## Folder structure
 

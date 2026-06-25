@@ -60,10 +60,36 @@ separate SaaS tools.
   security/billing/RBAC stack, and every dashboard page live-verified
   error-free before this submission.
 
+## Casper Blockchain Integration
+
+BotNesia anchors AI agent session hashes to the **Casper Testnet** blockchain,
+making every AI decision permanently verifiable on-chain.
+
+**How it works:**
+1. After an AI session, the dashboard shows an **"Anchor to Casper"** button.
+2. Clicking it calls `POST /api/casper/anchor` — the backend SHA-256 hashes the
+   session data (org_id + session_id + summary), encodes the first 8 bytes of
+   the hash as a `correlation_id`, and builds a signed Casper transfer deploy.
+3. The deploy is submitted to the official **Casper 2.0 Testnet** via
+   `https://node.testnet.casper.network/rpc`.
+4. The response **deploy_hash** is displayed in the UI with a direct link to
+   `testnet.cspr.live` so anyone can independently verify the anchor.
+
+**Why this matters:** Each AI session's output is cryptographically pinned on a
+public immutable ledger. No one — not even BotNesia — can retroactively alter
+what an agent decided. This is foundational for auditable autonomous AI.
+
+**Files added:** `casper_anchor.py` (backend), `frontend/casper_widget.js` (UI button),
+`POST /api/casper/anchor` endpoint in `main.py`.
+
+**Testnet account:** `012c833458db430f3c7d1cd629dc5206fd2979e7f750c97c75d799948436807783`
+Verify deploys at: `https://testnet.cspr.live`
+
 ## Tech stack
 FastAPI + asyncpg (PostgreSQL 16 + pgvector) on the backend, Groq
 (Llama 4 Scout) for LLM inference, a vanilla-JS SPA frontend (no build
-step), Cloudflare Tunnel for HTTPS, Midtrans/Xendit for billing.
+step), Cloudflare Tunnel for HTTPS, Midtrans/Xendit for billing,
+**Casper Testnet** for immutable AI session anchoring.
 
 ## Links
 - Live product: [botnesia.uk](https://botnesia.uk)

@@ -31,6 +31,9 @@ reportlab==4.2.5
 # Setelah pip install, jalankan sekali: python3 -m playwright install chromium
 playwright==1.60.0
 
+# --- Casper Blockchain (Casper Agentic Buildathon 2026) ---
+pycspr==1.2.0
+
 # --- Knowledge Base local semantic embedding (gratis, tanpa API key) ---
 # Download model (~470MB) otomatis saat panggilan pertama, sekali saja (cached).
 sentence-transformers==5.6.0
