@@ -48,17 +48,24 @@
         AI session hash tersimpan permanen di Casper Testnet blockchain.
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
-        <tr><td style="padding:4px 0;color:#777;width:110px">Deploy Hash</td>
+        <tr><td style="padding:4px 0;color:#777;width:130px">Deploy Hash</td>
             <td style="word-break:break-all;font-family:monospace;color:#222">${data.deploy_hash}</td></tr>
         <tr><td style="padding:4px 0;color:#777">Session Hash</td>
             <td style="word-break:break-all;font-family:monospace;color:#222">${data.session_hash}</td></tr>
+        <tr><td style="padding:4px 0;color:#777">Contract Package</td>
+            <td style="word-break:break-all;font-family:monospace;color:#222">${(data.contract_package_hash||'').slice(0,20)}…</td></tr>
         <tr><td style="padding:4px 0;color:#777">Account</td>
             <td style="word-break:break-all;font-family:monospace;color:#222">${(data.account_key||'').slice(0,20)}…</td></tr>
       </table>
       <a href="${data.explorer_url}" target="_blank" rel="noopener"
          style="display:inline-block;padding:8px 16px;background:#7e57c2;color:#fff;
+                border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">
+        View Deploy ↗
+      </a>
+      <a href="${data.contract_url||'https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0'}" target="_blank" rel="noopener"
+         style="display:inline-block;padding:8px 16px;background:#4527a0;color:#fff;
                 border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">
-        View on Casper Testnet Explorer ↗
+        View Contract ↗
       </a>
       <button id="casper-modal-close"
               style="float:right;padding:8px 16px;border:1px solid #ccc;border-radius:6px;
