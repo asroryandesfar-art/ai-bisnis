@@ -207,6 +207,23 @@ TOOL_SCHEMAS: dict[str, dict] = {
             },
         },
     },
+    "email_reader": {
+        "type": "function",
+        "function": {
+            "name": "email_reader",
+            "description": (
+                "Baca email Gmail masuk yang belum dibaca (subjek, pengirim, ringkasan) untuk tenant ini. "
+                "Read-only -- tidak menandai email sebagai sudah dibaca, tidak mengirim email keluar."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_results": {"type": "integer", "description": "Jumlah maksimum email yang diambil, default 5"},
+                },
+                "required": [],
+            },
+        },
+    },
 }
 
 # table -> (kolom yang boleh dibaca, kolom yang boleh dipakai sebagai filter_value)
@@ -344,6 +361,34 @@ async def _exec_document_generator(args: dict, ctx: dict) -> dict:
     return {"success": True, "file_url": url, "format": fmt, "title": spec["title"]}
 
 
+async def _exec_email_reader(args: dict, ctx: dict) -> dict:
+    from main import _get_integrations_auto, _gmail_get_access_token, _gmail_list_unread, _gmail_get_message
+    pool = ctx["pool"]
+    org_id = ctx["org_id"]
+    max_results = max(1, min(20, args.get("max_results") or 5))
+
+    integ = await _get_integrations_auto(pool, str(org_id))
+    gmail = dict(integ.get("gmail") or {})
+    access_token = (gmail.get("access_token") or "").strip()
+    refresh_token = (gmail.get("refresh_token") or "").strip()
+    if not (access_token or refresh_token):
+        return {"success": False, "error": "Gmail belum terhubung untuk tenant ini"}
+
+    token = await _gmail_get_access_token(access_token, refresh_token)
+    msg_ids = await _gmail_list_unread(token, max_results=max_results)
+    emails = []
+    for mid in msg_ids:
+        m = await _gmail_get_message(token, mid)
+        headers = {h.get("name", "").lower(): h.get("value", "") for h in (m.get("payload", {}).get("headers") or [])}
+        emails.append({
+            "id": mid,
+            "subject": headers.get("subject", "").strip(),
+            "from": headers.get("from", "").strip(),
+            "snippet": (m.get("snippet") or "").strip(),
+        })
+    return {"success": True, "unread_count": len(emails), "emails": emails}
+
+
 _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "knowledge_search": _exec_knowledge_search,
     "memory_lookup": _exec_memory_lookup,
@@ -355,6 +400,7 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "financial_data": _exec_financial_data,
     "news_search": _exec_news_search,
     "document_generator": _exec_document_generator,
+    "email_reader": _exec_email_reader,
 }
 
 
