@@ -352,7 +352,7 @@ async def dashboard_summary(pool: asyncpg.Pool, org_id: str) -> dict:
 class FinanceAgent(BaseAgent):
     name = "finance_agent"
     skills = ["invoice_management", "expense_tracking", "revenue_reporting", "cashflow_forecasting"]
-    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup"]
+    tools: list[str] = ["database_query", "knowledge_search", "memory_lookup", "financial_data", "document_generator"]
     goals = [
         "Mengelola invoice, pembayaran, dan pengeluaran tenant secara akurat berbasis data ledger internal.",
         "Menghasilkan laporan revenue/profit/cashflow dan forecast yang bisa ditindaklanjuti.",

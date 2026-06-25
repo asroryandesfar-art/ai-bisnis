@@ -22,7 +22,9 @@ ctx (dict) yang wajib dikirim caller ke `execute_tool()`:
 """
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import asdict
 from typing import Any, Awaitable, Callable
 
 import asyncpg
@@ -134,6 +136,77 @@ TOOL_SCHEMAS: dict[str, dict] = {
             },
         },
     },
+    "financial_data": {
+        "type": "function",
+        "function": {
+            "name": "financial_data",
+            "description": (
+                "Ambil harga crypto/saham real-time (CoinGecko/Yahoo Finance) untuk pertanyaan "
+                "harga pasar. Sebutkan nama/simbol aset di query (mis. 'bitcoin', 'AAPL', 'tesla')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Nama/simbol aset crypto atau saham yang ingin dicek harganya"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    "news_search": {
+        "type": "function",
+        "function": {
+            "name": "news_search",
+            "description": "Cari berita terkini via RSS (Google News) untuk pertanyaan bertopik berita/peristiwa terbaru.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Topik/kata kunci berita yang dicari"},
+                    "limit": {"type": "integer", "description": "Jumlah maksimum hasil, default 5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    "document_generator": {
+        "type": "function",
+        "function": {
+            "name": "document_generator",
+            "description": (
+                "Generate dokumen PDF/DOCX/XLSX/PPTX dari struktur judul+bagian/tabel/slide. "
+                "Hasilnya berupa file_url yang bisa diunduh."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "format": {"type": "string", "enum": ["pdf", "docx", "xlsx", "pptx"]},
+                    "title": {"type": "string"},
+                    "sections": {
+                        "type": "array",
+                        "description": "Isi dokumen: daftar bagian heading+body",
+                        "items": {
+                            "type": "object",
+                            "properties": {"heading": {"type": "string"}, "body": {"type": "string"}},
+                        },
+                    },
+                    "table_rows": {
+                        "type": "array",
+                        "description": "Opsional, untuk data tabular -- baris pertama dianggap header",
+                        "items": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "slides": {
+                        "type": "array",
+                        "description": "Opsional, khusus format pptx",
+                        "items": {
+                            "type": "object",
+                            "properties": {"title": {"type": "string"}, "bullets": {"type": "array", "items": {"type": "string"}}},
+                        },
+                    },
+                },
+                "required": ["format", "title"],
+            },
+        },
+    },
 }
 
 # table -> (kolom yang boleh dibaca, kolom yang boleh dipakai sebagai filter_value)
@@ -228,6 +301,49 @@ async def _exec_browser_extract(args: dict, ctx: dict) -> dict:
     return await agent.execute_read_only(steps)
 
 
+async def _exec_financial_data(args: dict, ctx: dict) -> dict:
+    import finance_fetcher as ff
+    query = args.get("query", "")
+    crypto, stocks = await asyncio.gather(ff.fetch_crypto_quotes(query), ff.fetch_stock_quotes(query))
+    if not crypto and not stocks:
+        return {"success": False, "error": "Tidak ada simbol crypto/saham yang dikenali dari query ini"}
+    return {
+        "success": True, "summary": ff.combine_market_answers(crypto, stocks),
+        "crypto": [asdict(q) for q in crypto], "stocks": [asdict(q) for q in stocks],
+    }
+
+
+async def _exec_news_search(args: dict, ctx: dict) -> dict:
+    from news_fetcher import search_news
+    query = args.get("query", "")
+    limit = args.get("limit") or 5
+    items = await search_news(query, limit=limit)
+    return {"success": True, "results": [
+        {"title": it.title, "link": it.link, "source": it.source, "published": it.published, "summary": it.summary}
+        for it in items
+    ]}
+
+
+async def _exec_document_generator(args: dict, ctx: dict) -> dict:
+    import document_generator as dg
+    import storage_backend
+    fmt = (args.get("format") or "pdf").strip().lower()
+    spec = dg.normalize_spec(args, fallback_title=args.get("title") or "Dokumen")
+    file_bytes, _content_type = dg.generate_document(fmt, spec)
+    _, url = storage_backend.save_bytes("agent-task-documents", file_bytes, ext=f".{fmt}")
+    pool = ctx.get("pool")
+    if pool is not None:
+        try:
+            await pool.execute(
+                """INSERT INTO generated_documents (org_id, bot_id, user_id, format, title, prompt, file_url, status)
+                   VALUES ($1,$2,NULL,$3,$4,$5,$6,'completed')""",
+                ctx["org_id"], ctx.get("bot_id"), fmt, spec["title"], "Dibuat lewat Task Engine (agent)", url,
+            )
+        except Exception:
+            pass
+    return {"success": True, "file_url": url, "format": fmt, "title": spec["title"]}
+
+
 _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "knowledge_search": _exec_knowledge_search,
     "memory_lookup": _exec_memory_lookup,
@@ -236,6 +352,9 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "web_search": _exec_web_search,
     "browser_open": _exec_browser_open,
     "browser_extract": _exec_browser_extract,
+    "financial_data": _exec_financial_data,
+    "news_search": _exec_news_search,
+    "document_generator": _exec_document_generator,
 }
 
 

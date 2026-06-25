@@ -85,3 +85,93 @@ def test_parse_tool_call_args_never_raises_on_bad_json():
     assert te.parse_tool_call_args("not json") == {}
     assert te.parse_tool_call_args('{"a": 1}') == {"a": 1}
     assert te.parse_tool_call_args("") == {}
+
+
+# ─── Phase 5: financial_data / news_search / document_generator ──
+
+def test_financial_data_combines_crypto_and_stock_quotes(monkeypatch):
+    import finance_fetcher as ff
+
+    async def fake_crypto(query, timeout_s=15.0):
+        return [ff.CryptoQuote(coin_id="bitcoin", symbol="BTC", usd=65000.0, idr=1_000_000_000.0,
+                                usd_24h_change=1.2, idr_24h_change=1.2, fetched_at="2026-06-25T00:00:00Z")]
+
+    async def fake_stock(query, timeout_s=15.0):
+        return []
+
+    monkeypatch.setattr(ff, "fetch_crypto_quotes", fake_crypto)
+    monkeypatch.setattr(ff, "fetch_stock_quotes", fake_stock)
+
+    result = asyncio.run(te.execute_tool("financial_data", {"query": "harga bitcoin"}, ctx={}))
+    assert result["success"] is True
+    assert "BTC" in result["summary"]
+    assert len(result["crypto"]) == 1
+    assert result["stocks"] == []
+
+
+def test_financial_data_returns_honest_error_when_nothing_recognized(monkeypatch):
+    import finance_fetcher as ff
+
+    async def empty(query, timeout_s=15.0):
+        return []
+
+    monkeypatch.setattr(ff, "fetch_crypto_quotes", empty)
+    monkeypatch.setattr(ff, "fetch_stock_quotes", empty)
+
+    result = asyncio.run(te.execute_tool("financial_data", {"query": "halo apa kabar"}, ctx={}))
+    assert result["success"] is False
+    assert "error" in result
+
+
+def test_news_search_returns_result_list(monkeypatch):
+    import news_fetcher
+
+    async def fake_search(query, limit=6, rss_urls=None):
+        return [news_fetcher.NewsItem(title="Judul Berita", link="https://example.com/a",
+                                       source="Test Source", published="2026-06-25", summary="Ringkasan")]
+
+    monkeypatch.setattr(news_fetcher, "search_news", fake_search)
+
+    result = asyncio.run(te.execute_tool("news_search", {"query": "ekonomi indonesia"}, ctx={}))
+    assert result["success"] is True
+    assert result["results"][0]["title"] == "Judul Berita"
+
+
+def test_document_generator_executor_saves_file_and_inserts_row(monkeypatch):
+    import document_generator as dg
+    import storage_backend
+
+    monkeypatch.setattr(dg, "generate_document", lambda fmt, spec: (b"PDFDATA", "application/pdf"))
+    monkeypatch.setattr(storage_backend, "save_bytes", lambda subdir, data, ext="", filename=None: (None, "/media/agent-task-documents/x.pdf"))
+
+    class FakePool:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, sql, *args):
+            self.calls.append((sql, args))
+            return "OK"
+
+    pool = FakePool()
+    result = asyncio.run(te.execute_tool(
+        "document_generator",
+        {"format": "pdf", "title": "Laporan Uji", "sections": [{"heading": "A", "body": "B"}]},
+        ctx={"pool": pool, "org_id": "org-1", "bot_id": None},
+    ))
+    assert result["success"] is True
+    assert result["file_url"] == "/media/agent-task-documents/x.pdf"
+    assert result["title"] == "Laporan Uji"
+    assert any("INSERT INTO generated_documents" in c[0] for c in pool.calls)
+
+
+def test_document_generator_executor_works_without_pool(monkeypatch):
+    import document_generator as dg
+    import storage_backend
+
+    monkeypatch.setattr(dg, "generate_document", lambda fmt, spec: (b"PDFDATA", "application/pdf"))
+    monkeypatch.setattr(storage_backend, "save_bytes", lambda subdir, data, ext="", filename=None: (None, "/media/x.pdf"))
+
+    result = asyncio.run(te.execute_tool(
+        "document_generator", {"format": "pdf", "title": "Tanpa Pool"}, ctx={"org_id": "org-1"},
+    ))
+    assert result["success"] is True
