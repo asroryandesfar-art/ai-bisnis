@@ -57,7 +57,12 @@ def test_run_agent_task_follows_plan_then_execute_then_verify_order(monkeypatch)
     pool = FakePool()
     result = asyncio.run(task_engine.run_agent_task(agent, "cari info perusahaan", pool=pool, org_id="org-1"))
 
-    assert calls == ["plan", "execute:cari info A", "execute:cari info B", "verify"]
+    assert calls[0] == "plan"
+    assert calls[-1] == "verify"
+    # Pesan subtask harus tetap menyertakan goal asli (fix Phase 7: subtask
+    # abstrak kadang membuang detail konkret seperti nomor/isi pesan).
+    assert "cari info perusahaan" in calls[1] and "cari info A" in calls[1]
+    assert "cari info perusahaan" in calls[2] and "cari info B" in calls[2]
     assert result["status"] == "completed"
     assert len(result["tool_calls"]) == 2
     assert "cari info A" in result["report"] and "cari info B" in result["report"]

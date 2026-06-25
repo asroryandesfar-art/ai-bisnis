@@ -86,6 +86,8 @@ PERMISSIONS: dict[str, str] = {
     "computer_agent.write":   "Memicu task Computer Agent baca-saja secara manual",
     "computer_agent.approve": "Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent",
     "execution_log.read":     "Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)",
+    "channel_messaging.read":    "Melihat riwayat/status pesan keluar yang dibuat agent lewat Tool Framework",
+    "channel_messaging.approve": "Menyetujui/menolak pengiriman pesan keluar (WhatsApp/Telegram/Instagram/Facebook) yang dibuat agent",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -101,6 +103,7 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "operations.read", "operations.write", "workforce.read", "workforce.write",
         "learning.read", "learning.write", "research.read",
         "computer_agent.read", "computer_agent.write", "execution_log.read",
+        "channel_messaging.read",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
     "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read"},

@@ -224,3 +224,29 @@ def test_email_reader_returns_unread_emails_when_connected(monkeypatch):
     assert result["unread_count"] == 1
     assert result["emails"][0]["subject"] == "Pertanyaan produk"
     assert result["emails"][0]["from"] == "calon@pelanggan.com"
+
+
+# ─── Phase 7: channel_messaging (WRITE -- selalu pending_approval, TIDAK PERNAH kirim langsung) ──
+
+def test_channel_messaging_never_sends_directly_only_queues_pending_approval(monkeypatch):
+    import channel_messaging as cm
+
+    captured = {}
+
+    async def fake_create_task(pool, *, org_id, bot_id, agent_name, channel, recipient, message):
+        captured.update(org_id=org_id, agent_name=agent_name, channel=channel, recipient=recipient, message=message)
+        return {"id": "task-1", "status": "pending_approval"}
+
+    monkeypatch.setattr(cm, "create_task", fake_create_task)
+
+    result = asyncio.run(te.execute_tool(
+        "channel_messaging",
+        {"channel": "whatsapp", "recipient": "6281234567", "message": "Halo, promo spesial untuk Anda!"},
+        ctx={"pool": object(), "org_id": "org-1", "bot_id": None, "agent_name": "marketing_agent"},
+    ))
+    assert result["success"] is True
+    assert result["status"] == "pending_approval"
+    assert result["task_id"] == "task-1"
+    assert "BELUM terkirim" in result["note"]
+    assert captured["agent_name"] == "marketing_agent"
+    assert captured["channel"] == "whatsapp"

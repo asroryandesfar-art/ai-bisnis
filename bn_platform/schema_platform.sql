@@ -980,15 +980,48 @@ CREATE TABLE IF NOT EXISTS agent_task_executions (
 CREATE INDEX IF NOT EXISTS idx_agent_task_executions_org ON agent_task_executions(org_id, created_at DESC);
 
 -- ============================================================
--- 10k. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4)
+-- 10k2. CHANNEL MESSAGE TASKS (Tool Framework Phase 7)
 -- ============================================================
--- Lima sistem task/eksekusi di platform ini (agent_executions untuk
+-- Satu-satunya tool di tool_executor.py yang WRITE (kirim pesan nyata ke
+-- pelanggan asli via WhatsApp/Telegram/Instagram/Facebook) -- semua tool
+-- lain di Tool Framework read/generate-only. Mengikuti pola persis
+-- computer_agent_tasks: agent TIDAK PERNAH mengirim langsung, hanya
+-- membuat baris berstatus 'pending_approval' lewat tool_executor.py;
+-- pengiriman SUNGGUHAN (lewat ChannelManager.send_message()) hanya
+-- terjadi di channel_messaging.approve_task() setelah manusia menyetujui.
+-- Tabel terpisah dari computer_agent_tasks karena bentuk datanya beda
+-- (channel/recipient/message, bukan target_url/plan). Didefinisikan di
+-- sini (sebelum VIEW 10k di bawah) supaya VIEW-nya bisa langsung
+-- menyertakan tabel ini sebagai cabang ke-6.
+CREATE TABLE IF NOT EXISTS channel_message_tasks (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    bot_id          UUID REFERENCES bots(id) ON DELETE SET NULL,
+    agent_name      TEXT NOT NULL,
+    channel         TEXT NOT NULL CHECK (channel IN ('whatsapp','telegram','instagram','facebook')),
+    recipient       TEXT NOT NULL,
+    message         TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending_approval' CHECK (status IN ('pending_approval','sent','failed','rejected')),
+    result          JSONB,
+    rejected_reason TEXT,
+    approved_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    approved_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_channel_message_tasks_org_status ON channel_message_tasks(org_id, status);
+
+-- ============================================================
+-- 10k. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4 + Tool Framework Phase 7)
+-- ============================================================
+-- Enam sistem task/eksekusi di platform ini (agent_executions untuk
 -- pipeline chat, workforce_tasks untuk AI Workforce, computer_agent_tasks
 -- untuk browser automation, workflow_executions untuk Workflow Builder,
--- agent_task_executions untuk Task Engine §10j) masing-masing punya tabel
--- sendiri dan TIDAK pernah disatukan jadi satu permukaan query. View ini
--- MURNI membaca (UNION ALL) ke-5 sumber yang sudah ada -- tidak ada
--- write-path baru di view ini, tidak ada perubahan ke
+-- agent_task_executions untuk Task Engine §10j, channel_message_tasks
+-- untuk Tool Framework Phase 7 §10k2) masing-masing punya tabel sendiri
+-- dan TIDAK pernah disatukan jadi satu permukaan query. View ini MURNI
+-- membaca (UNION ALL) ke-6 sumber yang sudah ada -- tidak ada write-path
+-- baru di view ini, tidak ada perubahan ke
 -- agent_observability.py/workflow_engine.py/computer_agent.py. Fondasi untuk
 -- Agent Center dashboard (Fase 5).
 CREATE OR REPLACE VIEW agent_execution_log AS
@@ -1045,7 +1078,18 @@ SELECT
     ate.created_at,
     ate.created_at,
     jsonb_build_object('goal', ate.goal, 'report', ate.report, 'tool_call_count', jsonb_array_length(ate.tool_calls))
-FROM agent_task_executions ate;
+FROM agent_task_executions ate
+UNION ALL
+SELECT
+    'channel_message',
+    cmt.id,
+    cmt.org_id,
+    cmt.agent_name,
+    cmt.status,
+    cmt.created_at,
+    cmt.updated_at,
+    jsonb_build_object('channel', cmt.channel, 'recipient', cmt.recipient, 'result', cmt.result)
+FROM channel_message_tasks cmt;
 
 -- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
@@ -1119,7 +1163,9 @@ INSERT INTO permissions (key, category, description) VALUES
  ('computer_agent.read',    'computer_agent', 'Melihat riwayat/status task Computer Agent (browser automation)'),
  ('computer_agent.write',   'computer_agent', 'Memicu task Computer Agent baca-saja secara manual'),
  ('computer_agent.approve', 'computer_agent', 'Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent'),
- ('execution_log.read',     'execution_log',  'Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)')
+ ('execution_log.read',     'execution_log',  'Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)'),
+ ('channel_messaging.read',    'channel_messaging', 'Melihat riwayat/status pesan keluar yang dibuat agent lewat Tool Framework'),
+ ('channel_messaging.approve', 'channel_messaging', 'Menyetujui/menolak pengiriman pesan keluar (WhatsApp/Telegram/Instagram/Facebook) yang dibuat agent')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1153,7 +1199,8 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'marketing.read', 'marketing.write', 'hr.read', 'hr.write',
                 'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
                 'learning.read', 'learning.write', 'research.read',
-                'computer_agent.read', 'computer_agent.write', 'execution_log.read')
+                'computer_agent.read', 'computer_agent.write', 'execution_log.read',
+                'channel_messaging.read')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
