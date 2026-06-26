@@ -136,10 +136,15 @@ export function sidebar({ route, org, user, counts = {}, founderAccess = false, 
   const groups = navGroups.map(([key, label, groupIcon, links]) => [key, label, groupIcon, links.filter(([k]) => k !== "founder" || founderAccess)]).filter(([, , , links]) => links.length);
   const items = groups.map(([key, label, groupIcon, links]) => {
     const isOpen = openSections.has(key) || links.some(([k]) => k === route);
-    const children = links.map(([k,l]) => `<button class="nav-item ${route===k?'active':''}" data-route="${k}">${icon(k)}<span>${l}</span>${counts[k] !== undefined ? `<span class="nav-count">${counts[k]}</span>` : ''}</button>`).join('');
-    return `<div class="nav-group ${isOpen?'open':''}"><button class="nav-group-toggle" data-nav-toggle="${key}">${icon(groupIcon)}<span>${label}</span><span class="nav-chevron">${icon('arrow',12)}</span></button><div class="nav-group-items">${children}</div></div>`;
+    const children = links.map(([k,l]) => {
+      const isActive = route === k;
+      const countBadge = counts[k] !== undefined ? `<span class="nav-count" aria-label="${counts[k]} items">${counts[k]}</span>` : '';
+      return `<button class="nav-item ${isActive ? 'active' : ''}" data-route="${k}" aria-label="${esc(l)}" ${isActive ? 'aria-current="page"' : ''}>${icon(k)}<span>${l}</span>${countBadge}</button>`;
+    }).join('');
+    return `<div class="nav-group ${isOpen?'open':''}" role="group" aria-label="${esc(label)}"><button class="nav-group-toggle" data-nav-toggle="${key}" aria-expanded="${isOpen}" aria-label="${esc(label)} section">${icon(groupIcon)}<span>${label}</span><span class="nav-chevron" aria-hidden="true">${icon('arrow',12)}</span></button><div class="nav-group-items">${children}</div></div>`;
   }).join('');
-  return `<div class="sidebar-head"><a class="brand" href="#dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BOTNESIA</span></a><div class="workspace-switcher"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${esc((org?.plan || 'free').toUpperCase())} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="Keluar">${icon('arrow',14)}</button></div></div>`;
+  const planBadgeText = (org?.plan || 'free').toUpperCase();
+  return `<div class="sidebar-head"><a class="brand" href="#dashboard" aria-label="BotNesia — Go to dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BOTNESIA</span></a><div class="workspace-switcher" role="status" aria-label="Current workspace: ${esc(org?.name || 'Workspace')}, plan: ${planBadgeText}"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${planBadgeText} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav" role="navigation" aria-label="Main navigation">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar" aria-hidden="true">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="${t('signout')}" aria-label="${t('signout')}">${icon('arrow',14)}</button></div></div>`;
 }
 
 const routeMeta = {
@@ -179,10 +184,10 @@ const routeMeta = {
 export function topbar({ route, health }) {
   const [title, description] = routeMeta[route] || routeMeta.dashboard;
   const isActive = health?.status === 'ok';
-  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="${t('search_placeholder')}"><kbd class="mono">⌘K</kbd></label><span class="status-badge ${isActive?'active':'error'}">${isActive?t('status_active'):t('status_down')}</span>${langSwitcherHtml()}<button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button></div>`;
+  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="Toggle navigation menu" aria-expanded="false">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo" aria-hidden="true"><div class="page-heading" role="heading" aria-level="1"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions" role="toolbar" aria-label="Topbar actions"><label class="search-box" aria-label="Global search">${icon('search',15)}<input data-global-search placeholder="${t('search_placeholder')}" aria-label="${t('search_placeholder')}" autocomplete="off"><kbd class="mono" aria-label="Shortcut: Command K">⌘K</kbd></label><span class="status-badge ${isActive?'active':'error'}" role="status" aria-live="polite">${isActive?t('status_active'):t('status_down')}</span>${langSwitcherHtml()}<button class="icon-button" data-action="notifications" title="Notifications" aria-label="Notifications">${icon('bell')}</button></div>`;
 }
 
-export function pageHeader(title, description, actions = "") { return `<div class="page-header"><div><span class="eyebrow">BOTNESIA PLATFORM</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><div class="header-actions">${actions}</div></div>`; }
+export function pageHeader(title, description, actions = "") { return `<div class="page-header"><div><span class="eyebrow" aria-hidden="true">BOTNESIA</span><h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}</div><div class="header-actions">${actions}</div></div>`; }
 export function statusBadge(status = "unknown", label = status) { return `<span class="status-badge ${esc(status)}">${esc(label)}</span>`; }
 export function metricCard(label, value, meta, iconName = "analytics", trend = "") { return `<article class="card metric-card card-hover"><div class="metric-top"><span class="metric-label">${esc(label)}</span><span class="metric-icon">${icon(iconName,16)}</span></div><div class="metric-value">${value}</div><div class="metric-meta ${trend}">${meta}</div></article>`; }
 export function skeletonCards(count = 4) { return `<div class="grid grid-4">${Array.from({length:count},()=>'<div class="skeleton skeleton-card"></div>').join('')}</div>`; }
@@ -225,7 +230,7 @@ export function readonlyField(label, value) {
 
 export function agentCard(bot) {
   const status = bot.status || "inactive";
-  return `<article class="card card-hover agent-card" data-agent-id="${esc(bot.id)}"><div class="agent-card-top"><span class="agent-icon">${initials(bot.name)}</span><div style="min-width:0;flex:1"><h3 class="truncate">${esc(bot.name)}</h3>${statusBadge(status)}</div><button class="icon-button" data-agent-id="${esc(bot.id)}">${icon('more',14)}</button></div><p>${esc(bot.greeting || 'AI agent configured for customer operations.')}</p><div class="agent-stats"><div><b>${formatNumber(bot.total_convs)}</b><span>Conversations</span></div><div><b>${formatNumber(bot.total_msgs)}</b><span>Messages</span></div></div></article>`;
+  return `<article class="card card-hover agent-card" data-agent-id="${esc(bot.id)}" role="button" tabindex="0" aria-label="Agent: ${esc(bot.name)}, status: ${esc(status)}"><div class="agent-card-top"><span class="agent-icon" aria-hidden="true">${initials(bot.name)}</span><div style="min-width:0;flex:1"><h3 class="truncate">${esc(bot.name)}</h3>${statusBadge(status)}</div><button class="icon-button" data-agent-id="${esc(bot.id)}" aria-label="More options for ${esc(bot.name)}">${icon('more',14)}</button></div><p>${esc(bot.greeting || 'AI agent configured for customer operations.')}</p><div class="agent-stats"><div><b>${formatNumber(bot.total_convs)}</b><span>Conversations</span></div><div><b>${formatNumber(bot.total_msgs)}</b><span>Messages</span></div></div></article>`;
 }
 
 export function activityItem(item) {
@@ -233,7 +238,8 @@ export function activityItem(item) {
 }
 
 export function modal({ title, body, footer = "", wide = false }) {
-  return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" style="${wide?'width:min(760px,100%)':''}" role="dialog" aria-modal="true"><header class="modal-head"><strong>${esc(title)}</strong><button class="icon-button" data-action="close-modal">${icon('close',16)}</button></header><div class="modal-body">${body}</div>${footer?`<footer class="modal-foot">${footer}</footer>`:''}</section></div>`;
+  const titleId = `modal-title-${Math.random().toString(36).slice(2,8)}`;
+  return `<div class="modal-backdrop" data-action="close-modal" role="presentation"><section class="modal" style="${wide?'width:min(760px,100%)':''}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><header class="modal-head"><strong id="${titleId}">${esc(title)}</strong><button class="icon-button" data-action="close-modal" aria-label="Close dialog">${icon('close',16)}</button></header><div class="modal-body">${body}</div>${footer?`<footer class="modal-foot">${footer}</footer>`:''}</section></div>`;
 }
 
 export function agentDrawer(bot) {
@@ -241,6 +247,13 @@ export function agentDrawer(bot) {
 }
 
 export function toast(message, type = "") {
-  const root = document.getElementById("toast-region"); const node = document.createElement("div");
-  node.className = `toast ${type}`; node.textContent = message; root.appendChild(node); setTimeout(() => node.remove(), 4200);
+  const root = document.getElementById("toast-region");
+  const icons = { success: "✓", error: "✕", info: "ℹ" };
+  const node = document.createElement("div");
+  node.className = `toast ${type}`;
+  node.setAttribute("role", "alert");
+  node.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+  node.innerHTML = `${icons[type] ? `<span class="toast-icon" aria-hidden="true">${icons[type]}</span>` : ''}<span class="toast-body">${esc(message)}</span><button class="toast-dismiss" aria-label="Dismiss notification" onclick="this.closest('.toast').classList.add('removing');setTimeout(()=>this.closest('.toast')?.remove(),200)">✕</button>`;
+  root.appendChild(node);
+  setTimeout(() => { node.classList.add("removing"); setTimeout(() => node.remove(), 200); }, 4000);
 }
