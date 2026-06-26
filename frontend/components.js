@@ -1,3 +1,4 @@
+import { t, langSwitcherHtml } from "/ui/i18n.js";
 const BRAND_LOGO = "/assets/brand/botnesia-clean-logo.png";
 
 const paths = {
@@ -177,15 +178,50 @@ const routeMeta = {
 };
 export function topbar({ route, health }) {
   const [title, description] = routeMeta[route] || routeMeta.dashboard;
-  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="Cari pelanggan, agent, invoice..."><kbd class="mono">⌘K</kbd></label><span class="status-badge ${health?.status==='ok'?'active':'error'}">${health?.status==='ok'?'AI workforce aktif':'Perlu perhatian'}</span><button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button></div>`;
+  const isActive = health?.status === 'ok';
+  return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><div class="page-heading"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions"><label class="search-box">${icon('search',15)}<input data-global-search placeholder="${t('search_placeholder')}"><kbd class="mono">⌘K</kbd></label><span class="status-badge ${isActive?'active':'error'}">${isActive?t('status_active'):t('status_down')}</span>${langSwitcherHtml()}<button class="icon-button" data-action="notifications" title="Notifications">${icon('bell')}</button></div>`;
 }
 
 export function pageHeader(title, description, actions = "") { return `<div class="page-header"><div><span class="eyebrow">BOTNESIA PLATFORM</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><div class="header-actions">${actions}</div></div>`; }
 export function statusBadge(status = "unknown", label = status) { return `<span class="status-badge ${esc(status)}">${esc(label)}</span>`; }
 export function metricCard(label, value, meta, iconName = "analytics", trend = "") { return `<article class="card metric-card card-hover"><div class="metric-top"><span class="metric-label">${esc(label)}</span><span class="metric-icon">${icon(iconName,16)}</span></div><div class="metric-value">${value}</div><div class="metric-meta ${trend}">${meta}</div></article>`; }
 export function skeletonCards(count = 4) { return `<div class="grid grid-4">${Array.from({length:count},()=>'<div class="skeleton skeleton-card"></div>').join('')}</div>`; }
-export function emptyState(title, description, action = "") { return `<div class="empty-state"><span class="state-icon">${icon('agents',22)}</span><h3>${esc(title)}</h3><p>${esc(description)}</p>${action ? `<div style="margin-top:16px">${action}</div>` : ''}</div>`; }
-export function errorState(message) { return `<div class="error-state"><span class="state-icon">!</span><h3>Data tidak dapat dimuat</h3><p>${esc(message)}</p><button class="button" style="margin-top:14px" data-action="refresh">${icon('refresh',14)} Coba lagi</button></div>`; }
+export function emptyState(title, description, action = "", iconName = "agents") { return `<div class="empty-state"><span class="state-icon">${icon(iconName,22)}</span><h3>${esc(title)}</h3><p>${esc(description)}</p>${action ? `<div style="margin-top:16px">${action}</div>` : ''}</div>`; }
+export function errorState(message) { return `<div class="error-state"><span class="state-icon">!</span><h3>${t('error.default')}</h3><p>${esc(message)}</p><button class="button" style="margin-top:14px" data-action="refresh">${icon('refresh',14)} ${t('error.retry_btn')}</button></div>`; }
+
+export function planBadge(planKey) {
+  const key = (planKey || 'free').toLowerCase();
+  const labels = { free: t('plan.free'), standard: t('plan.standard'), pro: t('plan.pro'), enterprise: t('plan.enterprise') };
+  return `<span class="plan-badge plan-badge-${key}">${labels[key] || esc(planKey)}</span>`;
+}
+
+export function lockCard(title, sub, requiredPlan = "Pro") {
+  return `<div class="lock-card" aria-label="${esc(title)} — ${t('upgrade.feature_locked')}"><div class="lock-layer"><div class="lock-icon-wrap">🔒</div><p class="lock-title">${esc(title)}</p><p class="lock-sub">${esc(sub || `${t('upgrade.available_on')} ${requiredPlan}`)}</p><button class="button button-primary button-sm" data-action="show-upgrade-dialog" data-plan="${esc(requiredPlan)}">${t('upgrade.unlock')}</button></div></div>`;
+}
+
+export function upgradeDialog(requiredPlan = "Pro") {
+  return modal({
+    title: t('upgrade.title'),
+    body: `<div style="text-align:center;padding:10px 0 6px"><div style="font-size:36px;margin-bottom:14px">🚀</div><p style="margin:0 0 8px;font-size:14px;font-weight:700">${t('upgrade.feature_locked')}</p><p style="margin:0;color:var(--text-2);font-size:12px;line-height:1.6">${t('upgrade.desc')}</p><div style="margin:18px 0 6px;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid rgba(139,124,255,.3);border-radius:10px;background:rgba(139,124,255,.08)"><span style="color:var(--brand);font-size:11px;font-weight:650">${t('upgrade.available_on')} <strong>${esc(requiredPlan)}</strong></span></div></div>`,
+    footer: `<button class="button" data-action="close-modal">${t('cancel')}</button><button class="button button-primary" data-route="billing">${t('upgrade')}</button>`,
+  });
+}
+
+export function upgradeBanner(title, sub) {
+  return `<div class="upgrade-banner"><div class="upgrade-banner-copy"><strong>${esc(title)}</strong><p>${esc(sub)}</p></div><button class="button button-primary button-sm" data-route="billing">${icon('arrow',13)} ${t('upgrade')}</button></div>`;
+}
+
+export function settingSection(title, desc, content) {
+  return `<section class="settings-section"><div class="settings-section-head"><h3>${esc(title)}</h3><p>${esc(desc)}</p></div>${content}</section>`;
+}
+
+export function settingRow(label, desc, control) {
+  return `<div class="setting-row"><div class="setting-row-left"><strong>${esc(label)}</strong><p>${esc(desc)}</p></div><div class="setting-row-control">${control}</div></div>`;
+}
+
+export function readonlyField(label, value) {
+  return `<div class="setting-row"><div class="setting-row-left"><strong>${esc(label)}</strong></div><div class="setting-row-control"><input style="min-width:200px;max-width:260px" class="input" value="${esc(value)}" readonly onclick="this.select()"></div></div>`;
+}
 
 export function agentCard(bot) {
   const status = bot.status || "inactive";
