@@ -119,6 +119,7 @@ from finance_fetcher import (
     looks_like_market_price_query,
 )
 from news_fetcher import build_news_context
+import language_middleware
 
 
 # ─── CONFIG ──────────────────────────────────────────────────
@@ -4701,8 +4702,14 @@ async def chat(
             KB_RETRIEVAL_LATENCY_BUDGET_MS, _kb_ms, bot["org_id"], bot_id, conv_id, len(relevant_chunks),
         )
 
-    # 7. Bangun system prompt
-    system = _build_system_prompt(bot["system_prompt"], relevant_chunks, bot["language"])
+    # 7. Resolve effective language and build system prompt
+    effective_lang = language_middleware.resolve_language(
+        user_message=body.message,
+        agent_language=bot.get("language") or "id",
+    )
+    system = language_middleware.build_system_prompt(
+        bot["system_prompt"], relevant_chunks, effective_lang
+    )
     market_answer = ""
     if looks_like_market_price_query(body.message):
         try:
@@ -4922,6 +4929,25 @@ async def chat(
         }
         result = await supervisor.process(intelligence_context)
         answer = result.final_answer
+
+        # Output language validation — regenerate once if language mismatch detected
+        if answer and not language_middleware.validate_output_language(answer, effective_lang):
+            logger.info(
+                "Language mismatch (expected=%s) conv=%s — retrying with enforcement suffix",
+                effective_lang, conv_id,
+            )
+            retry_context = dict(intelligence_context)
+            retry_context["knowledge_base_context"] = (
+                system + language_middleware.language_enforcement_suffix(effective_lang)
+            )
+            try:
+                retry_result = await supervisor.process(retry_context)
+                if retry_result.final_answer:
+                    answer = retry_result.final_answer
+                    result = retry_result
+            except Exception as _lang_retry_exc:
+                logger.warning("Language retry failed: %s", _lang_retry_exc)
+
         # Shortcut data pasar mentah hanya untuk jalur cepat (standard). Mode Pro
         # sudah menganalisis data pasar via reasoning lens & sintesis jawaban —
         # jangan timpa dengan kutipan harga mentah.
