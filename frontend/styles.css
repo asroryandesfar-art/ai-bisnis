@@ -359,3 +359,98 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 /* ── page-header when no description ─────────────────────────── */
 .page-header h2{margin-bottom:0}
 .page-header p:empty{display:none}
+
+/* ══════════════════════════════════════════════════════════════════
+   Phase 4 — Workforce & Business Intelligence pages
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Domain color tokens */
+:root{
+  --domain-finance:#45d39b;
+  --domain-marketing:#f472b6;
+  --domain-hr:#60a5fa;
+  --domain-operations:#f4bd62;
+  --domain-security:#ff6b7a;
+  --domain-executive:#a78bfa;
+  --domain-sales:#34d399;
+  --domain-workforce:#8b7cff;
+}
+
+/* ── Domain metric cards with left accent ────────────────────── */
+.domain-card{position:relative;overflow:hidden}
+.domain-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px}
+.domain-card.d-finance::before{background:var(--domain-finance)}
+.domain-card.d-marketing::before{background:var(--domain-marketing)}
+.domain-card.d-hr::before{background:var(--domain-hr)}
+.domain-card.d-operations::before{background:var(--domain-operations)}
+.domain-card.d-security::before{background:var(--domain-security)}
+.domain-card.d-executive::before{background:var(--domain-executive)}
+.domain-card.d-sales::before{background:var(--domain-sales)}
+.domain-card.d-workforce::before{background:var(--domain-workforce)}
+
+/* ── Executive domain score bars ─────────────────────────────── */
+.domain-scores{display:grid;gap:10px;padding:4px 0}
+.domain-score-row{display:grid;grid-template-columns:90px 1fr 38px;align-items:center;gap:10px}
+.domain-score-row span{font-size:11px;font-weight:600;color:var(--text-2)}
+.domain-score-row strong{font-size:12px;font-family:"DM Mono",monospace;text-align:right;color:var(--text)}
+.domain-score-progress{height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+.domain-score-progress i{display:block;height:100%;border-radius:3px;transition:width .4s var(--ease)}
+
+/* ── Health score chip ───────────────────────────────────────── */
+.health-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700}
+.health-chip.healthy{background:rgba(69,211,155,.14);color:var(--green);border:1px solid rgba(69,211,155,.25)}
+.health-chip.warning{background:rgba(244,189,98,.14);color:var(--amber);border:1px solid rgba(244,189,98,.25)}
+.health-chip.critical{background:rgba(255,107,122,.14);color:var(--red);border:1px solid rgba(255,107,122,.25)}
+.health-chip.watch{background:rgba(139,124,255,.14);color:var(--brand);border:1px solid rgba(139,124,255,.25)}
+.health-chip i{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+
+/* ── Score ring / number display ─────────────────────────────── */
+.score-display{display:flex;align-items:baseline;gap:6px}
+.score-display strong{font-size:42px;font-weight:800;line-height:1;letter-spacing:-.04em}
+.score-display span{font-size:18px;color:var(--text-3)}
+
+/* ── Workforce domain grid ───────────────────────────────────── */
+.workforce-domain-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:900px){.workforce-domain-grid{grid-template-columns:repeat(2,1fr)}}
+.wf-domain-card{padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:pointer;transition:transform .18s var(--ease),border-color .18s;position:relative;overflow:hidden}
+.wf-domain-card:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+.wf-domain-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px}
+.wf-domain-icon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;margin-bottom:10px}
+.wf-domain-value{font-size:22px;font-weight:800;letter-spacing:-.03em;margin-bottom:2px}
+.wf-domain-label{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-3);text-transform:uppercase;margin-bottom:4px}
+.wf-domain-meta{font-size:11px;color:var(--text-3)}
+
+/* ── Finance summary strip ───────────────────────────────────── */
+.finance-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.finance-strip-item{background:var(--surface);padding:14px 18px}
+.finance-strip-item span{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-3);text-transform:uppercase;margin-bottom:4px}
+.finance-strip-item strong{font-size:20px;font-weight:800;letter-spacing:-.03em}
+
+/* ── Approval queue card ─────────────────────────────────────── */
+.approval-queue-card .card-head{background:rgba(244,189,98,.06);border-bottom:1px solid rgba(244,189,98,.18)}
+.approval-count-badge{display:flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:rgba(244,189,98,.2);color:var(--amber);font:700 10px "DM Mono"}
+
+/* ── Agent run task panel ────────────────────────────────────── */
+.run-task-panel{background:var(--surface-2);border-radius:12px;padding:16px;border:1px solid var(--line);margin-bottom:16px}
+.run-task-panel .card-head{padding:0 0 12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.run-task-result{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-top:10px;font-size:12px;line-height:1.7;white-space:pre-wrap}
+
+/* ── Business Command hero improvements ──────────────────────── */
+.business-kpis article{cursor:pointer;transition:transform .18s var(--ease),border-color .18s}
+.business-kpis article:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+.business-kpis article strong{font-size:24px;font-weight:800;letter-spacing:-.03em}
+
+/* ── HR candidate score bar ──────────────────────────────────── */
+.candidate-score{display:flex;align-items:center;gap:8px}
+.candidate-score .score-num{font:700 12px "DM Mono",monospace;min-width:28px;text-align:right}
+.candidate-score .score-bar{flex:1;height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+.candidate-score .score-bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--brand),var(--green));transition:width .4s}
+
+/* ── Marketing platform badge ────────────────────────────────── */
+.platform-dot{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700}
+.platform-dot.instagram{background:rgba(245,133,41,.15);color:#f58529}
+.platform-dot.tiktok{background:rgba(255,255,255,.08);color:var(--text-2)}
+.platform-dot.facebook{background:rgba(24,119,242,.15);color:#1877f2}
+.platform-dot.blog{background:rgba(139,124,255,.15);color:var(--brand)}
+.platform-dot.email{background:rgba(244,189,98,.15);color:var(--amber)}
+.platform-dot.whatsapp{background:rgba(37,211,102,.15);color:#25d366}
