@@ -1149,20 +1149,27 @@ async function renderFinance() {
     <td>${exp.status === "recorded" ? `<div style="display:flex;gap:6px"><button class="button button-primary" data-finance-expense-approve="${esc(exp.id)}:1">Approve</button><button class="button button-danger" data-finance-expense-approve="${esc(exp.id)}:0">Reject</button></div>` : ""}</td>
   </tr>`).join("");
 
-  setPage(`${pageHeader("Finance Center", "Generate invoice, catat expense, dan pantau revenue/profit/cashflow bisnis Anda — semua aksi tercatat di audit log.",
+  setPage(`${pageHeader("Finance Center", "Generate invoice, catat expense, dan pantau revenue/profit/cashflow bisnis Anda.",
     `<div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="button" data-action="finance-ask-ai">${icon("chat", 14)} Tanya AI Finance</button>
-      <button class="button" data-action="finance-new-expense">Catat Expense</button>
+      <button class="button" data-action="finance-ask-ai">${icon("chat", 14)} Tanya AI</button>
+      <button class="button" data-action="finance-new-expense">+ Expense</button>
       <button class="button button-primary" data-action="finance-new-invoice">${icon("plus", 14)} Buat Invoice</button>
     </div>`)}
-  <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Revenue (30d)", formatIDR(dashboard.revenue_30d_idr), "Income tercatat", "finance", "trend-up")}
-    ${metricCard("Profit (30d)", formatIDR(dashboard.profit_30d_idr), "Revenue - expense", "finance", dashboard.profit_30d_idr >= 0 ? "trend-up" : "trend-down")}
-    ${metricCard("MRR / ARR", `${formatIDR(dashboard.mrr_idr)} / ${formatIDR(dashboard.arr_idr)}`, `Churn ${dashboard.churn_pct}%`, "finance")}
-    ${metricCard("Invoice Pending", formatNumber(dashboard.pending_invoices_count), `${formatIDR(dashboard.pending_invoices_amount_idr)} · ${formatNumber(dashboard.overdue_invoices_count)} overdue`, "finance", dashboard.overdue_invoices_count ? "trend-down" : "trend-up")}
+  <div class="finance-strip">
+    <div class="finance-strip-item d-finance"><span>Revenue (30d)</span><strong style="color:var(--domain-finance)">${formatIDR(dashboard.revenue_30d_idr)}</strong></div>
+    <div class="finance-strip-item"><span>Profit (30d)</span><strong style="color:${dashboard.profit_30d_idr >= 0 ? 'var(--green)' : 'var(--red)'}">${formatIDR(dashboard.profit_30d_idr)}</strong></div>
+    <div class="finance-strip-item"><span>MRR</span><strong>${formatIDR(dashboard.mrr_idr)}</strong></div>
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Invoices</h3></div>${invoiceRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Jumlah</th><th>Status</th><th>Jatuh tempo</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table></div>` : emptyState("Belum ada invoice", "Buat invoice pertama untuk pelanggan Anda.")}</div>
-  <div class="card"><div class="card-head"><h3>Expenses</h3></div>${expenseRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Expense</th><th>Jumlah</th><th>Status</th><th>Tanggal</th><th></th></tr></thead><tbody>${expenseRows}</tbody></table></div>` : emptyState("Belum ada expense", "Catat pengeluaran bisnis untuk laporan profit yang akurat.")}</div>`);
+  <div class="grid grid-4" style="margin-bottom:16px">
+    ${metricCard("ARR", formatIDR(dashboard.arr_idr), `Churn ${dashboard.churn_pct || 0}%`, "finance")}
+    ${metricCard("Invoice Pending", formatNumber(dashboard.pending_invoices_count), formatIDR(dashboard.pending_invoices_amount_idr), "finance", dashboard.overdue_invoices_count ? "trend-down" : "trend-up")}
+    ${metricCard("Overdue", formatNumber(dashboard.overdue_invoices_count), "Perlu ditagih ulang", "finance", dashboard.overdue_invoices_count ? "trend-down" : "trend-up")}
+    ${metricCard("Total Expense (30d)", formatIDR(dashboard.expense_30d_idr || 0), "Pengeluaran tercatat", "finance")}
+  </div>
+  <div class="page-section-label">Invoice management</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Invoices</h3><span class="subtle">Buat, kirim, dan tandai lunas dari sini</span></div><span class="status-badge ${dashboard.overdue_invoices_count ? 'error' : 'active'}">${formatNumber(dashboard.pending_invoices_count)} pending</span></div>${invoiceRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Jumlah</th><th>Status</th><th>Jatuh tempo</th><th style="width:180px"></th></tr></thead><tbody>${invoiceRows}</tbody></table></div>` : emptyState("Belum ada invoice", "Buat invoice pertama untuk pelanggan Anda.")}</div>
+  <div class="page-section-label">Expense tracking</div>
+  <div class="card"><div class="card-head"><div><h3>Expenses</h3><span class="subtle">Semua pengeluaran tercatat dan masuk ke laporan profit</span></div></div>${expenseRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Expense</th><th>Jumlah</th><th>Status</th><th>Tanggal</th><th style="width:160px"></th></tr></thead><tbody>${expenseRows}</tbody></table></div>` : emptyState("Belum ada expense", "Catat pengeluaran bisnis untuk laporan profit yang akurat.")}</div>`);
 }
 
 async function createInvoicePrompt() {
@@ -1209,11 +1216,13 @@ async function renderMarketing() {
   } catch (error) { setPage(errorState(error.message)); return; }
   state.marketingDashboard = dashboard; state.marketingContent = content.content || []; state.marketingCampaigns = campaigns.campaigns || [];
 
+  const PLATFORM_CLS = { instagram:'instagram', tiktok:'tiktok', facebook:'facebook', blog:'blog', email:'email', whatsapp:'whatsapp' };
+  const platformBadge = (p) => `<span class="platform-dot ${PLATFORM_CLS[p]||''}">${esc(p)}</span>`;
   const contentRows = state.marketingContent.map((item) => `<tr>
     <td><span class="table-title">${esc(item.title || item.platform)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc((item.body || "").slice(0, 80))}${(item.body || "").length > 80 ? "…" : ""}</div></td>
-    <td>${statusBadge("default", item.platform)}</td>
+    <td>${platformBadge(item.platform)}</td>
     <td>${statusBadge(item.status, item.status)}</td>
-    <td>${item.scheduled_at ? relativeTime(item.scheduled_at) : "—"}</td>
+    <td class="subtle">${item.scheduled_at ? relativeTime(item.scheduled_at) : "—"}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
       ${item.status === "draft" ? `<button class="button" data-marketing-content-approve="${esc(item.id)}">Approve</button>` : ""}
       ${item.status === "ready_to_publish" || item.status === "scheduled" ? `<button class="button button-primary" data-marketing-content-publish="${esc(item.id)}">Tandai published</button>` : ""}
@@ -1227,18 +1236,21 @@ async function renderMarketing() {
     <td>${c.start_date ? relativeTime(c.start_date) : "—"}</td>
   </tr>`).join("");
 
-  setPage(`${pageHeader("Marketing Center", "AI generate konten per platform, jadwalkan di content calendar — publikasi ke platform tetap manual oleh tim Anda, engagement dicatat manual dari Insights masing-masing platform.",
+  const totalEngagement = Object.values(dashboard.engagement_30d || {}).reduce((a, b) => a + b, 0);
+  setPage(`${pageHeader("Marketing Center", "AI generate konten per platform dan jadwalkan di content calendar — publikasi tetap manual, engagement dicatat dari platform masing-masing.",
     `<div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="button" data-action="marketing-new-campaign">Campaign Baru</button>
-      <button class="button button-primary" data-action="marketing-generate-content">${icon("plus", 14)} Generate Konten</button>
+      <button class="button" data-action="marketing-new-campaign">${icon("plus",14)} Campaign Baru</button>
+      <button class="button button-primary" data-action="marketing-generate-content">${icon("chat", 14)} Generate Konten</button>
     </div>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Campaign Aktif", formatNumber(dashboard.active_campaigns), "Sedang berjalan", "marketing")}
-    ${metricCard("Konten Draft/Scheduled", `${formatNumber(dashboard.content_draft)} / ${formatNumber(dashboard.content_scheduled)}`, `${formatNumber(dashboard.content_due_now)} siap tayang`, "marketing", dashboard.content_due_now ? "trend-down" : "trend-up")}
-    ${metricCard("Siap Publish / Published", `${formatNumber(dashboard.content_ready_to_publish)} / ${formatNumber(dashboard.content_published)}`, "Total konten", "marketing")}
-    ${metricCard("Engagement (30d)", formatNumber(Object.values(dashboard.engagement_30d || {}).reduce((a, b) => a + b, 0)), "Likes+comments+shares+views+clicks", "marketing", "trend-up")}
+    ${metricCard("Draft", formatNumber(dashboard.content_draft), `${formatNumber(dashboard.content_due_now)} siap tayang`, "marketing", dashboard.content_due_now ? "trend-down" : "trend-up")}
+    ${metricCard("Published", formatNumber(dashboard.content_published), `${formatNumber(dashboard.content_ready_to_publish)} siap publish`, "marketing", "trend-up")}
+    ${metricCard("Engagement (30d)", formatNumber(totalEngagement), "Likes · comments · shares", "marketing", "trend-up")}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Content Calendar</h3></div>${contentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Konten</th><th>Platform</th><th>Status</th><th>Jadwal</th><th></th></tr></thead><tbody>${contentRows}</tbody></table></div>` : emptyState("Belum ada konten", "Generate konten pertama untuk campaign Anda.")}</div>
+  <div class="page-section-label">Content calendar</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Content Calendar</h3><span class="subtle">Approve draft lalu tandai published setelah posting manual</span></div><span class="status-badge ${dashboard.content_due_now ? 'pending' : 'active'}">${formatNumber(state.marketingContent.length)} items</span></div>${contentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Konten</th><th>Platform</th><th>Status</th><th>Jadwal</th><th></th></tr></thead><tbody>${contentRows}</tbody></table></div>` : emptyState("Belum ada konten", "Generate konten pertama untuk campaign Anda.")}</div>
+  <div class="page-section-label">Campaigns</div>
   <div class="card"><div class="card-head"><h3>Campaigns</h3></div>${campaignRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Campaign</th><th>Status</th><th>Mulai</th></tr></thead><tbody>${campaignRows}</tbody></table></div>` : emptyState("Belum ada campaign", "Buat campaign untuk mengelompokkan konten marketing Anda.")}</div>`);
 }
 
@@ -1272,15 +1284,19 @@ async function renderHR() {
   } catch (error) { setPage(errorState(error.message)); return; }
   state.hrDashboard = dashboard; state.hrCandidates = candidates.candidates || []; state.hrEmployees = employees.employees || [];
 
-  const candidateRows = state.hrCandidates.map((c) => `<tr>
-    <td><span class="table-title">${esc(c.name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(c.position_applied || "")}</div></td>
-    <td>${c.score != null ? c.score : "—"}</td>
-    <td>${statusBadge(c.status, c.status)}</td>
-    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button class="button" data-hr-candidate-score="${esc(c.id)}">Score (AI)</button>
-      <button class="button button-danger" data-hr-candidate-delete="${esc(c.id)}">Hapus</button>
-    </div></td>
-  </tr>`).join("");
+  const candidateRows = state.hrCandidates.map((c) => {
+    const score = c.score != null ? Number(c.score) : null;
+    const scorePct = score !== null ? Math.min(100, score) : 0;
+    const scoreHtml = score !== null
+      ? `<div class="candidate-score"><div class="score-bar"><i style="width:${scorePct}%"></i></div><span class="score-num">${score}</span></div>`
+      : `<span class="subtle">—</span>`;
+    return `<tr>
+      <td><span class="table-title">${esc(c.name)}</span><div class="subtle" style="font-size:9px;margin-top:2px">${esc(c.position_applied || "")}</div></td>
+      <td style="min-width:120px">${scoreHtml}</td>
+      <td>${statusBadge(c.status, c.status)}</td>
+      <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="button" data-hr-candidate-score="${esc(c.id)}">Score AI</button><button class="button button-danger" data-hr-candidate-delete="${esc(c.id)}">Hapus</button></div></td>
+    </tr>`;
+  }).join("");
 
   const employeeRows = state.hrEmployees.map((e) => `<tr>
     <td><span class="table-title">${esc(e.full_name)}</span><div class="subtle" style="font-size:9px;margin-top:3px">${esc(e.position || "")}${e.department ? " · " + esc(e.department) : ""}</div></td>
@@ -1290,19 +1306,21 @@ async function renderHR() {
     </div></td>
   </tr>`).join("");
 
-  setPage(`${pageHeader("HR Center", "AI membantu screening CV, scoring kandidat, draft evaluasi, dan rekomendasi training — keputusan akhir (hire/finalisasi evaluasi) tetap di tangan tim Anda.",
+  setPage(`${pageHeader("HR Center", "AI membantu screening CV, scoring kandidat, draft evaluasi, dan rekomendasi training — keputusan akhir tetap di tangan tim Anda.",
     `<div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="button" data-action="hr-new-candidate">Kandidat Baru</button>
+      <button class="button" data-action="hr-new-candidate">${icon("plus",14)} Kandidat Baru</button>
       <button class="button button-primary" data-action="hr-new-employee">${icon("plus", 14)} Karyawan Baru</button>
     </div>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Kandidat Baru", formatNumber(dashboard.candidates_by_status?.new || 0), "Belum diproses", "hr")}
-    ${metricCard("Kandidat Screened", formatNumber(dashboard.candidates_by_status?.screened || 0), "Sudah di-score AI", "hr")}
-    ${metricCard("Karyawan Aktif", formatNumber(dashboard.employees_by_status?.active || 0), "Total aktif", "hr", "trend-up")}
-    ${metricCard("Avg Skor Evaluasi (90d)", dashboard.avg_evaluation_score_90d != null ? dashboard.avg_evaluation_score_90d : "—", `${formatNumber(dashboard.pending_training_recommendations)} training pending`, "hr")}
+    ${metricCard("Kandidat Baru", formatNumber(dashboard.candidates_by_status?.new || 0), "Belum diproses AI", "hr")}
+    ${metricCard("Kandidat Screened", formatNumber(dashboard.candidates_by_status?.screened || 0), "Sudah di-score AI", "hr", "trend-up")}
+    ${metricCard("Karyawan Aktif", formatNumber(dashboard.employees_by_status?.active || 0), "Terdaftar di sistem", "hr", "trend-up")}
+    ${metricCard("Avg Evaluasi (90d)", dashboard.avg_evaluation_score_90d != null ? dashboard.avg_evaluation_score_90d : "—", `${formatNumber(dashboard.pending_training_recommendations)} training pending`, "hr")}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Kandidat</h3></div>${candidateRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Kandidat</th><th>Skor</th><th>Status</th><th></th></tr></thead><tbody>${candidateRows}</tbody></table></div>` : emptyState("Belum ada kandidat", "Tambahkan kandidat untuk mulai proses screening.")}</div>
-  <div class="card"><div class="card-head"><h3>Karyawan</h3></div>${employeeRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Karyawan</th><th>Status</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div>` : emptyState("Belum ada karyawan", "Tambahkan karyawan untuk mulai tracking performa.")}</div>`);
+  <div class="page-section-label">Talent pipeline</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Kandidat</h3><span class="subtle">AI scoring membantu prioritas — keputusan hire tetap manusia</span></div><span class="status-badge default">${formatNumber(state.hrCandidates.length)} kandidat</span></div>${candidateRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Kandidat</th><th>Skor AI</th><th>Status</th><th></th></tr></thead><tbody>${candidateRows}</tbody></table></div>` : emptyState("Belum ada kandidat", "Tambahkan kandidat untuk mulai proses screening.")}</div>
+  <div class="page-section-label">Employee performance</div>
+  <div class="card"><div class="card-head"><div><h3>Karyawan</h3><span class="subtle">Generate evaluasi AI untuk setiap karyawan</span></div><span class="status-badge active">${formatNumber(state.hrEmployees.length)} karyawan</span></div>${employeeRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Karyawan</th><th>Status</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div>` : emptyState("Belum ada karyawan", "Tambahkan karyawan untuk mulai tracking performa.")}</div>`);
 }
 
 async function createHRCandidatePrompt() {
@@ -1373,20 +1391,24 @@ async function renderOperations() {
     <td>${relativeTime(r.created_at)}</td>
   </tr>`).join("");
 
-  setPage(`${pageHeader("Operations Center", "AI memonitor health tenant, workflow, dan SLA, lalu menyusun laporan — alert butuh tindak lanjut manusia (acknowledge/resolve).",
+  const opsHealthLabel = health.label || "watch";
+  const opsHealthCls = { healthy:"healthy", warning:"warning", critical:"critical" }[opsHealthLabel] || "watch";
+  setPage(`${pageHeader("Operations Center", "AI memonitor health tenant, workflow, dan SLA, lalu menyusun laporan — alert butuh tindak lanjut manusia.",
     `<div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="button" data-action="ops-scan">${icon("refresh", 14)} Run Scan</button>
-      <button class="button" data-action="ops-generate-weekly">Generate Weekly Report</button>
-      <button class="button button-primary" data-action="ops-generate-monthly">Generate Monthly Report</button>
+      <button class="button" data-action="ops-generate-weekly">Weekly Report</button>
+      <button class="button button-primary" data-action="ops-generate-monthly">Monthly Report</button>
     </div>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Health Score", `${health.score ?? "—"}`, health.label || "—", "operations", healthTrend)}
-    ${metricCard("Workflow Success Rate", `${dashboard.workflow_health?.success_rate_pct ?? "—"}%`, `${formatNumber(dashboard.workflow_health?.total_executions || 0)} eksekusi (7d)`, "operations")}
-    ${metricCard("SLA Breach Rate", `${dashboard.sla_health?.breach_rate_pct ?? "—"}%`, `${formatNumber(dashboard.sla_health?.total_handoffs || 0)} handoff (7d)`, "operations", dashboard.sla_health?.breach_rate_pct > 10 ? "trend-down" : "trend-up")}
-    ${metricCard("Open Alerts", formatNumber(state.opsAlerts.length), `${formatNumber(dashboard.open_alerts_by_severity?.critical || 0)} critical`, "operations", state.opsAlerts.length ? "trend-down" : "trend-up")}
+    <div class="card metric-card d-operations domain-card"><div class="metric-top"><span class="metric-label">Health Score</span></div><div class="metric-value">${health.score ?? "—"}</div><div class="metric-meta"><span class="health-chip ${opsHealthCls}"><i></i>${esc(opsHealthLabel)}</span></div></div>
+    ${metricCard("Workflow Success", `${dashboard.workflow_health?.success_rate_pct ?? "—"}%`, `${formatNumber(dashboard.workflow_health?.total_executions||0)} eksekusi`, "operations", dashboard.workflow_health?.success_rate_pct >= 90 ? "trend-up" : "")}
+    ${metricCard("SLA Breach Rate", `${dashboard.sla_health?.breach_rate_pct ?? "—"}%`, `${formatNumber(dashboard.sla_health?.total_handoffs||0)} handoff`, "operations", dashboard.sla_health?.breach_rate_pct > 10 ? "trend-down" : "trend-up")}
+    ${metricCard("Open Alerts", formatNumber(state.opsAlerts.length), `${formatNumber(dashboard.open_alerts_by_severity?.critical||0)} critical`, "operations", state.opsAlerts.length ? "trend-down" : "trend-up")}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Alerts</h3></div>${alertRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Alert</th><th>Waktu</th><th></th></tr></thead><tbody>${alertRows}</tbody></table></div>` : emptyState("Tidak ada alert terbuka", "Jalankan scan untuk mendeteksi masalah operasional.")}</div>
-  <div class="card"><div class="card-head"><h3>Laporan</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada laporan", "Generate laporan weekly/monthly pertama Anda.")}</div>`);
+  <div class="page-section-label">Alert management</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Alerts</h3><span class="subtle">Acknowledge untuk tandai diketahui, Resolve jika sudah diatasi</span></div><span class="status-badge ${state.opsAlerts.length ? 'error' : 'active'}">${formatNumber(state.opsAlerts.length)} terbuka</span></div>${alertRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Severity</th><th>Alert</th><th>Waktu</th><th style="width:180px"></th></tr></thead><tbody>${alertRows}</tbody></table></div>` : emptyState("Tidak ada alert terbuka", "Jalankan scan untuk mendeteksi masalah operasional.")}</div>
+  <div class="page-section-label">Reports</div>
+  <div class="card"><div class="card-head"><h3>Laporan operasional</h3></div>${reportRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Ringkasan</th><th>Dibuat</th></tr></thead><tbody>${reportRows}</tbody></table></div>` : emptyState("Belum ada laporan", "Generate laporan weekly/monthly pertama Anda.")}</div>`);
 }
 
 const EXECUTIVE_TREND_PERIODS = [["1","Today"],["7","7 Days"],["30","30 Days"],["90","90 Days"],["365","1 Year"]];
@@ -1406,10 +1428,19 @@ async function renderExecutive() {
   const sales = dashboard.synthesis?.sales || {};
   const periodTabs = EXECUTIVE_TREND_PERIODS.map(([value, label]) => `<button class="button ${trendDays===Number(value)?'button-primary':''}" data-exec-trend-period="${value}">${label}</button>`).join("");
 
-  const domainLabels = { finance: "Finance", marketing: "Marketing", hr: "HR", operations: "Operations", security: "Security", sales: "Sales" };
-  const domainCards = Object.entries(domainLabels).map(([key, label]) =>
-    metricCard(label, `${byDomain[key] ?? "—"}`, "Sub-score", "executive", byDomain[key] >= 80 ? "trend-up" : (byDomain[key] >= 50 ? "default" : "trend-down"))
-  ).join("");
+  const domainDefs = [
+    { key:"finance",    label:"Finance",    color:"var(--domain-finance)"    },
+    { key:"marketing",  label:"Marketing",  color:"var(--domain-marketing)"  },
+    { key:"hr",         label:"HR",         color:"var(--domain-hr)"         },
+    { key:"operations", label:"Operations", color:"var(--domain-operations)" },
+    { key:"security",   label:"Security",   color:"var(--domain-security)"   },
+    { key:"sales",      label:"Sales",      color:"var(--domain-sales)"      },
+  ];
+  const domainScoreBars = domainDefs.map(({ key, label, color }) => {
+    const score = byDomain[key] ?? null;
+    const pct = score !== null ? Math.min(100, Number(score)) : 0;
+    return `<div class="domain-score-row"><span>${esc(label)}</span><div class="domain-score-progress"><i style="width:${pct}%;background:${color}"></i></div><strong>${score ?? '—'}</strong></div>`;
+  }).join("");
 
   let briefHtml = "";
   if (state.executiveReports.length) {
@@ -1439,13 +1470,16 @@ async function renderExecutive() {
 
   const chartCard = (title, canvasId) => `<div class="card"><div class="card-head"><h3 style="font-size:13px">${esc(title)}</h3></div><div class="card-body"><div style="height:220px"><canvas id="${canvasId}"></canvas></div></div></div>`;
 
+  const overallScore = health.overall ?? null;
+  const healthLabel = health.label || "watch";
+  const healthChipCls2 = { healthy:"healthy", warning:"warning", critical:"critical" }[healthLabel] || "watch";
   setPage(`${pageHeader("Executive Center", "AI CEO Assistant: sintesis lintas-domain jadi satu company health score & rekomendasi strategis.",
     `<button class="button button-primary" data-action="analyze-business">${icon('executive',14)} Analyze My Business</button>
-     <button class="button" data-action="executive-generate-weekly">Generate Weekly Brief</button>
-     <button class="button" data-action="executive-generate-monthly">Generate Monthly Brief</button>`)}
-  <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Company Health Score", `${health.overall ?? "—"}`, health.label || "—", "executive", healthTrend)}
-    ${domainCards}
+     <button class="button" data-action="executive-generate-weekly">Weekly Brief</button>
+     <button class="button" data-action="executive-generate-monthly">Monthly Brief</button>`)}
+  <div class="grid grid-2" style="margin-bottom:16px">
+    <div class="card d-executive domain-card"><div class="card-head"><h3>Company Health Score</h3><span class="health-chip ${healthChipCls2}"><i></i>${esc(healthLabel)}</span></div><div class="card-body" style="display:flex;align-items:center;gap:24px"><div class="score-display"><strong style="color:var(--domain-executive)">${overallScore ?? '—'}</strong><span>/ 100</span></div><div style="flex:1"><div class="domain-scores">${domainScoreBars}</div></div></div></div>
+    ${metricCard("Active Workforce Tasks", formatNumber(0), "Cek halaman Workforce", "workforce")}
   </div>
   ${analysisHtml}
   ${briefHtml}
@@ -1570,22 +1604,26 @@ async function renderWorkforceOverview() {
   const securityOpenAlerts = data.security?.open_risk_alerts_count ?? data.security?.security_events_24h ?? 0;
   const healthTrend = executiveHealth.label === "healthy" ? "trend-up" : (executiveHealth.label === "critical" ? "trend-down" : "");
 
-  const domainRows = [
-    ["Finance", idr(revenue), `${formatNumber(data.finance?.pending_invoices_count || 0)} invoice pending`, "finance", "finance"],
-    ["Marketing", formatNumber(marketingContent), "Konten/kampanye aktif", "marketing", "marketing"],
-    ["HR", formatNumber(hrPending), "Training/kandidat perlu review", "hr", "hr"],
-    ["Operations", opsHealth.score ?? "—", `${formatNumber(openOpsAlerts)} alert terbuka`, "operations", "operations"],
-    ["Security", securityRisk, `${formatNumber(securityOpenAlerts)} sinyal risiko`, "security", "security"],
-    ["Executive", executiveHealth.overall ?? "—", executiveHealth.label || "Company health", "executive", "executive"],
-    ["Workforce", formatNumber((workforceStatus.pending || 0) + (workforceStatus.in_progress || 0)), "Task aktif lintas-agent", "workforce", "workforce"],
-    ["Self-Learning", formatNumber(learningStatus.candidate || 0), "Insight menunggu approval", "self-learning", "self-learning"],
-  ].map(([label, value, meta, iconName, routeName]) =>
-    `<article class="card metric-card card-hover" data-route="${routeName}"><div class="metric-top"><span class="metric-label">${esc(label)}</span><span class="metric-icon">${icon(iconName,16)}</span></div><div class="metric-value">${value}</div><div class="metric-meta">${esc(meta)}</div></article>`
+  const domainDef = [
+    { key:"finance",   label:"Finance",       value:idr(revenue),                                          meta:`${formatNumber(data.finance?.pending_invoices_count||0)} invoice pending`,  route:"finance",       cls:"d-finance"   },
+    { key:"marketing", label:"Marketing",      value:formatNumber(marketingContent),                        meta:"Konten/kampanye aktif",                                                     route:"marketing",     cls:"d-marketing"  },
+    { key:"hr",        label:"HR",             value:formatNumber(hrPending),                               meta:"Training/kandidat perlu review",                                           route:"hr",            cls:"d-hr"         },
+    { key:"operations",label:"Operations",     value:opsHealth.score ?? "—",                                meta:`${formatNumber(openOpsAlerts)} alert terbuka`,                              route:"operations",    cls:"d-operations" },
+    { key:"security",  label:"Security",       value:securityRisk,                                          meta:`${formatNumber(securityOpenAlerts)} sinyal risiko`,                         route:"security",      cls:"d-security"   },
+    { key:"executive", label:"Executive",      value:executiveHealth.overall ?? "—",                        meta:executiveHealth.label || "Company health",                                   route:"executive",     cls:"d-executive"  },
+    { key:"workforce", label:"Workforce",      value:formatNumber((workforceStatus.pending||0)+(workforceStatus.in_progress||0)), meta:"Task aktif lintas-agent",                           route:"workforce",     cls:"d-workforce"  },
+    { key:"learning",  label:"Self-Learning",  value:formatNumber(learningStatus.candidate||0),             meta:"Insight menunggu approval",                                                 route:"self-learning", cls:"d-workforce"  },
+  ];
+  const domainCards = domainDef.map(({ key, label, value, meta, route, cls }) =>
+    `<article class="wf-domain-card ${cls}" data-route="${route}" role="button" tabindex="0" aria-label="${esc(label)} — ${esc(meta)}"><div class="wf-domain-label">${esc(label)}</div><div class="wf-domain-value">${value}</div><div class="wf-domain-meta">${esc(meta)}</div></article>`
   ).join("");
 
   const failedNote = failed.length
-    ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((result) => `${result.label}: ${result.error.message}`).join(" · "))}</p></div></div>`
+    ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((r) => `${r.label}: ${r.error.message}`).join(" · "))}</p></div></div>`
     : "";
+
+  const healthLabel = executiveHealth.label || "watch";
+  const healthChipCls = { healthy:"healthy", warning:"warning", critical:"critical" }[healthLabel] || "watch";
 
   setPage(`${pageHeader("AI Workforce Overview", "Satu ringkasan untuk membaca kondisi perusahaan dan langsung masuk ke domain AI Workforce yang perlu perhatian.",
     `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>
@@ -1593,10 +1631,11 @@ async function renderWorkforceOverview() {
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Company Health", executiveHealth.overall ?? "—", executiveHealth.label || "Executive score", "executive", healthTrend)}
     ${metricCard("Operations Health", opsHealth.score ?? "—", opsHealth.label || "Operational score", "operations", opsHealth.label === "healthy" ? "trend-up" : "")}
-    ${metricCard("Security Risk", securityRisk, "Risk posture", "security", securityRisk === "low" ? "trend-up" : "trend-down")}
-    ${metricCard("Active Workforce Tasks", formatNumber((workforceStatus.pending || 0) + (workforceStatus.in_progress || 0)), `${formatNumber(data.workforce?.pending_approval_count || 0)} butuh approval`, "workforce", data.workforce?.pending_approval_count ? "trend-down" : "trend-up")}
+    ${metricCard("Security Risk", securityRisk.charAt(0).toUpperCase()+securityRisk.slice(1), "Risk posture", "security", securityRisk === "low" ? "trend-up" : "trend-down")}
+    ${metricCard("Active Tasks", formatNumber((workforceStatus.pending||0)+(workforceStatus.in_progress||0)), `${formatNumber(data.workforce?.pending_approval_count||0)} butuh approval`, "workforce", data.workforce?.pending_approval_count ? "trend-down" : "trend-up")}
   </div>
-  <div class="grid grid-4">${domainRows}</div>
+  <div class="page-section-label">Domain overview — klik untuk masuk ke domain</div>
+  <div class="workforce-domain-grid">${domainCards}</div>
   ${failedNote}`);
 }
 
@@ -1694,41 +1733,45 @@ async function renderAgentCenter() {
     ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((r) => `${r.label}: ${r.error.message}`).join(" · "))}</p></div></div>`
     : "";
 
-  setPage(`${pageHeader("Agent Center", "Direktori AI agent, execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging dalam satu tampilan.",
+  const totalApprovalPending = workforcePendingApproval + caPendingCount + cmPendingCount;
+  setPage(`${pageHeader("Agent Center", "Direktori AI agent, Task Engine, execution log, dan antrian approval dalam satu tampilan.",
     `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
     ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
-    ${metricCard("Workforce Approval", formatNumber(workforcePendingApproval), "Task menunggu human approval", "workforce", workforcePendingApproval ? "trend-down" : "trend-up")}
-    ${metricCard("Computer Agent Approval", formatNumber(caPendingCount), "Aksi tulis menunggu persetujuan", "security", caPendingCount ? "trend-down" : "trend-up")}
-    ${metricCard("Channel Messaging Approval", formatNumber(cmPendingCount), "Pesan keluar menunggu persetujuan", "communication-center", cmPendingCount ? "trend-down" : "trend-up")}
+    ${metricCard("Menunggu Approval", formatNumber(totalApprovalPending), `${workforcePendingApproval} workforce · ${caPendingCount} CA · ${cmPendingCount} msg`, "workforce", totalApprovalPending ? "trend-down" : "trend-up")}
+    ${metricCard("Computer Agent", formatNumber(caPendingCount), "Aksi tulis menunggu persetujuan", "security", caPendingCount ? "trend-down" : "trend-up")}
   </div>
+  <div class="page-section-label">Run task</div>
   <div class="card" style="margin-bottom:16px">
-    <div class="card-head"><div><h3>${icon('agent-center',16)} Run Task</h3><span class="subtle">Jalankan goal bebas lewat Task Engine (Goal→Plan→Subtasks→Tool Selection→Execution→Verification→Report)</span></div></div>
+    <div class="card-head"><div><h3>Task Engine — Run Goal</h3><span class="subtle">Goal → Plan → Subtasks → Tool Selection → Execution → Verification → Report</span></div></div>
     <form data-agent-run-task-form class="card-body" style="display:grid;gap:10px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select class="select" name="agent">
+        <select class="select" name="agent" aria-label="Pilih agent">
           <option value="finance">Finance Agent</option>
           <option value="marketing">Marketing Agent</option>
           <option value="hr">HR Agent</option>
           <option value="operations">Operations Agent</option>
         </select>
       </div>
-      <textarea class="input" name="goal" rows="3" placeholder="Contoh: Cek semua invoice yang belum lunas dan ringkas totalnya" required></textarea>
+      <textarea class="input" name="goal" rows="3" placeholder="Contoh: Cek semua invoice yang belum lunas dan ringkas totalnya" required aria-label="Goal"></textarea>
       <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${run.running?'disabled':''}>${icon('send',14)} ${run.running?'Menjalankan...':'Run Task'}</button></div>
     </form>
     ${runResultPanel}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3></div>
-    ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
-  </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Computer Agent — Menunggu Approval</h3></div>
+  ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}
+  <div class="card ${caPendingCount ? 'approval-queue-card' : ''}" style="margin-bottom:16px"><div class="card-head"><div><h3>Computer Agent — Menunggu Approval</h3><span class="subtle">Aksi tulis belum dieksekusi sampai Approve</span></div>${caPendingCount ? `<span class="approval-count-badge">${caPendingCount}</span>` : ''}</div>
     ${caRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Goal</th><th>Target URL</th><th>Dibuat</th><th></th></tr></thead><tbody>${caRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada aksi Computer Agent yang menunggu approval saat ini.")}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Channel Messaging — Menunggu Approval</h3><span class="subtle">Pesan keluar yang dibuat agent lewat Run Task -- BELUM terkirim sampai disetujui</span></div></div>
+  <div class="card ${cmPendingCount ? 'approval-queue-card' : ''}" style="margin-bottom:16px"><div class="card-head"><div><h3>Channel Messaging — Menunggu Approval</h3><span class="subtle">Pesan belum terkirim sampai disetujui</span></div>${cmPendingCount ? `<span class="approval-count-badge">${cmPendingCount}</span>` : ''}</div>
     ${cmRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Penerima</th><th>Pesan</th><th>Dibuat oleh</th><th>Dibuat</th><th></th></tr></thead><tbody>${cmRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada pesan keluar yang menunggu approval saat ini.")}
   </div>
-  <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3></div>
+  <div class="page-section-label">Agent directory</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3><span class="subtle">${formatNumber(agents.length)} agent terdaftar</span></div>
+    ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
+  </div>
+  <div class="page-section-label">Execution log</div>
+  <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3><span class="subtle">20 entri terakhir dari semua sumber</span></div>
     ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
   </div>
   ${failedNote}`);
