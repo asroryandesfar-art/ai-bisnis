@@ -185,6 +185,88 @@ TOOL_REGISTRY: dict[str, dict] = {
         ),
         "implementation": "web_search_agent.search",
     },
+    # ── AI Agent Platform Tools ──────────────────────────────────────────────
+    "calculator": {
+        "category": "computation",
+        "description": "Evaluasi ekspresi matematika aman (aritmatika, pangkat, modulo).",
+        "available": True,
+        "implementation": "action_executor._eval_math",
+    },
+    "terminal_execute": {
+        "category": "system",
+        "description": (
+            "Eksekusi shell command (git, npm, python, docker, dll) dengan "
+            "permission gate dan audit logging. Butuh izin run_terminal."
+        ),
+        "available": True,
+        "implementation": "terminal_service.TerminalService.execute",
+    },
+    "file_read": {
+        "category": "system",
+        "description": "Baca file dari filesystem nyata (bukan knowledge base). Butuh izin read_files.",
+        "available": True,
+        "implementation": "file_system_service.FileSystemService.read_file",
+    },
+    "file_write": {
+        "category": "system",
+        "description": "Tulis file ke filesystem nyata. Butuh izin write_files.",
+        "available": True,
+        "implementation": "file_system_service.FileSystemService.write_file",
+    },
+    "file_list": {
+        "category": "system",
+        "description": "Daftar file/folder dalam direktori. Butuh izin read_files.",
+        "available": True,
+        "implementation": "file_system_service.FileSystemService.list_directory",
+    },
+    "webhook_call": {
+        "category": "external_apis",
+        "description": "Panggil webhook/REST API eksternal (HTTP). SSRF-safe.",
+        "available": True,
+        "implementation": "tool_executor._exec_webhook_call",
+    },
+    "action_execute": {
+        "category": "orchestration",
+        "description": (
+            "Action Executor pipeline: Plan → Permission → Execute → Verify → Report. "
+            "Untuk goal multi-langkah kompleks yang butuh beberapa tool."
+        ),
+        "available": True,
+        "implementation": "action_executor.ActionExecutor.execute",
+    },
+    "computer_use": {
+        "category": "computer_control",
+        "description": (
+            "Computer Use enterprise: browser automation + native app interaction "
+            "(klik, isi form, screenshot, scrape). Butuh izin browser_access/browser_write."
+        ),
+        "available": True,
+        "implementation": "computer_use_service.ComputerUseService",
+    },
+    "sandbox_execution": {
+        "category": "system",
+        "description": (
+            "Eksekusi terisolasi di sandbox: temporary workspace, virtual filesystem, "
+            "safe execution, rollback. Untuk task yang butuh isolasi."
+        ),
+        "available": True,
+        "implementation": "sandbox_manager.SandboxManager",
+    },
+    "permission_manager": {
+        "category": "security",
+        "description": (
+            "Enterprise permission model: Allow Once/Always/Deny per permission type "
+            "(read_files, write_files, delete_files, run_terminal, browser_access, dll)."
+        ),
+        "available": True,
+        "implementation": "permission_manager.PermissionManager",
+    },
+    "audit_logger": {
+        "category": "observability",
+        "description": "Audit trail semua aksi agent: action_type, target, status, approval, error.",
+        "available": True,
+        "implementation": "audit_logger.log_action",
+    },
 }
 
 

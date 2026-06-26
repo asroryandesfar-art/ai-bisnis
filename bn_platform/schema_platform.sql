@@ -1089,7 +1089,19 @@ SELECT
     cmt.created_at,
     cmt.updated_at,
     jsonb_build_object('channel', cmt.channel, 'recipient', cmt.recipient, 'result', cmt.result)
-FROM channel_message_tasks cmt;
+FROM channel_message_tasks cmt
+UNION ALL
+SELECT
+    'action_execution',
+    aae.id::uuid,
+    aae.org_id,
+    aae.goal,
+    aae.status,
+    aae.created_at,
+    aae.created_at,
+    jsonb_build_object('summary', aae.summary, 'duration_ms', aae.duration_ms,
+                       'step_count', jsonb_array_length(aae.plan))
+FROM agent_action_executions aae;
 
 -- ============================================================
 -- 11. SEED DATA — plans, permissions, roles, marketplace templates
@@ -1526,3 +1538,96 @@ CREATE TABLE IF NOT EXISTS meta_asset_routes (
     PRIMARY KEY (channel_type, external_id)
 );
 CREATE INDEX IF NOT EXISTS idx_meta_asset_routes_org ON meta_asset_routes(org_id, channel_type);
+
+-- ============================================================
+-- 12. AI AGENT PLATFORM TABLES
+--     agent_permission_grants, agent_audit_log,
+--     agent_session_memory, agent_action_executions
+-- ============================================================
+
+-- 12a. Permission Grants — enterprise permission model
+-- Allow Once / Allow Always / Deny per resource per org
+CREATE TABLE IF NOT EXISTS agent_permission_grants (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    permission    TEXT NOT NULL,
+    grant_mode    TEXT NOT NULL CHECK (grant_mode IN ('allow_once','allow_always','deny')),
+    resource      TEXT NOT NULL DEFAULT '*',
+    granted_by    TEXT NOT NULL DEFAULT 'user',
+    context       TEXT,
+    granted_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    used_at       TIMESTAMPTZ,
+    expires_at    TIMESTAMPTZ,
+    revoked_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_agent_permission_grants_org
+    ON agent_permission_grants(org_id, permission, revoked_at);
+
+-- 12b. Audit Log — semua aksi agent yang dijalankan
+CREATE TABLE IF NOT EXISTS agent_audit_log (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id               UUID NOT NULL,
+    agent_name           TEXT NOT NULL,
+    action_type          TEXT NOT NULL,
+    target               TEXT,
+    status               TEXT NOT NULL DEFAULT 'completed',
+    permission_grant_id  UUID,
+    initiated_by         TEXT NOT NULL DEFAULT 'agent',
+    approved_by          TEXT,
+    metadata             JSONB DEFAULT '{}',
+    error                TEXT,
+    duration_ms          INT,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_audit_log_org
+    ON agent_audit_log(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_audit_log_type
+    ON agent_audit_log(org_id, action_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_audit_log_status
+    ON agent_audit_log(org_id, status, created_at DESC);
+
+-- 12c. Agent Session Memory — per-session context memory
+CREATE TABLE IF NOT EXISTS agent_session_memory (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id        UUID NOT NULL,
+    session_id    TEXT NOT NULL DEFAULT 'default',
+    memory_state  JSONB NOT NULL DEFAULT '{}',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_session_memory_org
+    ON agent_session_memory(org_id, updated_at DESC);
+
+-- 12d. Action Executions — riwayat eksekusi Action Executor pipeline
+CREATE TABLE IF NOT EXISTS agent_action_executions (
+    id            TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    org_id        UUID NOT NULL,
+    bot_id        UUID,
+    goal          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'completed',
+    plan          JSONB NOT NULL DEFAULT '[]',
+    observations  JSONB NOT NULL DEFAULT '[]',
+    verification  JSONB NOT NULL DEFAULT '{}',
+    summary       TEXT,
+    duration_ms   INT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_action_exec_org
+    ON agent_action_executions(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_action_exec_status
+    ON agent_action_executions(org_id, status, created_at DESC);
+
+-- 12e. Seed permissions baru untuk AI Agent Platform
+INSERT INTO permissions (key, category, description)
+VALUES
+  ('agent.read_files',    'agent_platform', 'Izin agent membaca file sistem'),
+  ('agent.write_files',   'agent_platform', 'Izin agent menulis/mengedit file sistem'),
+  ('agent.delete_files',  'agent_platform', 'Izin agent menghapus file sistem'),
+  ('agent.run_terminal',  'agent_platform', 'Izin agent menjalankan command di terminal'),
+  ('agent.browser_use',   'agent_platform', 'Izin agent mengakses browser (read-only)'),
+  ('agent.browser_write', 'agent_platform', 'Izin agent melakukan aksi tulis di browser'),
+  ('agent.audit_view',    'agent_platform', 'Melihat audit log aksi agent'),
+  ('agent.permission_manage', 'agent_platform', 'Mengelola permission grant agent')
+ON CONFLICT (key) DO NOTHING;

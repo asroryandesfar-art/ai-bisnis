@@ -244,6 +244,122 @@ TOOL_SCHEMAS: dict[str, dict] = {
             },
         },
     },
+    # ── AI Agent Platform Tools ──────────────────────────────────────────────
+    "calculator": {
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Evaluasi ekspresi matematika (aritmatika, pangkat, modulo). Aman, tidak bisa menjalankan kode.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "Ekspresi matematika, contoh: '(150 * 1.11) / 12'"},
+                },
+                "required": ["expression"],
+            },
+        },
+    },
+    "terminal_execute": {
+        "type": "function",
+        "function": {
+            "name": "terminal_execute",
+            "description": (
+                "Eksekusi shell command di server (git, npm, python, docker, dll). "
+                "WAJIB izin run_terminal. Command berbahaya (rm -rf, dll) butuh approval tambahan. "
+                "Return: stdout, stderr, exit_code."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command yang akan dieksekusi"},
+                    "timeout": {"type": "integer", "description": "Timeout dalam detik (default 60, maks 300)"},
+                    "approval_granted": {"type": "boolean", "description": "Set true jika sudah ada approval eksplisit untuk command berbahaya"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    "file_read": {
+        "type": "function",
+        "function": {
+            "name": "file_read",
+            "description": "Baca isi file dari filesystem (bukan knowledge base). Mendukung txt, md, py, ts, js, json, yaml, dll. Butuh izin read_files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path absolut atau relatif ke file"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    "file_write": {
+        "type": "function",
+        "function": {
+            "name": "file_write",
+            "description": "Tulis/buat file baru di filesystem. Butuh izin write_files. Belum ada: butuh approval dulu.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path file yang akan ditulis"},
+                    "content": {"type": "string", "description": "Isi file yang akan ditulis"},
+                    "overwrite": {"type": "boolean", "description": "Izinkan overwrite jika file sudah ada (default false)"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    "file_list": {
+        "type": "function",
+        "function": {
+            "name": "file_list",
+            "description": "Daftar file dan folder dalam direktori. Butuh izin read_files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path direktori yang ingin dilihat isinya"},
+                    "pattern": {"type": "string", "description": "Filter nama file (glob pattern, contoh: '*.py')"},
+                    "recursive": {"type": "boolean", "description": "Cari secara rekursif ke subdirektori"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    "webhook_call": {
+        "type": "function",
+        "function": {
+            "name": "webhook_call",
+            "description": "Panggil webhook atau REST API eksternal (HTTP GET/POST/PUT/PATCH). SSRF-safe (hanya URL publik).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL endpoint yang akan dipanggil"},
+                    "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method"},
+                    "payload": {"type": "object", "description": "Body request (JSON)"},
+                    "headers": {"type": "object", "description": "Header HTTP tambahan"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    "action_execute": {
+        "type": "function",
+        "function": {
+            "name": "action_execute",
+            "description": (
+                "Jalankan goal bisnis multi-langkah via Action Executor pipeline. "
+                "Pipeline otomatis: Plan → Permission Check → Execute → Verify → Report. "
+                "Gunakan untuk goal kompleks yang butuh beberapa tool sekaligus."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "Deskripsi goal yang ingin dicapai, sedetail mungkin"},
+                },
+                "required": ["goal"],
+            },
+        },
+    },
 }
 
 # table -> (kolom yang boleh dibaca, kolom yang boleh dipakai sebagai filter_value)
@@ -425,6 +541,103 @@ async def _exec_channel_messaging(args: dict, ctx: dict) -> dict:
     }
 
 
+async def _exec_calculator(args: dict, ctx: dict) -> dict:
+    from action_executor import _eval_math
+    return _eval_math(args.get("expression", ""))
+
+
+async def _exec_terminal_execute(args: dict, ctx: dict) -> dict:
+    """Eksekusi terminal command via TerminalService dengan permission gate."""
+    from terminal_service import TerminalService
+    from permission_manager import PermissionManager
+    pool = ctx["pool"]
+    org_id = str(ctx["org_id"])
+    pm = PermissionManager(pool, org_id)
+    svc = TerminalService(pool, org_id, pm, agent_name=ctx.get("agent_name", "tool_executor"),
+                          working_dir=ctx.get("working_dir"))
+    return await svc.execute(
+        args.get("command", ""),
+        timeout=int(args.get("timeout", 60)),
+        approval_granted=bool(args.get("approval_granted", False)),
+    )
+
+
+async def _exec_file_read(args: dict, ctx: dict) -> dict:
+    """Baca file real via FileSystemService."""
+    from file_system_service import FileSystemService
+    from permission_manager import PermissionManager
+    pool = ctx["pool"]
+    org_id = str(ctx["org_id"])
+    pm = PermissionManager(pool, org_id)
+    svc = FileSystemService(pool, org_id, pm, agent_name=ctx.get("agent_name", "tool_executor"),
+                            allowed_base_dir=ctx.get("allowed_base_dir"))
+    return await svc.read_file(args.get("path", ""))
+
+
+async def _exec_file_write(args: dict, ctx: dict) -> dict:
+    """Tulis file real via FileSystemService (butuh izin write_files)."""
+    from file_system_service import FileSystemService
+    from permission_manager import PermissionManager
+    pool = ctx["pool"]
+    org_id = str(ctx["org_id"])
+    pm = PermissionManager(pool, org_id)
+    svc = FileSystemService(pool, org_id, pm, agent_name=ctx.get("agent_name", "tool_executor"),
+                            allowed_base_dir=ctx.get("allowed_base_dir"))
+    return await svc.write_file(args.get("path", ""), args.get("content", ""),
+                                overwrite=bool(args.get("overwrite", False)))
+
+
+async def _exec_file_list(args: dict, ctx: dict) -> dict:
+    """Daftar file dalam direktori via FileSystemService."""
+    from file_system_service import FileSystemService
+    from permission_manager import PermissionManager
+    pool = ctx["pool"]
+    org_id = str(ctx["org_id"])
+    pm = PermissionManager(pool, org_id)
+    svc = FileSystemService(pool, org_id, pm, agent_name=ctx.get("agent_name", "tool_executor"),
+                            allowed_base_dir=ctx.get("allowed_base_dir"))
+    return await svc.list_directory(args.get("path", "."), pattern=args.get("pattern", "*"),
+                                    recursive=bool(args.get("recursive", False)))
+
+
+async def _exec_webhook_call(args: dict, ctx: dict) -> dict:
+    """Panggil webhook/REST API eksternal via HTTP."""
+    import httpx
+    from tool_registry import _validate_url
+    url = args.get("url", "")
+    ok, reason = _validate_url(url)
+    if not ok:
+        return {"success": False, "error": f"URL tidak valid: {reason}"}
+    method = (args.get("method") or "POST").upper()
+    payload = args.get("payload") or {}
+    headers = {"Content-Type": "application/json", **(args.get("headers") or {})}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.request(method, url, json=payload, headers=headers)
+        return {
+            "success": resp.status_code < 400,
+            "status_code": resp.status_code,
+            "response": resp.text[:2000],
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def _exec_action_execute(args: dict, ctx: dict) -> dict:
+    """Jalankan goal bebas via ActionExecutor pipeline."""
+    from action_executor import ActionExecutor
+    from base import BaseAgent
+    pool = ctx["pool"]
+    org_id = str(ctx["org_id"])
+    api_key = ctx.get("groq_api_key", "")
+    model = ctx.get("groq_model")
+    base_url = ctx.get("groq_base_url")
+    agent = BaseAgent(api_key=api_key, model=model, base_url=base_url)
+    executor = ActionExecutor(agent, pool, org_id)
+    result = await executor.execute(args.get("goal", ""), tool_ctx=ctx, bot_id=ctx.get("bot_id"))
+    return result.to_dict()
+
+
 _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "knowledge_search": _exec_knowledge_search,
     "memory_lookup": _exec_memory_lookup,
@@ -438,6 +651,14 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "document_generator": _exec_document_generator,
     "email_reader": _exec_email_reader,
     "channel_messaging": _exec_channel_messaging,
+    # AI Agent Platform extensions
+    "calculator": _exec_calculator,
+    "terminal_execute": _exec_terminal_execute,
+    "file_read": _exec_file_read,
+    "file_write": _exec_file_write,
+    "file_list": _exec_file_list,
+    "webhook_call": _exec_webhook_call,
+    "action_execute": _exec_action_execute,
 }
 
 
