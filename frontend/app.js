@@ -3,7 +3,9 @@ import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
-} from "/ui/components.js?v=20260625-agent-center-runtask-1";
+  planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
+} from "/ui/components.js?v=20260627-enterprise-ux-1";
+import { t, setLang, getLang } from "/ui/i18n.js";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260625-agent-center-runtask-1";
 
 const state = {
@@ -1736,29 +1738,91 @@ async function renderTeam() {
 }
 
 async function renderBilling() {
-  loadingPage("Billing & Usage","Monitor subscription limits and manage the plan for this workspace.");
-  const [plansResult, subResult, usageResult, invoicesResult] = await Promise.all([settle("plans",api.plans()),settle("subscription",api.subscription()),settle("usage",api.usage()),settle("invoices",api.invoices())]);
+  loadingPage(t('billing.title'), t('billing.subtitle'));
+  const [plansResult, subResult, usageResult, invoicesResult] = await Promise.all([
+    settle("plans", api.plans()), settle("subscription", api.subscription()),
+    settle("usage", api.usage()), settle("invoices", api.invoices()),
+  ]);
   state.plans = plansResult.ok ? plansResult.data.plans || [] : [];
   state.subscription = subResult.ok ? subResult.data : state.subscription;
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
-  const planCards = state.plans.map((plan) => {
+  const currentStatus = state.subscription?.subscription?.status || state.org?.billing_status || 'active';
+
+  // ── Plan cards ──────────────────────────────────────────────────────────
+  const planOrder = ['free','standard','pro','enterprise'];
+  const sortedPlans = [...state.plans].sort((a, b) => planOrder.indexOf(a.key) - planOrder.indexOf(b.key));
+  const planCards = sortedPlans.length ? sortedPlans.map((plan) => {
     const featureConfig = parseFeatures(plan.features);
     const highlights = Array.isArray(featureConfig.highlights) ? featureConfig.highlights : null;
-    const features = highlights || (Array.isArray(featureConfig) ? featureConfig : Object.keys(featureConfig).filter((key) => featureConfig[key]));
+    const rawFeatures = highlights || (Array.isArray(featureConfig) ? featureConfig : Object.keys(featureConfig).filter((k) => featureConfig[k]));
+    const features = rawFeatures.length ? rawFeatures : [
+      `${plan.max_agents === -1 ? t('unlimited') : plan.max_agents} AI agents`,
+      `${plan.max_conversations_per_month === -1 ? t('unlimited') : formatNumber(plan.max_conversations_per_month)} conversations/bulan`,
+    ];
     const description = plan.description || featureConfig.description || 'Paket BotNesia';
-    const isCustomPricing = !!featureConfig.custom_pricing;
-    const priceBlock = isCustomPricing
-      ? `<div class="plan-price">Custom <small>/ Hubungi Sales</small></div>`
-      : `<div class="plan-price">${idr(plan.price_monthly_idr)} <small>/ bulan</small></div>`;
-    const extraStats = highlights ? '' : `<li>${plan.max_agents===-1?'Unlimited':plan.max_agents} AI agents</li><li>${plan.max_conversations_per_month===-1?'Unlimited':formatNumber(plan.max_conversations_per_month)} conversations</li>`;
-    const buttonLabel = plan.key===currentKey ? 'Current plan' : (isCustomPricing ? 'Hubungi Sales' : 'Choose plan');
-    return `<article class="card plan-card ${plan.key===currentKey?'featured':''}"><span class="eyebrow">${plan.key===currentKey?'CURRENT PLAN':'AVAILABLE PLAN'}</span><h3>${esc(plan.name)}</h3><p class="subtle" style="font-size:10px;min-height:32px">${esc(description)}</p>${priceBlock}<ul class="feature-list">${features.slice(0,12).map(feature=>`<li>${esc(String(feature).replace(/_/g,' '))}</li>`).join('')}${extraStats}</ul><button class="button ${plan.key===currentKey?'':'button-primary'}" ${plan.key===currentKey?'disabled':''} data-checkout-plan="${esc(plan.key)}">${buttonLabel}</button></article>`;
-  }).join("");
-  const usageRows = Object.entries(state.usage||{}).map(([key,item]) => { const limit=Number(item.limit); const pct=limit===-1?10:Math.min(100,Math.round((Number(item.used||0)/Math.max(1,limit))*100)); return `<div class="usage-row"><div class="usage-row-head"><span>${esc(key.replace(/_/g,' '))}</span><b>${formatNumber(item.used)} / ${limit===-1?'∞':formatNumber(limit)}</b></div><div class="progress"><span style="width:${pct}%"></span></div></div>`; }).join("");
-  const invoiceRows = state.invoices.map(inv=>`<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description||'Subscription')}</td><td>${idr(inv.amount_idr)}</td><td>${statusBadge(inv.status,inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`).join("");
-  setPage(`${pageHeader("Billing & Usage","Plans and limits are read directly from the BotNesia subscription system.",`<span class="status-badge active">${esc(currentKey)} · ${esc(state.subscription?.subscription?.status||state.org?.billing_status||'active')}</span>`)}<div class="grid grid-3">${planCards||emptyState("Plans unavailable","Run the platform schema migration to provision subscription plans.")}</div><div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><h3>Current usage</h3></div><div class="card-body">${usageRows||emptyState("Usage unavailable","No usage dimensions returned.")}</div></div><div class="card"><div class="card-head"><h3>Recent invoices</h3></div>${invoiceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${invoiceRows}</tbody></table></div>`:emptyState("No invoices","Paid and open invoices will appear here.")}</div></div>`);
+    const isCustom = !!featureConfig.custom_pricing;
+    const isCurrent = plan.key === currentKey;
+    const isPopular = plan.key === 'pro';
+    const eyebrowText = isCurrent ? t('billing.current_plan').toUpperCase() : (isPopular ? t('billing.popular') : t('available_plan'));
+    const eyebrowClass = isCurrent ? 'is-current' : (isPopular ? 'is-popular' : '');
+    const priceHtml = isCustom
+      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price')}</strong><span>${t('billing.contact_sales_short')}</span></div>`
+      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('per_month')}</span></div>`;
+    const featureListHtml = features.slice(0, 10).map((feat) =>
+      `<li><span class="billing-feature-check">✓</span>${esc(String(feat).replace(/_/g, ' '))}</li>`
+    ).join('');
+    const btnLabel = isCurrent ? t('current_plan_btn') : (isCustom ? t('contact_sales') : t('billing.choose_plan'));
+    const btnClass = isCurrent ? 'button' : 'button button-primary';
+    return `<article class="card billing-plan-card ${isCurrent ? 'is-current' : ''} ${isPopular && !isCurrent ? 'is-popular' : ''}">
+      <div class="billing-plan-eyebrow ${eyebrowClass}">${eyebrowText}</div>
+      ${planBadge(plan.key)}
+      <h3 class="billing-plan-name" style="margin-top:10px">${esc(plan.name)}</h3>
+      <p class="billing-plan-desc">${esc(description)}</p>
+      ${priceHtml}
+      <ul class="billing-feature-list">${featureListHtml}</ul>
+      <button class="${btnClass}" style="width:100%" ${isCurrent ? 'disabled' : ''} data-checkout-plan="${esc(plan.key)}">${btnLabel}</button>
+    </article>`;
+  }).join('') : `<div class="card" style="grid-column:1/-1;padding:20px">${emptyState(t('billing.plans_empty'), t('billing.plans_empty_sub'), '', 'billing')}</div>`;
+
+  // ── Usage section ───────────────────────────────────────────────────────
+  const usageEntries = Object.entries(state.usage || {});
+  const usageHtml = usageEntries.length ? usageEntries.map(([key, item]) => {
+    const limit = Number(item.limit);
+    const used = Number(item.used || 0);
+    const isUnlimited = limit === -1;
+    const pct = isUnlimited ? 8 : Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+    const nearLimit = !isUnlimited && pct >= 80;
+    const atLimit = !isUnlimited && pct >= 100;
+    return `<div class="billing-usage-item ${atLimit ? 'at-limit' : nearLimit ? 'near-limit' : ''}">
+      <div class="billing-usage-head"><span>${esc(key.replace(/_/g, ' '))}</span><b>${formatNumber(used)} / ${isUnlimited ? '∞' : formatNumber(limit)}</b></div>
+      <div class="billing-usage-bar"><span style="width:${pct}%"></span></div>
+    </div>`;
+  }).join('') : emptyState(t('billing.usage_empty'), t('billing.usage_empty_sub'), '', 'analytics');
+
+  // ── Invoice table ───────────────────────────────────────────────────────
+  const invoiceRows = state.invoices.map((inv) =>
+    `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`
+  ).join('');
+
+  // ── Non-free plans: show upgrade banner if on free/standard ────────────
+  const needsUpgrade = ['free', 'standard'].includes(currentKey);
+  const bannerHtml = needsUpgrade ? upgradeBanner(t('billing.upgrade_banner_title'), t('billing.upgrade_banner')) : '';
+
+  setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${currentStatus === 'active' ? 'active' : 'pending'}">${esc(currentStatus)}</span>`)}
+  ${bannerHtml}
+  <div class="billing-plans-grid">${planCards}</div>
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-head"><h3>${t('billing.usage_title')}</h3><span class="subtle mono" style="font-size:9px">${esc(currentKey.toUpperCase())}</span></div>
+      <div class="card-body">${usageHtml}</div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>${t('billing.invoices_title')}</h3></div>
+      ${invoiceRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('billing.invoice_num')}</th><th>${t('billing.invoice_desc')}</th><th>${t('billing.invoice_amount')}</th><th>${t('billing.invoice_status')}</th><th>${t('billing.invoice_date')}</th></tr></thead><tbody>${invoiceRows}</tbody></table></div>` : emptyState(t('billing.invoices_empty'), t('billing.invoices_empty_sub'), '', 'billing')}
+    </div>
+  </div>`);
 }
 
 async function renderSecurity() {
@@ -2069,13 +2133,95 @@ async function runInvestorDemoSequence() {
 }
 
 async function renderSettings() {
-  loadingPage("Platform Settings","Configure security posture and workspace connectivity.");
-  const integrationResult = await settle("integrations",api.integrations());
+  loadingPage(t('settings.title'), t('settings.subtitle'));
+  const integrationResult = await settle("integrations", api.integrations());
   state.integrations = integrationResult.ok ? integrationResult.data : {};
-  const integrationCards = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Gmail</h3><span class="subtle" style="font-size:9px">OAuth inbox processing</span></div>${statusBadge(state.integrations?.gmail?.connected?'active':'inactive',state.integrations?.gmail?.connected?'Connected':'Not connected')}</div><div class="card-body"><p class="subtle">${esc(state.integrations?.gmail?.email||'No Gmail account connected')}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-primary" data-action="gmail-start">${state.integrations?.gmail?.connected?'Reconnect Gmail':'Connect Gmail'}</button>${state.integrations?.gmail?.connected?'<button class="button" data-action="gmail-map">Map to agent</button><button class="button" data-action="gmail-poll">Poll now</button><button class="button button-danger" data-disconnect-integration="gmail">Disconnect</button>':''}</div></div></div>`;
-  const systemStatus = `<div class="grid grid-2"><div class="card"><div class="card-head"><h3>System status</h3></div><div class="card-body"><div class="setting-row"><div><strong>FastAPI backend</strong><p class="subtle">Application and REST APIs</p></div>${statusBadge(state.health?.db?'active':'error',state.health?.db?'Connected':'Unavailable')}</div><div class="setting-row"><div><strong>PostgreSQL</strong><p class="subtle">Tenant and business data</p></div>${statusBadge(state.health?.schema?'active':'error',state.health?.schema?'Schema ready':'Schema issue')}</div><div class="setting-row"><div><strong>AI provider</strong><p class="subtle">${esc(state.health?.ai?.model||'Not configured')}</p></div>${statusBadge(state.health?.ai?.configured?'active':'error',state.health?.ai?.configured?'Ready':'Not configured')}</div></div></div><div class="card"><div class="card-head"><h3>Workspace identity</h3></div><div class="card-body"><div class="form-grid"><label class="field full"><span>Organization</span><input value="${esc(state.org?.name||'')}" readonly></label><label class="field"><span>Tenant slug</span><input value="${esc(state.org?.slug||'')}" readonly></label><label class="field"><span>Application URL</span><input value="${esc(location.origin)}" readonly></label></div></div></div></div>`;
-  const sessionCard = `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Session & security</h3></div><div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div><strong>Current authenticated session</strong><p class="subtle" style="margin:5px 0 0;font-size:10px">JWT authentication and RBAC permissions are enforced by FastAPI.</p></div><button class="button button-danger" data-action="logout">Sign out</button></div></div>`;
-  setPage(`${pageHeader("Platform Settings","Manage deployment connectivity, integrations, and workspace security.",`<button class="button" data-action="security-scan">Run security scan</button>`)}${systemStatus}${integrationCards}${sessionCard}`);
+  const gmail = state.integrations?.gmail || {};
+  const gmailConnected = !!gmail.connected;
+
+  // ── Section: Workspace Identity ─────────────────────────────────────────
+  const workspaceSection = settingSection(
+    t('settings.workspace_title'), t('settings.workspace_desc'),
+    readonlyField(t('settings.org_name'), state.org?.name || '') +
+    readonlyField(t('settings.slug'), state.org?.slug || '') +
+    readonlyField(t('settings.url'), location.origin)
+  );
+
+  // ── Section: System Status ──────────────────────────────────────────────
+  const systemSection = settingSection(
+    t('settings.system_title'), t('settings.system_desc'),
+    settingRow(t('settings.backend'), t('settings.backend_desc'), statusBadge(state.health?.db ? 'active' : 'error', state.health?.db ? 'Connected' : 'Unavailable')) +
+    settingRow(t('settings.postgres'), t('settings.postgres_desc'), statusBadge(state.health?.schema ? 'active' : 'error', state.health?.schema ? 'Schema ready' : 'Schema issue')) +
+    settingRow(t('settings.ai_provider'), `${t('settings.ai_provider_desc')} · ${esc(state.health?.ai?.model || 'Not configured')}`, statusBadge(state.health?.ai?.configured ? 'active' : 'error', state.health?.ai?.configured ? 'Ready' : 'Not configured'))
+  );
+
+  // ── Section: Integrations ───────────────────────────────────────────────
+  const gmailActions = `<div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="button button-primary button-sm" data-action="gmail-start">${gmailConnected ? t('settings.reconnect_gmail') : t('settings.connect_gmail')}</button>
+    ${gmailConnected ? `<button class="button button-sm" data-action="gmail-map">${t('settings.map_agent')}</button><button class="button button-sm" data-action="gmail-poll">${t('settings.poll_now')}</button><button class="button button-danger button-sm" data-disconnect-integration="gmail">${t('settings.disconnect')}</button>` : ''}
+  </div>`;
+  const integrationsSection = `<section class="settings-section">
+    <div class="settings-section-head"><h3>${t('settings.integrations_title')}</h3><p>${t('settings.integrations_desc')}</p></div>
+    <div class="setting-row">
+      <div class="setting-row-left"><strong>${t('settings.gmail_title')}</strong><p>${esc(gmail.email || t('settings.gmail_disconnected'))}</p></div>
+      <div class="setting-row-control">${statusBadge(gmailConnected ? 'active' : 'inactive', gmailConnected ? t('settings.gmail_connected') : t('settings.gmail_disconnected'))}</div>
+    </div>
+    <div style="padding:14px 18px">${gmailActions}</div>
+  </section>`;
+
+  // ── Section: Appearance & Language ──────────────────────────────────────
+  const appearanceSection = settingSection(
+    t('settings.appearance_title'), t('settings.appearance_desc'),
+    settingRow(
+      t('settings.language'), t('settings.language_desc'),
+      `<div class="lang-switcher"><button class="${getLang() === 'id' ? 'active' : ''}" data-set-lang="id">ID · Bahasa</button><button class="${getLang() === 'en' ? 'active' : ''}" data-set-lang="en">EN · English</button></div>`
+    )
+  );
+
+  // ── Section: Session & Security ─────────────────────────────────────────
+  const sessionSection = settingSection(
+    t('settings.session_title'), t('settings.session_desc'),
+    settingRow(t('settings.signout'), t('settings.signout_desc'), `<button class="button button-danger button-sm" data-action="logout">${t('signout')}</button>`)
+  );
+
+  // ── Sidebar nav ─────────────────────────────────────────────────────────
+  const navItems = [
+    ['workspace', t('settings.workspace_title'), 'settings'],
+    ['system', t('settings.system_title'), 'observability'],
+    ['integrations', t('settings.integrations_title'), 'channels'],
+    ['appearance', t('settings.appearance_title'), 'about'],
+    ['session', t('settings.session_title'), 'security'],
+  ].map(([key, label, ico]) =>
+    `<button class="settings-nav-item" data-settings-section="${key}">${icon(ico, 14)}<span>${label}</span></button>`
+  ).join('');
+
+  setPage(`${pageHeader(t('settings.title'), t('settings.subtitle'), `<button class="button button-sm" data-action="security-scan">${icon('refresh', 13)} ${t('settings.security_scan')}</button>`)}
+  <div class="settings-layout">
+    <aside class="settings-sidebar">
+      <nav class="settings-nav">
+        <div class="settings-search-wrap">${icon('search', 14)}<input placeholder="${t('settings.search')}" data-settings-search></div>
+        ${navItems}
+      </nav>
+    </aside>
+    <div class="settings-content" id="settings-content">
+      ${workspaceSection}
+      ${systemSection}
+      ${integrationsSection}
+      ${appearanceSection}
+      ${sessionSection}
+    </div>
+  </div>`);
+
+  // Settings search filter
+  const searchInput = el('[data-settings-search]');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase();
+      els('.settings-section').forEach((sec) => {
+        sec.hidden = query.length > 0 && !sec.textContent.toLowerCase().includes(query);
+      });
+    });
+  }
 }
 
 // ─── WhatsApp Embedded Signup (Meta) ────────────────────────────
@@ -2142,7 +2288,7 @@ async function disconnectWhatsAppEmbedded(botId = state.selectedBotId) {
   catch (error) { toast(error.message, "error"); }
 }
 
-function settingRowStyles() { if (!document.getElementById('dynamic-setting-style')) { const style=document.createElement('style'); style.id='dynamic-setting-style'; style.textContent='.setting-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}.setting-row:last-child{border-bottom:0}.setting-row p{margin:4px 0 0;font-size:10px}'; document.head.appendChild(style); } }
+function settingRowStyles() { /* styles now in styles.css */ }
 
 function showInviteMember() {
   const roleOptions = (state.roles.length ? state.roles : [{key:"admin",name:"Admin"},{key:"manager",name:"Manager"},{key:"agent",name:"Agent"},{key:"viewer",name:"Viewer"}])
@@ -2609,6 +2755,8 @@ async function uploadChatImage(input) {
 }
 
 document.addEventListener("click", async (event) => {
+  const langBtn = event.target.closest("[data-set-lang]");
+  if (langBtn) { setLang(langBtn.dataset.setLang); renderChrome(); await route(); return; }
   const navToggle=event.target.closest("[data-nav-toggle]");
   if(navToggle){
     const key=navToggle.dataset.navToggle;
@@ -2650,6 +2798,7 @@ document.addEventListener("click", async (event) => {
   if(agentTarget && !agentTarget.closest("#detail-drawer")){ showAgent(agentTarget.dataset.agentId); return; }
   const conversation=event.target.closest("[data-conversation-id]"); if(conversation){ await openConversation(conversation.dataset.conversationId); return; }
   const action=event.target.closest("[data-action]")?.dataset.action;
+  if(action==="show-upgrade-dialog"){ el("#modal-root").innerHTML = upgradeDialog(event.target.closest("[data-plan]")?.dataset.plan || "Pro"); }
   if(action==="toggle-sidebar"){ el("#sidebar").classList.toggle("open"); el("#mobile-scrim").classList.toggle("open"); }
   if(action==="logout"){ tokenStore.clear(); showAuth(); }
   if(action==="refresh") await route();

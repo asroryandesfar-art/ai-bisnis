@@ -1,0 +1,172 @@
+const T = {
+  id: {
+    // Auth
+    "auth.tab_login":"Masuk","auth.tab_register":"Daftar",
+    "auth.login_title":"Selamat datang","auth.login_sub":"Masuk ke workspace bisnis kamu.",
+    "auth.register_title":"Buat workspace","auth.register_sub":"Siapkan akun dan organisasi baru.",
+    "auth.org_name":"Nama bisnis","auth.email":"Email","auth.password":"Password",
+    "auth.login_btn":"Masuk ke dashboard","auth.register_btn":"Buat akun",
+    "auth.footer":"Data tersimpan di PostgreSQL lokal dan dilindungi JWT + RBAC.",
+    "auth.hero_title":"Kelola agent, pelanggan, dan pertumbuhan bisnis dari satu tempat.",
+    "auth.hero_sub":"Dashboard lokal terhubung langsung ke FastAPI, PostgreSQL, Groq, dan channel bisnis.",
+    // Common
+    "save":"Simpan perubahan","cancel":"Batal","close":"Tutup","loading":"Memuat…",
+    "error_load":"Tidak dapat memuat data","retry":"Coba lagi","no_data":"Belum ada data",
+    "search":"Cari...","upgrade":"Upgrade","per_month":"/ bulan","unlimited":"Unlimited",
+    "upgrade_to_pro":"Upgrade ke Pro","contact_sales":"Hubungi Sales","choose_plan":"Pilih Paket",
+    "current_plan_btn":"Paket saat ini","available_plan":"PAKET TERSEDIA",
+    "signout":"Keluar",
+    // Topbar / status
+    "status_active":"AI workforce aktif","status_down":"Perlu perhatian",
+    "search_placeholder":"Cari pelanggan, agent, invoice...",
+    // Plan keys
+    "plan.free":"Gratis","plan.standard":"Standard","plan.pro":"Pro","plan.enterprise":"Enterprise",
+    // Billing page
+    "billing.title":"Tagihan & Penggunaan",
+    "billing.subtitle":"Kelola langganan, pantau penggunaan, dan upgrade paket Anda.",
+    "billing.current_plan":"Paket Saat Ini","billing.popular":"PALING POPULER",
+    "billing.usage_title":"Penggunaan Saat Ini",
+    "billing.usage_empty":"Data penggunaan belum tersedia",
+    "billing.usage_empty_sub":"Penggunaan muncul setelah ada aktivitas di workspace.",
+    "billing.invoices_title":"Riwayat Tagihan",
+    "billing.invoices_empty":"Belum ada tagihan",
+    "billing.invoices_empty_sub":"Tagihan yang dibayar dan terbuka akan muncul di sini.",
+    "billing.plans_empty":"Paket tidak tersedia",
+    "billing.plans_empty_sub":"Jalankan migrasi schema platform untuk menyediakan paket berlangganan.",
+    "billing.invoice_num":"Invoice","billing.invoice_desc":"Deskripsi",
+    "billing.invoice_amount":"Jumlah","billing.invoice_status":"Status","billing.invoice_date":"Tanggal",
+    "billing.custom_price":"Kustom","billing.contact_sales_short":"Hubungi Sales",
+    "billing.upgrade_banner":"Tingkatkan performa bisnis Anda dengan paket yang lebih tinggi.",
+    "billing.upgrade_banner_title":"Buka semua fitur premium",
+    // Settings page
+    "settings.title":"Pengaturan",
+    "settings.subtitle":"Konfigurasi workspace, integrasi, dan preferensi platform Anda.",
+    "settings.search":"Cari pengaturan...",
+    "settings.workspace_title":"Identitas Workspace",
+    "settings.workspace_desc":"Nama organisasi, slug, dan URL aplikasi",
+    "settings.system_title":"Status Sistem",
+    "settings.system_desc":"Kesehatan backend, database, dan penyedia AI",
+    "settings.integrations_title":"Integrasi",
+    "settings.integrations_desc":"Aplikasi terhubung dan layanan eksternal",
+    "settings.appearance_title":"Tampilan & Bahasa",
+    "settings.appearance_desc":"Preferensi bahasa, tema, dan tampilan",
+    "settings.session_title":"Sesi & Keamanan",
+    "settings.session_desc":"Manajemen sesi autentikasi saat ini",
+    "settings.org_name":"Nama Organisasi","settings.slug":"Tenant Slug","settings.url":"URL Aplikasi",
+    "settings.backend":"FastAPI Backend","settings.backend_desc":"Aplikasi dan REST API",
+    "settings.postgres":"PostgreSQL","settings.postgres_desc":"Data tenant dan bisnis",
+    "settings.ai_provider":"Penyedia AI","settings.ai_provider_desc":"Model dan konfigurasi AI",
+    "settings.gmail_title":"Gmail","settings.gmail_sub":"Pemrosesan inbox via OAuth",
+    "settings.gmail_connected":"Terhubung","settings.gmail_disconnected":"Belum terhubung",
+    "settings.connect_gmail":"Hubungkan Gmail","settings.reconnect_gmail":"Hubungkan Ulang",
+    "settings.map_agent":"Petakan ke agent","settings.poll_now":"Poll sekarang",
+    "settings.disconnect":"Putuskan",
+    "settings.language":"Bahasa","settings.language_desc":"Bahasa tampilan untuk workspace ini",
+    "settings.security_scan":"Jalankan security scan",
+    "settings.signout_desc":"JWT authentication dan RBAC permissions diterapkan oleh FastAPI.",
+    // Upgrade / lock
+    "upgrade.title":"Upgrade Paket Anda",
+    "upgrade.desc":"Fitur ini tersedia di paket lebih tinggi. Upgrade untuk mengaktifkannya.",
+    "upgrade.available_on":"Tersedia di paket","upgrade.unlock":"Buka fitur ini",
+    "upgrade.feature_locked":"Fitur Terkunci",
+    // Empty / error
+    "empty.default_title":"Belum ada data","empty.default_sub":"Data akan muncul setelah ada aktivitas.",
+    "error.default":"Data tidak dapat dimuat",
+    "error.retry_btn":"Coba lagi",
+  },
+  en: {
+    // Auth
+    "auth.tab_login":"Sign in","auth.tab_register":"Register",
+    "auth.login_title":"Welcome back","auth.login_sub":"Sign in to your business workspace.",
+    "auth.register_title":"Create workspace","auth.register_sub":"Set up your account and organization.",
+    "auth.org_name":"Business name","auth.email":"Email","auth.password":"Password",
+    "auth.login_btn":"Sign in to dashboard","auth.register_btn":"Create account",
+    "auth.footer":"Data stored in local PostgreSQL and protected by JWT + RBAC.",
+    "auth.hero_title":"Manage agents, customers, and business growth from one place.",
+    "auth.hero_sub":"Local dashboard connected directly to FastAPI, PostgreSQL, Groq, and business channels.",
+    // Common
+    "save":"Save changes","cancel":"Cancel","close":"Close","loading":"Loading…",
+    "error_load":"Could not load data","retry":"Try again","no_data":"No data yet",
+    "search":"Search...","upgrade":"Upgrade","per_month":"/ month","unlimited":"Unlimited",
+    "upgrade_to_pro":"Upgrade to Pro","contact_sales":"Contact Sales","choose_plan":"Choose Plan",
+    "current_plan_btn":"Current plan","available_plan":"AVAILABLE PLAN",
+    "signout":"Sign out",
+    // Topbar / status
+    "status_active":"AI workforce active","status_down":"Needs attention",
+    "search_placeholder":"Search customers, agents, invoices...",
+    // Plan keys
+    "plan.free":"Free","plan.standard":"Standard","plan.pro":"Pro","plan.enterprise":"Enterprise",
+    // Billing page
+    "billing.title":"Billing & Usage",
+    "billing.subtitle":"Manage your subscription, monitor usage, and upgrade your plan.",
+    "billing.current_plan":"Current Plan","billing.popular":"MOST POPULAR",
+    "billing.usage_title":"Current Usage",
+    "billing.usage_empty":"No usage data yet",
+    "billing.usage_empty_sub":"Usage appears after workspace activity.",
+    "billing.invoices_title":"Invoice History",
+    "billing.invoices_empty":"No invoices yet",
+    "billing.invoices_empty_sub":"Paid and open invoices will appear here.",
+    "billing.plans_empty":"Plans unavailable",
+    "billing.plans_empty_sub":"Run the platform schema migration to provision subscription plans.",
+    "billing.invoice_num":"Invoice","billing.invoice_desc":"Description",
+    "billing.invoice_amount":"Amount","billing.invoice_status":"Status","billing.invoice_date":"Date",
+    "billing.custom_price":"Custom","billing.contact_sales_short":"Contact Sales",
+    "billing.upgrade_banner":"Take your business to the next level with a higher plan.",
+    "billing.upgrade_banner_title":"Unlock all premium features",
+    // Settings page
+    "settings.title":"Settings",
+    "settings.subtitle":"Configure your workspace, integrations, and platform preferences.",
+    "settings.search":"Search settings...",
+    "settings.workspace_title":"Workspace Identity",
+    "settings.workspace_desc":"Organization name, slug, and application URL",
+    "settings.system_title":"System Status",
+    "settings.system_desc":"Backend, database, and AI provider health",
+    "settings.integrations_title":"Integrations",
+    "settings.integrations_desc":"Connected apps and external services",
+    "settings.appearance_title":"Appearance & Language",
+    "settings.appearance_desc":"Language, theme, and display preferences",
+    "settings.session_title":"Session & Security",
+    "settings.session_desc":"Current authenticated session management",
+    "settings.org_name":"Organization Name","settings.slug":"Tenant Slug","settings.url":"Application URL",
+    "settings.backend":"FastAPI Backend","settings.backend_desc":"Application and REST APIs",
+    "settings.postgres":"PostgreSQL","settings.postgres_desc":"Tenant and business data",
+    "settings.ai_provider":"AI Provider","settings.ai_provider_desc":"Model and AI configuration",
+    "settings.gmail_title":"Gmail","settings.gmail_sub":"OAuth inbox processing",
+    "settings.gmail_connected":"Connected","settings.gmail_disconnected":"Not connected",
+    "settings.connect_gmail":"Connect Gmail","settings.reconnect_gmail":"Reconnect Gmail",
+    "settings.map_agent":"Map to agent","settings.poll_now":"Poll now",
+    "settings.disconnect":"Disconnect",
+    "settings.language":"Language","settings.language_desc":"Display language for this workspace",
+    "settings.security_scan":"Run security scan",
+    "settings.signout_desc":"JWT authentication and RBAC permissions are enforced by FastAPI.",
+    // Upgrade / lock
+    "upgrade.title":"Upgrade Your Plan",
+    "upgrade.desc":"This feature requires a higher plan. Upgrade to unlock it.",
+    "upgrade.available_on":"Available on","upgrade.unlock":"Unlock this feature",
+    "upgrade.feature_locked":"Feature Locked",
+    // Empty / error
+    "empty.default_title":"No data yet","empty.default_sub":"Data will appear after workspace activity.",
+    "error.default":"Could not load data",
+    "error.retry_btn":"Try again",
+  },
+};
+
+let _lang = localStorage.getItem("bn_lang") || "id";
+
+export function t(key) {
+  return T[_lang]?.[key] ?? T.id[key] ?? key;
+}
+
+export function getLang() { return _lang; }
+
+export function setLang(lang) {
+  if (!T[lang]) return;
+  _lang = lang;
+  localStorage.setItem("bn_lang", lang);
+  document.documentElement.lang = lang;
+  window.dispatchEvent(new CustomEvent("bn:lang", { detail: { lang } }));
+}
+
+export function langSwitcherHtml() {
+  return `<div class="lang-switcher" title="Language / Bahasa"><button class="${_lang === "id" ? "active" : ""}" data-set-lang="id">ID</button><button class="${_lang === "en" ? "active" : ""}" data-set-lang="en">EN</button></div>`;
+}
