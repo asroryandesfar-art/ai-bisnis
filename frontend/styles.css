@@ -293,3 +293,69 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 /* ── Skip to content link (accessibility) ───────────────────── */
 .skip-to-content{position:fixed;top:-100%;left:50%;transform:translateX(-50%);z-index:200;padding:8px 16px;border-radius:8px;background:var(--brand);color:#fff;font-weight:700;font-size:12px;text-decoration:none;transition:top .15s}
 .skip-to-content:focus{top:8px}
+
+/* ══════════════════════════════════════════════════════════════════
+   Phase 3 — Page-level improvements (agents, conv, analytics, team,
+   channels, security, knowledge)
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Agents page ─────────────────────────────────────────────── */
+.agent-page-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.agent-stat-chip{display:flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;font-weight:600;color:var(--text-2)}
+.agent-stat-chip .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.agent-stat-chip .dot-active{background:var(--green);box-shadow:0 0 6px rgba(69,211,155,.5)}
+.agent-stat-chip .dot-inactive{background:var(--text-3)}
+.agent-stat-chip .dot-warn{background:var(--amber)}
+
+/* ── Channel icons ───────────────────────────────────────────── */
+.channel-icon-dot{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font:700 11px "DM Mono",monospace;color:#fff;flex-shrink:0}
+.cid-whatsapp{background:linear-gradient(135deg,#25d366,#128c7e)}
+.cid-telegram{background:linear-gradient(135deg,#2aabee,#1a86c8)}
+.cid-instagram{background:linear-gradient(135deg,#f58529,#c13584)}
+.cid-facebook{background:linear-gradient(135deg,#1877f2,#0c63d4)}
+.cid-website{background:linear-gradient(135deg,var(--brand),var(--brand-2))}
+.cid-email{background:linear-gradient(135deg,var(--amber),#d99a30)}
+.cid-default{background:var(--surface-3)}
+.channel-title{display:flex;align-items:center;gap:10px;min-width:0}
+.channel-title>div{min-width:0}
+
+/* ── Conversations page ──────────────────────────────────────── */
+.conv-select-prompt{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text-3);text-align:center;padding:40px}
+.conv-select-prompt h3{margin:0;font-size:14px;color:var(--text-2)}
+.conv-select-prompt p{margin:0;font-size:11px;line-height:1.7;max-width:240px}
+.conv-status-tabs{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.conv-tab{padding:4px 10px;border:1px solid transparent;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-3);background:transparent;transition:.15s}
+.conv-tab.active,.conv-tab:hover{border-color:var(--brand);color:var(--brand);background:rgba(139,124,255,.1)}
+
+/* ── Analytics page ──────────────────────────────────────────── */
+.page-section-label{margin:22px 0 10px;font:600 10px "DM Mono",monospace;letter-spacing:.14em;color:var(--text-3);text-transform:uppercase}
+.analytics-period-row{display:flex;gap:6px;align-items:center}
+.analytics-period-row button{padding:5px 11px;border:1px solid var(--line);border-radius:7px;font-size:11px;font-weight:600;background:var(--surface);color:var(--text-3);cursor:pointer;transition:.15s}
+.analytics-period-row button.active{border-color:var(--brand);color:var(--brand);background:rgba(139,124,255,.1)}
+.analytics-quality-rows .usage-row{padding:10px 0;border-bottom:1px solid var(--line)}
+.analytics-quality-rows .usage-row:last-child{border-bottom:0}
+
+/* ── Team page ────────────────────────────────────────────────── */
+.member-col{display:flex;align-items:center;gap:10px;min-width:0}
+.member-col .avatar{flex-shrink:0}
+.member-meta{min-width:0}
+.member-meta strong{display:block;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.member-meta small{display:block;margin-top:2px;font-size:9px;font-family:"DM Mono",monospace;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.roles-wrap{display:flex;gap:4px;flex-wrap:wrap}
+.your-perms{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+
+/* ── Security page ───────────────────────────────────────────── */
+.security-action-group{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ── Knowledge page ──────────────────────────────────────────── */
+.knowledge-seed-bar{display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:var(--surface-2);border-radius:12px;border:1px solid var(--line);margin-bottom:16px}
+.seed-btn-group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.seed-label{font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-right:4px}
+
+/* ── Chat page ────────────────────────────────────────────────── */
+.chat-page-intro{font-size:10px;color:var(--text-3);line-height:1.6;max-width:380px}
+.chat-agent-select{display:flex;align-items:center;gap:8px}
+
+/* ── page-header when no description ─────────────────────────── */
+.page-header h2{margin-bottom:0}
+.page-header p:empty{display:none}
