@@ -13,7 +13,8 @@
   <link rel="stylesheet" href="/ui/styles.css?v=20260627-enterprise-ux-1">
 </head>
 <body>
-  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <a href="#page-root" class="skip-to-content">Skip to main content</a>
+  <div id="toast-region" class="toast-region" aria-live="polite" role="region" aria-label="Notifications"></div>
   <section id="auth-view" class="auth-view">
     <div class="auth-visual">
       <a class="brand brand-large landing-brand" href="/dashboard"><img class="brand-logo" src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia official logo"><span>BOTNESIA</span></a>
@@ -32,7 +33,7 @@
   <div id="app-shell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar"></aside>
     <div id="mobile-scrim" class="mobile-scrim"></div>
-    <main class="workspace"><header id="topbar" class="topbar"></header><div id="page-root" class="page-root" tabindex="-1"></div></main>
+    <main class="workspace" role="main"><header id="topbar" class="topbar" role="banner"></header><div id="page-root" class="page-root" tabindex="-1" aria-label="Main content"></div></main>
   </div>
   <div id="modal-root"></div>
   <aside id="detail-drawer" class="detail-drawer" aria-hidden="true"></aside>

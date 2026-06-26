@@ -30,6 +30,20 @@ const els = (selector) => [...document.querySelectorAll(selector)];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pageRoot = () => el("#page-root");
 
+// ── Client-side TTL cache ──────────────────────────────────────
+const _cache = new Map();
+async function cachedSettle(label, promiseFn, ttlSeconds = 60) {
+  const hit = _cache.get(label);
+  if (hit && Date.now() - hit.ts < ttlSeconds * 1000) return { ok: true, label, data: hit.data };
+  const result = await settle(label, promiseFn());
+  if (result.ok) _cache.set(label, { data: result.data, ts: Date.now() });
+  return result;
+}
+function bustCache(...keys) {
+  if (!keys.length) { _cache.clear(); return; }
+  keys.forEach((k) => _cache.delete(k));
+}
+
 function parseJwt() {
   try { return JSON.parse(atob(tokenStore.get().split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))); }
   catch { return {}; }
@@ -72,7 +86,9 @@ async function loadCore() {
 }
 
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
-function loadingPage(title, description) { setPage(`<div class="loading-brand"><img src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo"><div>${pageHeader(title,description)}</div></div>${skeletonCards(4)}<div class="grid dashboard-grid" style="margin-top:16px"><div class="skeleton" style="height:330px"></div><div class="skeleton" style="height:330px"></div></div>`); }
+function loadingPage(title, description, skeletonCount = 4) {
+  setPage(`${pageHeader(title, description)}<div style="margin-top:8px">${skeletonCards(skeletonCount)}</div><div class="grid grid-2" style="margin-top:16px"><div class="skeleton" style="height:260px"></div><div class="skeleton" style="height:260px"></div></div>`);
+}
 
 async function renderDashboard() {
   loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
@@ -1740,8 +1756,10 @@ async function renderTeam() {
 async function renderBilling() {
   loadingPage(t('billing.title'), t('billing.subtitle'));
   const [plansResult, subResult, usageResult, invoicesResult] = await Promise.all([
-    settle("plans", api.plans()), settle("subscription", api.subscription()),
-    settle("usage", api.usage()), settle("invoices", api.invoices()),
+    cachedSettle("plans", () => api.plans(), 300),
+    cachedSettle("subscription", () => api.subscription(), 120),
+    cachedSettle("usage", () => api.usage(), 45),
+    cachedSettle("invoices", () => api.invoices(), 60),
   ]);
   state.plans = plansResult.ok ? plansResult.data.plans || [] : [];
   state.subscription = subResult.ok ? subResult.data : state.subscription;
@@ -2299,7 +2317,7 @@ function showInviteMember() {
 async function submitInviteMember() {
   const form=el("#invite-member-form"); if(!form || !form.reportValidity()) return;
   const button=el("[data-action=submit-invite-member]"); button.disabled=true;
-  try { await api.inviteMember(Object.fromEntries(new FormData(form))); el("#modal-root").innerHTML=""; toast("Team member added.","success"); await renderTeam(); renderChrome(); }
+  try { await api.inviteMember(Object.fromEntries(new FormData(form))); bustCache("team"); el("#modal-root").innerHTML=""; toast("Team member added.","success"); await renderTeam(); renderChrome(); }
   catch(error){ toast(error.message,"error"); button.disabled=false; }
 }
 
@@ -2584,14 +2602,14 @@ async function submitCreateAgent() {
   const button = el('[data-action="submit-create-agent"]'); button.disabled=true; button.textContent="Deploying...";
   try {
     await api.createBot({ name:data.name, language:data.language, greeting:data.greeting || "Halo! Ada yang bisa saya bantu?", system_prompt:data.system_prompt || null, primary_color:"#8b7cff", status:"active" });
-    state.bots = await api.bots(); state.selectedBotId = state.bots[0]?.id || null; el("#modal-root").innerHTML=""; renderChrome(); toast("AI agent deployed successfully.","success"); await route();
+    bustCache("bots"); state.bots = await api.bots(); state.selectedBotId = state.bots[0]?.id || null; el("#modal-root").innerHTML=""; renderChrome(); toast("AI agent deployed successfully.","success"); await route();
   } catch (error) { toast(error.message,"error"); button.disabled=false; button.textContent="Deploy agent"; }
 }
 
 async function submitAgentDetail(form) {
   const id=form.dataset.agentId; const data=Object.fromEntries(new FormData(form));
   const button=form.querySelector('button[type="submit"]'); button.disabled=true; button.textContent="Saving...";
-  try { await api.updateBot(id,data); state.bots=await api.bots(); closeDrawer(); renderChrome(); toast("Agent configuration saved.","success"); await route(); }
+  try { await api.updateBot(id,data); bustCache("bots"); state.bots=await api.bots(); closeDrawer(); renderChrome(); toast("Agent configuration saved.","success"); await route(); }
   catch(error){ toast(error.message,"error"); button.disabled=false; button.textContent="Save changes"; }
 }
 
@@ -2681,7 +2699,12 @@ async function editKbSop(sopId) {
 
 async function checkout(planKey) {
   if(!confirm(`Continue with the ${planKey} plan?`))return;
-  try { const result=await api.checkout(planKey,"monthly","local"); if(result.redirect_url) location.href=result.redirect_url; else { toast("Subscription activated.","success"); await renderBilling(); } }
+  try {
+    const result=await api.checkout(planKey,"monthly","local");
+    bustCache("plans","subscription","usage");
+    if(result.redirect_url) location.href=result.redirect_url;
+    else { toast("Subscription activated.","success"); await renderBilling(); }
+  }
   catch(error){ toast(error.message,"error"); }
 }
 

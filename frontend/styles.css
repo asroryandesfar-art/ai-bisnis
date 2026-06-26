@@ -193,3 +193,103 @@ button,input,select,textarea{font:inherit}button{color:inherit}a{color:inherit;t
   .billing-plan-price strong{font-size:22px}
   .billing-plan-name{font-size:15px}
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   UX + PERFORMANCE + FINAL QA — 2026-06-27
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Keyboard focus rings ────────────────────────────────────── */
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
+button:focus-visible,a:focus-visible{outline-offset:3px}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(139,124,255,.14)}
+
+/* ── Custom scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-3)}
+* { scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent }
+
+/* ── Text selection ──────────────────────────────────────────── */
+::selection{background:rgba(139,124,255,.25);color:var(--text)}
+
+/* ── Better select dark theme ────────────────────────────────── */
+select.select,select.input,select[class*="select"]{
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23697386' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:28px
+}
+
+/* ── Toast improvements — dismiss button ─────────────────────── */
+.toast{display:flex;align-items:flex-start;gap:10px;position:relative;padding-right:36px}
+.toast-body{flex:1;min-width:0}
+.toast-icon{flex-shrink:0;width:16px;height:16px;margin-top:1px}
+.toast-dismiss{position:absolute;right:10px;top:10px;display:grid;place-items:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--text-3);cursor:pointer;transition:.15s;font-size:13px;line-height:1;padding:0}
+.toast-dismiss:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.toast.success .toast-icon{color:var(--green)}.toast.error .toast-icon{color:var(--red)}.toast.info .toast-icon{color:var(--cyan)}
+@keyframes toastOut{to{opacity:0;transform:translateX(12px)}}
+.toast.removing{animation:toastOut .2s ease forwards}
+
+/* ── Sidebar: better active state ────────────────────────────── */
+[aria-current="page"].nav-item{color:#fff;background:linear-gradient(90deg,rgba(139,124,255,.18),rgba(139,124,255,.06));box-shadow:inset 0 0 0 1px rgba(139,124,255,.14)}
+[aria-current="page"].nav-item:before{content:"";position:absolute;left:-14px;width:3px;height:20px;border-radius:0 3px 3px 0;background:var(--brand)}
+
+/* ── Better page animation (slightly faster) ─────────────────── */
+.page-enter{animation:pageIn .28s cubic-bezier(.2,.8,.2,1)}
+
+/* ── Topbar mobile fixes ─────────────────────────────────────── */
+@media(max-width:640px){
+  .topbar-actions .lang-switcher{display:none}
+  .topbar-actions .search-box{display:none}
+  .page-heading p{display:none}
+}
+@media(max-width:860px){
+  .topbar-actions .lang-switcher{font-size:8px}
+}
+
+/* ── Better card loading skeleton ────────────────────────────── */
+.skeleton-text{height:12px;border-radius:6px;background:var(--surface-3)}
+.skeleton-text.w-60{width:60%}.skeleton-text.w-80{width:80%}.skeleton-text.w-40{width:40%}
+.skeleton-sm{height:80px}
+
+/* ── Table improvements ──────────────────────────────────────── */
+.data-table th{position:sticky;top:0;z-index:2;background:rgba(17,21,29,.98);backdrop-filter:blur(6px)}
+.table-wrap.scrollable{max-height:380px;overflow:auto}
+.table-wrap{overflow:auto}
+
+/* ── Card footer with consistent padding ─────────────────────── */
+.card-foot-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+
+/* ── Better mobile form grid ─────────────────────────────────── */
+@media(max-width:480px){
+  .form-grid{grid-template-columns:1fr}
+  .form-grid .full{grid-column:1}
+}
+
+/* ── Improved empty state CTA ────────────────────────────────── */
+.empty-state .button{margin-top:14px}
+
+/* ── Nav group transition ────────────────────────────────────── */
+.nav-group-items{overflow:hidden;max-height:0;transition:max-height .22s cubic-bezier(.2,.8,.2,1)}
+.nav-group.open .nav-group-items{display:flex;max-height:600px}
+
+/* ── Better input autofill dark theme ───────────────────────── */
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--text);
+  -webkit-box-shadow:0 0 0 1000px var(--bg-soft) inset;
+  transition:background-color 5000s ease-in-out 0s
+}
+
+/* ── Metric card click effect ────────────────────────────────── */
+.metric-card[data-route]{cursor:pointer}
+.metric-card[data-route]:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+
+/* ── Subtle scrollable indicator ────────────────────────────── */
+.table-wrap:not(.no-max)::after{content:"";display:block;pointer-events:none}
+
+/* ── Badge dot for count ─────────────────────────────────────── */
+.nav-count-badge{display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:rgba(255,107,122,.18);color:var(--red);font:700 9px "DM Mono"}
+
+/* ── Skip to content link (accessibility) ───────────────────── */
+.skip-to-content{position:fixed;top:-100%;left:50%;transform:translateX(-50%);z-index:200;padding:8px 16px;border-radius:8px;background:var(--brand);color:#fff;font-weight:700;font-size:12px;text-decoration:none;transition:top .15s}
+.skip-to-content:focus{top:8px}
