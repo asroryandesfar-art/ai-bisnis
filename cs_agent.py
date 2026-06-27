@@ -4,6 +4,7 @@ Menjawab pertanyaan pelanggan menggunakan konteks percakapan + knowledge base.
 """
 from __future__ import annotations
 from base import BaseAgent, AgentResult
+import language_middleware
 
 
 SYNTHESIS_SYSTEM_PROMPT = (
@@ -42,6 +43,31 @@ Aturan:
 - Output HARUS berupa teks jawaban saja, tanpa JSON atau metadata internal.
 """
 
+    english_system_prompt = """You are BotNesia's business AI assistant using Groq to answer user questions.
+
+Your tasks:
+1. Understand the user's goal and give a directly useful answer.
+2. For technical issues, explain the most likely cause and provide ordered checks or fixes, even when the user's details are incomplete.
+3. After giving an initial solution, you may ask at most two important questions to narrow the diagnosis.
+4. For business strategy, provide concrete recommendations, action priorities, and examples when helpful.
+5. If the user asks about channel integrations (WhatsApp/Facebook/Instagram/Gmail/Website), explain concise setup steps in BotNesia.
+6. If the user asks to create an image (logo/illustration/poster/banner/mascot/design), the system WILL automatically create it and display it in chat. Do not say you cannot create images; briefly explain the generated image. For other needs such as image analysis, document generation (PDF/DOCX/XLSX/PPTX), or voice, direct the user to Multimedia Studio in the dashboard.
+
+Rules:
+- ALWAYS answer in English.
+- Do not replace the answer with a generic clarification form. Give an initial solution first.
+- Do not invent facts. Distinguish facts from assumptions or temporary diagnosis.
+- Do not create placeholders such as "Rp X", estimated prices, package names, URLs, feature limits, or policies that are not available in context. If specific data is unavailable, say exactly what is unknown and how to verify it.
+- For news, use only the real-time news context. Include available title, media, publication date, and source URL. If only RSS title/summary is available, state that limitation without refusing to summarize available information.
+- Output MUST be the answer text only, without JSON or internal metadata.
+"""
+
+    def _selected_language(self, context: dict) -> language_middleware.LangCode:
+        return language_middleware.normalize_language(context.get("selected_language")) or "id"
+
+    def _system_prompt_for(self, language: language_middleware.LangCode) -> str:
+        return self.english_system_prompt if language == "en" else self.system_prompt
+
     refusal_indicators = (
         "saya tidak tahu",
         "saya belum tahu",
@@ -61,7 +87,16 @@ Aturan:
             return False
         return any(normalized.startswith(marker) for marker in self.refusal_indicators)
 
-    def _clarify_response(self, user_msg: str) -> str:
+    def _clarify_response(self, user_msg: str, language: language_middleware.LangCode = "id") -> str:
+        if language == "en":
+            return (
+                "I want to help more accurately. Please send these details so I can give the right answer:\n"
+                "- your issue or goal\n"
+                "- steps you have already tried\n"
+                "- the BotNesia feature or channel you are using\n"
+                "- any error message or result you see, if available\n\n"
+                "With that information, I can help find the right solution."
+            )
         return (
             "Saya ingin membantu lebih baik. "
             "Tolong kirim detail berikut supaya saya bisa memberikan jawaban yang tepat:\n"
@@ -72,7 +107,12 @@ Aturan:
             "Dengan informasi itu, saya dapat bantu mencari solusi yang cocok."
         )
 
-    def _service_unavailable_response(self) -> str:
+    def _service_unavailable_response(self, language: language_middleware.LangCode = "id") -> str:
+        if language == "en":
+            return (
+                "Sorry, the AI system is busy and cannot process your question right now. "
+                "This is not because your question is unclear. Please try again in a few minutes."
+            )
         return (
             "Maaf, sistem AI sedang sibuk dan belum bisa memproses pertanyaan Anda saat ini. "
             "Ini bukan karena pertanyaan Anda kurang jelas — coba kirim ulang dalam beberapa menit."
@@ -81,32 +121,47 @@ Aturan:
     async def run(self, context: dict) -> AgentResult:
         user_msg   = context.get("user_message", "")
         kb_context = context.get("knowledge_base_context", "")
+        selected_language = self._selected_language(context)
 
         # Mode cloud: pakai LLM supaya bisa jawab pertanyaan bebas.
         if self.api_key:
             history = context.get("messages", [])
 
-            system_parts = [self.system_prompt.strip()]
+            system_parts = [self._system_prompt_for(selected_language).strip()]
             if kb_context:
-                system_parts.append("\n## Konteks knowledge base\n" + kb_context.strip())
+                kb_heading = "\n## Knowledge base context\n" if selected_language == "en" else "\n## Konteks knowledge base\n"
+                system_parts.append(kb_heading + kb_context.strip())
             feedback = str(context.get("_verification_feedback") or "").strip()
             if feedback:
-                system_parts.append("\n## Catatan perbaikan dari verifikasi\n" + feedback)
+                feedback_heading = "\n## Verification improvement notes\n" if selected_language == "en" else "\n## Catatan perbaikan dari verifikasi\n"
+                system_parts.append(feedback_heading + feedback)
             first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
             if first_principle_brief:
+                first_principle_instruction = (
+                    "\nBuild the answer from basic facts and cause-effect relationships. Do not jump to one cause without evidence. Present hypotheses as hypotheses and give ways to test them."
+                    if selected_language == "en" else
+                    "\nBangun jawaban dari fakta dasar dan hubungan sebab-akibat. Jangan melompat ke satu penyebab tanpa bukti. Sajikan hipotesis sebagai hipotesis dan berikan cara mengujinya."
+                )
                 system_parts.append(
                     "\n## Decomposition first-principles internal\n" + first_principle_brief
-                    + "\nBangun jawaban dari fakta dasar dan hubungan sebab-akibat. Jangan melompat ke satu "
-                      "penyebab tanpa bukti. Sajikan hipotesis sebagai hipotesis dan berikan cara mengujinya."
+                    + first_principle_instruction
                 )
             socratic_brief = str(context.get("_socratic_brief") or "").strip()
             if socratic_brief:
-                system_parts.append(
+                socratic_heading = (
+                    "\n## Internal Socratic brief (do not expose as chain-of-thought)\n"
+                    if selected_language == "en" else
                     "\n## Brief Socratic internal (jangan tampilkan sebagai proses berpikir)\n"
+                )
+                socratic_instruction = (
+                    "\nUse this brief to identify assumptions, acknowledge missing data, consider alternatives, and avoid risky claims. Provide initial help; if needed, ask at most two important clarifying questions."
+                    if selected_language == "en" else
+                    "\nGunakan brief ini untuk menandai asumsi, mengakui data yang kurang, mempertimbangkan alternatif, dan menghindari klaim berisiko. Berikan bantuan awal; bila perlu ajukan maksimal dua klarifikasi penting."
+                )
+                system_parts.append(
+                    socratic_heading
                     + socratic_brief
-                    + "\nGunakan brief ini untuk menandai asumsi, mengakui data yang kurang, "
-                      "mempertimbangkan alternatif, dan menghindari klaim berisiko. "
-                      "Berikan bantuan awal; bila perlu ajukan maksimal dua klarifikasi penting."
+                    + socratic_instruction
                 )
 
             system = "\n\n".join(system_parts).strip()
@@ -131,9 +186,9 @@ Aturan:
                         {
                             "role": "system",
                             "content": (
-                                "Jawaban sebelumnya belum membantu. Jawab ulang secara langsung: sebutkan "
-                                "penyebab yang paling mungkin, berikan sedikitnya tiga langkah tindakan yang "
-                                "bisa dicoba sekarang, lalu ajukan maksimal dua pertanyaan lanjutan."
+                                "The previous answer was not helpful enough. Answer again directly: state the most likely cause, provide at least three actions the user can try now, then ask at most two follow-up questions."
+                                if selected_language == "en" else
+                                "Jawaban sebelumnya belum membantu. Jawab ulang secara langsung: sebutkan penyebab yang paling mungkin, berikan sedikitnya tiga langkah tindakan yang bisa dicoba sekarang, lalu ajukan maksimal dua pertanyaan lanjutan."
                             ),
                         },
                     ]
@@ -141,10 +196,10 @@ Aturan:
             except Exception:
                 # LLM call gagal total (mis. 429 quota harian) — beda dari respons
                 # kosong/refusal yang valid, jadi pakai pesan fallback yang lebih jujur.
-                output = {"answer": self._service_unavailable_response(), "_llm_unavailable": True}
+                output = {"answer": self._service_unavailable_response(selected_language), "_llm_unavailable": True}
             else:
                 if not answer:
-                    answer = self._clarify_response(user_msg)
+                    answer = self._clarify_response(user_msg, selected_language)
                 output = {"answer": answer}
                 if retried:
                     output["_retried"] = True
@@ -202,6 +257,7 @@ Aturan:
         """
         user_message = context.get("user_message", "")
         kb_context = context.get("knowledge_base_context", "")
+        selected_language = self._selected_language(context)
         plan = context.get("_plan") or {}
         socratic_brief = str(context.get("_socratic_brief") or "").strip()
         first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
@@ -272,7 +328,10 @@ Aturan:
 
         result = await self._call_llm_json(
             [
-                {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "system", "content": (
+                    "You are an expert consultant who combines specialist team analysis into one coherent, deep, easy-to-understand answer for a business user. Write like a professional consultant: provide context/reasoning and a clear conclusion. If confidence is low, explicitly acknowledge uncertainty. ALWAYS answer in English, and ONLY in JSON format."
+                    if selected_language == "en" else SYNTHESIS_SYSTEM_PROMPT
+                )},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
@@ -283,9 +342,9 @@ Aturan:
         answer = (result.get("answer") or "").strip()
         if not answer:
             answer = (
-                self._service_unavailable_response()
+                self._service_unavailable_response(selected_language)
                 if result.get("_llm_unavailable")
-                else self._clarify_response(user_message)
+                else self._clarify_response(user_message, selected_language)
             )
         result["answer"] = answer
         result.setdefault("confidence_score", avg_confidence if avg_confidence is not None else 50)

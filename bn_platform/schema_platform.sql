@@ -270,6 +270,7 @@ ALTER TABLE conversations
     ADD COLUMN IF NOT EXISTS channel_account_id UUID REFERENCES channel_accounts(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS assigned_agent_id   UUID REFERENCES users(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS unread_count        INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS language             TEXT NOT NULL DEFAULT 'id',
     ADD COLUMN IF NOT EXISTS closed_at           TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_convs_channel_account ON conversations(channel_account_id);
@@ -1011,6 +1012,26 @@ CREATE TABLE IF NOT EXISTS channel_message_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_channel_message_tasks_org_status ON channel_message_tasks(org_id, status);
 
+-- Action executions are referenced by agent_execution_log below. Keep this
+-- definition before the view so fresh/partial databases can migrate cleanly.
+CREATE TABLE IF NOT EXISTS agent_action_executions (
+    id            TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    org_id        UUID NOT NULL,
+    bot_id        UUID,
+    goal          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'completed',
+    plan          JSONB NOT NULL DEFAULT '[]',
+    observations  JSONB NOT NULL DEFAULT '[]',
+    verification  JSONB NOT NULL DEFAULT '{}',
+    summary       TEXT,
+    duration_ms   INT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_action_exec_org
+    ON agent_action_executions(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_action_exec_status
+    ON agent_action_executions(org_id, status, created_at DESC);
+
 -- ============================================================
 -- 10k. UNIFIED EXECUTION LOG (AI Agent Platform Phase 4 + Tool Framework Phase 7)
 -- ============================================================
@@ -1600,24 +1621,7 @@ CREATE TABLE IF NOT EXISTS agent_session_memory (
 CREATE INDEX IF NOT EXISTS idx_agent_session_memory_org
     ON agent_session_memory(org_id, updated_at DESC);
 
--- 12d. Action Executions — riwayat eksekusi Action Executor pipeline
-CREATE TABLE IF NOT EXISTS agent_action_executions (
-    id            TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    org_id        UUID NOT NULL,
-    bot_id        UUID,
-    goal          TEXT NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'completed',
-    plan          JSONB NOT NULL DEFAULT '[]',
-    observations  JSONB NOT NULL DEFAULT '[]',
-    verification  JSONB NOT NULL DEFAULT '{}',
-    summary       TEXT,
-    duration_ms   INT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_agent_action_exec_org
-    ON agent_action_executions(org_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_action_exec_status
-    ON agent_action_executions(org_id, status, created_at DESC);
+-- 12d. Action Executions — defined before agent_execution_log because the view reads it.
 
 -- 12e. Seed permissions baru untuk AI Agent Platform
 INSERT INTO permissions (key, category, description)

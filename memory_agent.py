@@ -13,6 +13,7 @@ Tiga lapisan memori:
 from __future__ import annotations
 
 import json
+import re
 import hashlib
 import logging
 from dataclasses import dataclass, field, asdict
@@ -375,6 +376,36 @@ Aturan:
 
     # ── WRITE: ekstrak & simpan fakta baru ──────────────────────
 
+    def _extract_fallback_facts(self, user_msg: str) -> list[dict]:
+        """Deterministic fallback for explicit facts when the LLM extractor is unavailable."""
+        text = (user_msg or "").strip()
+        facts: list[dict] = []
+
+        if re.match(r"^\s*(?:ingat|remember)\b", text, flags=re.IGNORECASE):
+            return []
+
+        name_match = re.search(
+            r"\b(?:nama saya|saya bernama|my name is|i am|i'm)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60})",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if name_match:
+            name = re.split(r"\s+(?:dan|and|,|\. )\b", name_match.group(1).strip(), maxsplit=1)[0].strip(" .,")
+            if name:
+                facts.append({"key": "user_name", "value": name, "confidence": 0.9, "source": "explicit_fallback"})
+
+        business_match = re.search(
+            r"\b(?:punya|memiliki|owner of|have|run)\s+(?:usaha|bisnis|toko|business|store)?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,80})",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if business_match:
+            business = business_match.group(1).strip(" .,;:")
+            if business:
+                facts.append({"key": "business_type", "value": business, "confidence": 0.75, "source": "explicit_fallback"})
+
+        return facts
+
     async def run(self, context: dict) -> AgentResult:
         """
         Dipanggil SETELAH Supervisor.process().
@@ -440,6 +471,36 @@ kumulatif (jangan hanya meringkas turn ini saja)."""
             default={"facts_to_store": [], "summary": "", "forget_keys": []},
         )
         if output.pop("_llm_unavailable", False):
+            fallback_facts = self._extract_fallback_facts(user_msg)
+            if fallback_facts:
+                profile = await self.store.apply_fact_updates(
+                    user_id, org_id, bot_id,
+                    facts_to_store=fallback_facts, forget_keys=[], pool=pool,
+                )
+                if conv_id:
+                    fallback_summary = previous_summary if previous_summary != "Belum ada." else ""
+                    new_summary = " ".join(
+                        part for part in [fallback_summary, user_msg.strip(), bot_response.strip()] if part
+                    ).strip()
+                    if new_summary:
+                        await self.store.set_conversation_summary(conv_id, new_summary, pool=pool)
+                profile = await self.store.touch_profile_conv_count(user_id, org_id, bot_id, pool=pool)
+                return AgentResult(
+                    agent=self.name,
+                    success=True,
+                    output={
+                        "fallback": True,
+                        "reason": "LLM provider unavailable; stored explicit facts with deterministic fallback",
+                        "facts_stored": len(fallback_facts),
+                        "facts_deleted": 0,
+                        "user_profile": {
+                            "user_id": user_id,
+                            "total_convs": profile.total_convs,
+                            "known_facts": len(profile.facts),
+                        },
+                    },
+                    latency_ms=0,
+                )
             logger.warning(
                 "Memory write deferred because the LLM provider is unavailable "
                 "(conversation_id=%s, org_id=%s)",

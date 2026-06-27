@@ -22,8 +22,44 @@ from language_middleware import (
     validate_output_language,
     build_system_prompt,
     language_enforcement_suffix,
+    normalize_language,
+    localize_custom_prompt,
 )
 
+
+
+
+# ---------------------------------------------------------------------------
+# normalize_language / prompt localization regressions
+# ---------------------------------------------------------------------------
+
+class TestNormalizeLanguage:
+    def test_ui_english_label_normalizes_to_en(self):
+        assert normalize_language("English") == "en"
+        assert resolve_language("Apa kabar?", agent_language="English") == "en"
+
+    def test_ui_indonesian_label_normalizes_to_id(self):
+        assert normalize_language("Indonesian") == "id"
+        assert resolve_language("How are you?", agent_language="Indonesian") == "id"
+
+
+class TestPromptLocalization:
+    def test_english_selected_does_not_include_raw_indonesian_prompt(self):
+        custom = "Kamu adalah asisten AI. Jawab selalu dalam Bahasa Indonesia."
+        prompt = build_system_prompt(custom, [], "en")
+        assert "Kamu adalah" not in prompt
+        assert "Jawab selalu dalam Bahasa Indonesia" not in prompt
+        assert "You are" in prompt or "tenant-specific role" in prompt
+
+    def test_indonesian_selected_does_not_include_raw_english_only_prompt(self):
+        custom = "You are an AI assistant. Answer in English."
+        prompt = build_system_prompt(custom, [], "id")
+        assert "You are" not in prompt
+        assert "Answer in English" not in prompt
+        assert "Kamu adalah" in prompt or "prompt agent" in prompt
+
+    def test_localize_custom_prompt_returns_none_for_empty(self):
+        assert localize_custom_prompt("", "en") is None
 
 # ---------------------------------------------------------------------------
 # detect_language
