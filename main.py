@@ -403,6 +403,11 @@ async def root():
         return RedirectResponse(url="/dashboard")
     return {"status": "ok"}
 
+@app.get("/casper", include_in_schema=False)
+async def casper_agentic_page():
+    """Redirect to the Casper Agentic Workflow dashboard tab (Buildathon 2026)."""
+    return RedirectResponse(url="/dashboard#casper-agentic-workflow", status_code=302)
+
 @app.get("/demo", include_in_schema=False)
 async def public_demo_page():
     if not _PUBLIC_DEMO_PATH.exists():
@@ -5980,6 +5985,18 @@ async def casper_anchor(
     except Exception as exc:
         logger.error("casper_anchor error: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CASPER AGENTIC WORKFLOW — Buildathon 2026
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from casper.workflow import build_router as _build_casper_router
+    _casper_workflow_router = _build_casper_router(get_pool, get_current_user)
+    app.include_router(_casper_workflow_router)
+    logger.info("Casper Agentic Workflow routes mounted")
+except Exception as _e:
+    logger.warning("Casper workflow router skipped: %s", _e)
 
 
 # ═══════════════════════════════════════════════════════════════════════

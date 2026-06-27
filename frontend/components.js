@@ -35,7 +35,8 @@ const paths = {
   security:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
   billing:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1z"/>',
-  plus:'<path d="M12 5v14M5 12h14"/>', search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="m6 6 12 12M18 6 6 18"/>', bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>', arrow:'<path d="m9 18 6-6-6-6"/>', refresh:'<path d="M20 6v5h-5M4 18v-5h5"/><path d="M18 9a7 7 0 0 0-12-2L4 11M6 15a7 7 0 0 0 12 2l2-4"/>', upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/>', send:'<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>', speaker:'<path d="M11 5 6 9H2v6h4l5 4zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>', more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
+  plus:'<path d="M12 5v14M5 12h14"/>', search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="m6 6 12 12M18 6 6 18"/>', bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>', arrow:'<path d="m9 18 6-6-6-6"/>', refresh:'<path d="M20 6v5h-5M4 18v-5h5"/><path d="M18 9a7 7 0 0 0-12-2L4 11M6 15a7 7 0 0 0 12 2l2-4"/>', upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/>', send:'<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>', speaker:'<path d="M11 5 6 9H2v6h4l5 4zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>', more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  "casper-agentic-workflow":'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
 };
 
 export function icon(name, size = 18) {
@@ -120,7 +121,7 @@ export function relativeTime(value) {
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
 const navGroups = [
-  ["command-center","Command Center","dashboard", [["dashboard","Dashboard"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
+  ["command-center","Command Center","dashboard", [["dashboard","Dashboard"],["casper-agentic-workflow","Casper Agentic"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
   ["workforce","Workforce","agents", [["agents","AI Agents"],["chat","AI Chat"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"],["marketplace","Agent Marketplace"]]],
   ["tasks","Tasks","workflow-builder", [["workflow-builder","Automation"],["workforce","Workforce Orchestration"]]],
   ["communications","Communications","communication-center", [["conversations","Inbox"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["channels","Integrations"]]],
@@ -173,6 +174,7 @@ const routeMeta = {
   "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
   "agent-center":["Agent Center","Direktori semua AI agent, jalankan Run Task lewat Task Engine, execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging"],
   "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
+  "casper-agentic-workflow":["Casper Agentic Workflow","AI agent business decisions anchored immutably to Casper Testnet blockchain — verifiable, audit-proof, decentralised."],
   about:["About BotNesia","Visi, misi, dan alasan BotNesia dibangun"],
   "founder-story":["Founder Story","Cerita di balik BotNesia dan misi pendirinya"],
   "investor-demo":["Investor Demo Mode","AI menganalisis skenario bisnis simulasi secara live — root cause, rekomendasi, action plan, dan prediksi pertumbuhan"],
