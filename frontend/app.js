@@ -2774,9 +2774,10 @@ function casperActionCard(a) {
 async function renderCasperWorkflow() {
   setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}<div class="skeleton" style="height:80px;margin-bottom:16px"></div>${skeletonCards(4)}`);
   try {
-    const [stats, actions] = await Promise.all([
+    const [stats, actions, cfg] = await Promise.all([
       api.casperStats().catch(() => ({ total_actions:0, anchored_on_chain:0, pending:0, failed:0, action_types:{} })),
       api.casperActions(20).catch(() => []),
+      api.casperConfig().catch(() => null),
     ]);
     const topTypes = Object.entries(stats.action_types || {}).sort(([,a],[,b])=>b-a).slice(0,4).map(([k,v])=>`${k.replace('_',' ')}: <strong>${v}</strong>`).join(' · ') || '—';
     const statsBar = `<div class="grid grid-4" style="margin-bottom:24px">
@@ -2785,7 +2786,16 @@ async function renderCasperWorkflow() {
       ${metricCard('Pending',formatNumber(stats.pending),'Awaiting confirmation','observability')}
       ${metricCard('Failed',formatNumber(stats.failed),'Proof errors','costs')}
     </div>`;
-    const contractInfo = `<div class="card" style="margin-bottom:20px;padding:14px 18px;border:1px solid #d1c4e9;background:#f3e5f5">
+    const envBanner = cfg && cfg.env && cfg.env.missing.length
+      ? `<div style="margin-bottom:16px;padding:10px 14px;background:#fff3e0;border:1px solid #ffb300;border-radius:6px;font-size:12px;color:#e65100">
+           <strong>◎ Demo Mode Active</strong> — missing env vars: <code>${cfg.env.missing.map(m=>m.split(' ')[0]).join(', ')}</code>. Proofs are deterministic hashes (not real Casper transactions). Add vars to .env and restart to enable real mode.
+         </div>`
+      : (cfg && cfg.real_mode_available
+          ? `<div style="margin-bottom:16px;padding:8px 14px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:6px;font-size:12px;color:#2e7d32">
+               <strong>✓ Real Mode Active</strong> — CASPER_* env vars configured, Casper Testnet transactions enabled.
+             </div>`
+          : '');
+    const contractInfo = `${envBanner}<div class="card" style="margin-bottom:20px;padding:14px 18px;border:1px solid #d1c4e9;background:#f3e5f5">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div style="flex:1">
           <div style="font-size:11px;font-weight:700;color:#7e57c2;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">AI Proof Registry Smart Contract · Casper Testnet</div>
@@ -3186,7 +3196,7 @@ document.addEventListener("click", async (event) => {
   if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="analyze-business"){ try{ toast("Menganalisis bisnis Anda...","success"); state.businessAnalysis=await api.analyzeBusiness(); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="run-investor-demo"){ await runInvestorDemoSequence(); return; }
-  if(action==="casper-demo"){ try{ toast("Submitting demo AI action to Casper Testnet…"); const r=await api.casperDemo(); toast(`✓ Anchored: ${r.action_summary?.slice(0,60)}… [${r.proof_mode}]`,"success"); if(state.route==="casper-agentic-workflow") await renderCasperWorkflow(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="casper-demo"){ try{ toast("Submitting demo AI action to Casper Testnet…"); const r=await api.casperDemo(); const modeLabel = r.proof_mode==="real" ? "✓ Real Casper Tx" : "◎ Demo Mode"; toast(`${modeLabel}: ${r.action_summary?.slice(0,60)}…`,"success"); if(state.route==="casper-agentic-workflow") await renderCasperWorkflow(); }catch(error){ console.error("[Casper] demo error:",error); const msg=error?.data?.detail||error?.message||"Unknown error"; toast(`Casper demo failed: ${msg}`,"error"); } return; }
   if(action==="casper-new-action"){ renderCasperNewActionModal(); return; }
   const casperCard=event.target.closest(".casper-action-card"); if(casperCard && casperCard.dataset.actionId){ const id=casperCard.dataset.actionId; try{ const detail=await api.casperAction(id); const c=detail.casper||{}; el("#modal-root").innerHTML=`<div class="modal-overlay" data-dismiss-modal><div class="modal" style="max-width:560px" role="dialog"><div class="modal-head"><h3>Action Detail</h3><button class="icon-button" data-dismiss-modal>${icon("close",16)}</button></div><div style="padding:20px 24px"><p style="font-weight:600;margin:0 0 12px">${esc(detail.action_summary)}</p><table class="data-table" style="font-size:12px"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Action Type</td><td>${esc(detail.action_type)}</td></tr><tr><td>Agent</td><td>${esc(detail.agent_name)}</td></tr><tr><td>Casper Status</td><td>${casperStatusBadge(c.status)}</td></tr><tr><td>Deploy Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.deploy_hash||'—')}</code></td></tr><tr><td>Session Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.session_hash||'—')}</code></td></tr><tr><td>Proof Mode</td><td>${esc(c.proof_mode||'—')}</td></tr><tr><td>Submitted</td><td>${c.submitted_at?formatDate(c.submitted_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</td></tr></tbody></table>${c.explorer_url?`<a href="${esc(c.explorer_url)}" target="_blank" rel="noopener" class="button" style="margin-top:16px;background:#7e57c2;color:#fff;border-color:#7e57c2;font-size:12px">View on cspr.live ↗</a>`:''}</div></div></div>`; el("#modal-root").querySelector("[data-dismiss-modal]").addEventListener("click",e=>{if(e.target.closest(".modal")&&!e.target.dataset.dismissModal)return;el("#modal-root").innerHTML="";}); }catch(err){ toast(err.message,"error"); } return; }
   if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }

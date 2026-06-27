@@ -147,28 +147,55 @@ def _generate_decision(message: str, action_type: str) -> dict:
 # Route handlers
 # ---------------------------------------------------------------------------
 
+def _check_casper_env() -> dict:
+    """Return status of required Casper env vars. Never reveals values."""
+    import os
+    required = {
+        "CASPER_PVK_HEX": "ed25519 private key hex (64 chars)",
+        "CASPER_PBK_HEX": "ed25519 public key hex (64 chars)",
+        "CASPER_CHAIN":    "network name (casper-test for testnet)",
+        "CASPER_RPC_URL":  "Casper node RPC endpoint",
+    }
+    missing, present = [], []
+    for key, desc in required.items():
+        val = os.getenv(key, "")
+        if val:
+            present.append(key)
+        else:
+            missing.append(f"{key} ({desc})")
+    return {"present": present, "missing": missing, "real_mode_available": not missing}
+
+
 def build_router(get_pool, get_current_user):
     """Factory that wires in the app's dependency injectors."""
 
     async def _run_migration(pool: asyncpg.Pool) -> None:
-        """Apply casper schema if not yet present."""
+        """Apply casper schema — raises on failure so _ensure_migration retries next request."""
         import os
         sql_path = os.path.join(os.path.dirname(__file__), "schema_casper.sql")
-        try:
-            async with pool.acquire() as conn:
-                with open(sql_path) as f:
-                    sql = f.read()
-                await conn.execute(sql)
-        except Exception as exc:
-            logger.warning("casper migration skipped: %s", exc)
+        async with pool.acquire() as conn:
+            with open(sql_path) as f:
+                sql = f.read()
+            await conn.execute(sql)
+        logger.info("Casper schema migration applied (or already current)")
 
     _migration_done = False
 
     async def _ensure_migration(pool: asyncpg.Pool) -> None:
         nonlocal _migration_done
-        if not _migration_done:
+        if _migration_done:
+            return
+        try:
             await _run_migration(pool)
             _migration_done = True
+        except Exception as exc:
+            # Log full error and re-raise — do NOT set _migration_done so next request retries.
+            logger.error("Casper migration FAILED (tables may not exist): %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Casper Agentic Workflow: DB migration failed — {exc!s}. "
+                       "Check server logs. Tables: agent_actions, casper_proofs.",
+            ) from exc
 
     @router.post("/action", response_model=ActionResponse)
     async def create_action(
@@ -433,5 +460,28 @@ def build_router(get_pool, get_current_user):
         msg, atype = random.choice(samples)
         fake_req = ActionRequest(user_message=msg, action_type=atype, agent_name="BotNesia Supervisor")
         return await create_action(fake_req, user=user, pool=pool)
+
+    @router.get("/config")
+    async def casper_config(user=Depends(get_current_user)):
+        """Return Casper env var status — shows which vars are missing by name (no values)."""
+        env_status = _check_casper_env()
+        CONTRACT_PKG = "897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0"
+        CONTRACT_HASH = "15009cd4a6489c904b699c0a1f292e7e5557e823e54c236539c9ce9973ee2323"
+        return {
+            "env": env_status,
+            "contract_package_hash": CONTRACT_PKG,
+            "contract_hash": CONTRACT_HASH,
+            "casper_chain": __import__("os").getenv("CASPER_CHAIN", "casper-test"),
+            "casper_rpc_url": __import__("os").getenv("CASPER_RPC_URL", "(not set)"),
+            "explorer_base": "https://testnet.cspr.live",
+            "demo_mode_always_available": True,
+            "real_mode_available": env_status["real_mode_available"],
+            "hint": (
+                "Real mode requires all 4 CASPER_* env vars and a funded testnet account. "
+                "Demo mode works without any configuration."
+                if not env_status["real_mode_available"]
+                else "All env vars set — real Casper Testnet transactions enabled."
+            ),
+        }
 
     return router

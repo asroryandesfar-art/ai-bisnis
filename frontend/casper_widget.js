@@ -40,13 +40,17 @@
       background: '#fff', borderRadius: '12px', padding: '28px 32px',
       maxWidth: '480px', width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,.2)',
     });
+    const isDemo = data.proof_mode === 'demo' || (data.deploy_hash || '').startsWith('demo-');
+    const modeNote = isDemo
+      ? `<p style="margin:0 0 8px;font-size:12px;padding:6px 10px;background:#fff3e0;border-radius:4px;color:#e65100">
+           ◎ Demo mode — deterministic proof hash (real Casper tx unavailable${data.real_mode_error ? ': ' + data.real_mode_error : ''})
+         </p>`
+      : `<p style="margin:0 0 8px;font-size:12px;color:#555">✓ Real transaction on Casper Testnet — verifiable on cspr.live</p>`;
     box.innerHTML = `
       <h3 style="margin:0 0 12px;color:#4527a0;font-size:18px">
-        ✅ Anchored to Casper Testnet
+        ${isDemo ? '◎' : '✅'} ${isDemo ? 'Proof Generated (Demo Mode)' : 'Anchored to Casper Testnet'}
       </h3>
-      <p style="margin:0 0 8px;font-size:13px;color:#555">
-        AI session hash tersimpan permanen di Casper Testnet blockchain.
-      </p>
+      ${modeNote}
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
         <tr><td style="padding:4px 0;color:#777;width:130px">Deploy Hash</td>
             <td style="word-break:break-all;font-family:monospace;color:#222">${data.deploy_hash}</td></tr>
@@ -54,8 +58,8 @@
             <td style="word-break:break-all;font-family:monospace;color:#222">${data.session_hash}</td></tr>
         <tr><td style="padding:4px 0;color:#777">Contract Package</td>
             <td style="word-break:break-all;font-family:monospace;color:#222">${(data.contract_package_hash||'').slice(0,20)}…</td></tr>
-        <tr><td style="padding:4px 0;color:#777">Account</td>
-            <td style="word-break:break-all;font-family:monospace;color:#222">${(data.account_key||'').slice(0,20)}…</td></tr>
+        <tr><td style="padding:4px 0;color:#777">Mode</td>
+            <td style="font-family:monospace;color:#222">${data.proof_mode || 'real'}</td></tr>
       </table>
       <a href="${data.explorer_url}" target="_blank" rel="noopener"
          style="display:inline-block;padding:8px 16px;background:#7e57c2;color:#fff;
@@ -106,7 +110,8 @@
         document.querySelector('[style*="9999"]')?.remove();
       });
     } catch (err) {
-      alert('Casper anchor gagal: ' + err.message);
+      console.error('[Casper] anchor error:', err);
+      alert('Casper anchor gagal — ' + (err.message || 'Unknown error. Cek server logs.'));
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
