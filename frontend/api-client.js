@@ -332,6 +332,12 @@ export const api = {
   learningInsights: (params = {}) => request(`/api/learning/insights${encodeQuery(params)}`),
   learningScan: (days = 90) => request(`/api/learning/scan${encodeQuery({ days })}`, { method: "POST" }),
   updateLearningInsight: (id, status) => request(`/api/learning/insights/${id}`, { method: "PATCH", body: { status } }),
+  casperActions: (limit = 20) => request(`/api/casper/workflow/actions?limit=${limit}`),
+  casperAction: (id) => request(`/api/casper/workflow/action/${id}`),
+  casperCreateAction: (body) => request("/api/casper/workflow/action", { method: "POST", body }),
+  casperDemo: () => request("/api/casper/workflow/demo", { method: "POST" }),
+  casperStats: () => request("/api/casper/workflow/stats"),
+  casperAnchor: (body) => request("/api/casper/anchor", { method: "POST", body }),
 };
 
 export async function settle(label, promise) {

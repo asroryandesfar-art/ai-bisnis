@@ -101,7 +101,7 @@ Cloudflare named tunnel — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 911 tests, full backend coverage
+python3 -m pytest -q   # 928 tests (911 existing + 17 new Casper tests)
 ```
 
 ## Documentation
@@ -115,21 +115,107 @@ python3 -m pytest -q   # 911 tests, full backend coverage
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Auth/JWT/RBAC, rate limiting, audit logging |
 | [`docs/COST_INTELLIGENCE.md`](docs/COST_INTELLIGENCE.md) | Per-tenant AI cost tracking |
 
-## Casper Blockchain Integration
+## Casper Agentic Workflow (Buildathon 2026)
 
-BotNesia anchors AI session hashes to the **Casper Testnet** blockchain for immutable audit trails.
+BotNesia anchors every AI agent business decision to the **Casper Testnet** blockchain as an immutable, auditable proof — no one can alter what an agent decided after the fact.
 
-| | |
+### Demo flow
+
+```
+User describes business scenario
+         │
+         ▼
+BotNesia SupervisorAgent analyzes it
+  (25+ specialist agents collaborate)
+         │
+         ▼
+Typed "Agent Action" created
+  (hire / price_change / marketing / finance / ...)
+         │
+         ▼
+SHA-256 hash computed → deployed to Casper Testnet
+  via AI Proof Registry smart contract (store_proof entry point)
+         │
+         ▼
+Deploy hash returned → stored in casper_proofs table
+         │
+         ▼
+Dashboard card: Action Name · AI Decision · Casper Status · Tx Hash · Timestamp
+         │
+         ▼
+Verify at: https://testnet.cspr.live/deploy/<hash>
+```
+
+### Smart Contract — deployed on Casper Testnet
+
+| Field | Value |
 |---|---|
-| **Endpoint** | `POST /api/casper/anchor` (authenticated) |
-| **What's stored** | SHA-256 of `{org_id, session_id, summary}` as `correlation_id` in a signed Casper transfer deploy |
-| **Network** | Casper 2.0 Testnet (`casper-test`) via `https://node.testnet.casper.network/rpc` |
-| **UI** | "Anchor to Casper" button in the dashboard topbar — shows deploy hash + explorer link on success |
-| **Verify** | Any deploy hash is verifiable at `https://testnet.cspr.live/deploy/<hash>` |
-| **Account** | `012c833458db430f3c7d1cd629dc5206fd2979e7f750c97c75d799948436807783` |
-| **Files** | `casper_anchor.py` · `frontend/casper_widget.js` · `POST /api/casper/anchor` in `main.py` |
+| **Contract hash** | `15009cd4a6489c904b699c0a1f292e7e5557e823e54c236539c9ce9973ee2323` |
+| **Contract package hash** | `897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0` |
+| **Install deploy** | `f176f0b01541848d36834b9dc7d10f0dcfd9b921542c54ea11199ee8670620f8` |
+| **Entry point** | `store_proof(session_hash, ai_action_hash, workflow_hash, invoice_hash, approval_hash, timestamp)` |
+| **Source** | [`casper/contract/src/main.rs`](casper/contract/src/main.rs) |
+| **Explorer** | [testnet.cspr.live/contract-package/897c…](https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0) |
 
-> Why Casper? Every AI agent decision becomes permanently verifiable — no one can alter what an agent decided after the fact. Foundational for auditable autonomous AI.
+### API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/casper/workflow/action` | Record AI decision + anchor to Casper |
+| `GET` | `/api/casper/workflow/actions` | List all anchored actions for the tenant |
+| `GET` | `/api/casper/workflow/action/{id}` | Single action with full proof detail |
+| `GET` | `/api/casper/workflow/stats` | Summary metrics (total, anchored, pending, by type) |
+| `POST` | `/api/casper/workflow/demo` | One-click demo: pre-fill a sample business decision |
+| `POST` | `/api/casper/anchor` | Legacy: anchor an arbitrary session hash |
+
+### Database tables (additive, no existing tables touched)
+
+```sql
+agent_actions   — every AI business decision with typed action_type
+casper_proofs   — deploy_hash, tx_status, explorer_url, proof_mode per action
+```
+Schema: [`casper/schema_casper.sql`](casper/schema_casper.sql)
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `casper_anchor.py` | Core Casper Testnet deploy logic (pycspr, contract call) |
+| `casper/workflow.py` | Agentic workflow: classify → decide → anchor → persist |
+| `casper/schema_casper.sql` | Additive DB migration |
+| `casper/contract/src/main.rs` | Rust smart contract source (AI Proof Registry) |
+| `casper/test_casper_workflow.py` | 17 automated tests |
+| `frontend/casper_widget.js` | "Anchor to Casper" topbar button |
+
+### Local run
+
+```bash
+# Add to .env
+CASPER_PVK_HEX=<ed25519-private-key-hex>
+CASPER_PBK_HEX=<ed25519-public-key-hex>
+CASPER_CHAIN=casper-test
+CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+
+# Run (DB migration runs automatically on first request)
+uvicorn main:app --port 8000
+# Open: http://localhost:8000/casper
+```
+
+> **Demo mode** — if Casper keys are absent or testnet is unreachable, the
+> system falls back to demo mode: a deterministic `demo-<hash>` is generated
+> locally and the UI still shows all status fields. The real mode and demo
+> mode use identical code paths; mode is recorded in `casper_proofs.proof_mode`.
+
+### Compile the smart contract (optional)
+
+```bash
+cd casper/contract
+rustup target add wasm32-unknown-unknown
+cargo build --release --target wasm32-unknown-unknown
+# WASM output: target/wasm32-unknown-unknown/release/ai_proof_registry.wasm
+```
+
+> Why Casper? Every AI agent decision becomes permanently verifiable — auditable by regulators, investors, or customers without trusting BotNesia's servers.
 
 ## Tech stack
 
@@ -163,8 +249,14 @@ ai bisnis/
 │   └── landing.html           #   public marketing page (served at /)
 ├── docs/                     # Architecture, API, Database, Deployment, Security docs
 │   └── hackathon/             #   pitch deck, demo script, diagrams, feature list, roadmap
+├── casper/                   # Casper Agentic Workflow (Buildathon 2026)
+│   ├── workflow.py           #   agentic workflow engine + FastAPI router
+│   ├── schema_casper.sql     #   DB migration (agent_actions, casper_proofs)
+│   ├── contract/             #   Rust smart contract source (AI Proof Registry)
+│   └── test_casper_workflow.py
+├── casper_anchor.py          # Core Casper Testnet deploy logic (pycspr)
 ├── schema.sql / bn_platform/schema_platform.sql   # Full DB schema (idempotent migrations)
-├── test_*.py                 # 911 backend tests, one file per module/feature
+├── test_*.py                 # 928 backend tests, one file per module/feature
 └── requirements.txt
 ```
 
