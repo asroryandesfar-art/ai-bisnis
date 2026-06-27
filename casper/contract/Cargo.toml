@@ -1,0 +1,23 @@
+[package]
+name = "ai-proof-registry"
+version = "1.0.0"
+authors = ["BotNesia <asroryandesfar@gmail.com>"]
+edition = "2021"
+description = "AI Proof Registry — stores immutable AI business-decision proofs on Casper Testnet"
+
+[lib]
+name = "ai_proof_registry"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[dependencies]
+casper-contract = "4"
+casper-types = "4"
+
+[features]
+default = []
+test-support = ["casper-contract/test-support"]
