@@ -161,6 +161,49 @@ def _generate_invoice_number() -> str:
     return f"INV-{now:%Y%m}-{uuid.uuid4().hex[:8].upper()}"
 
 
+# ============================================================
+# CREDIT LEDGER
+# ============================================================
+
+# Nominal top-up yang tersedia (IDR -> kredit konversi 1:1 IDR)
+TOPUP_PACKAGES = [
+    {"amount_idr": 25_000,  "credits": 25_000,  "label": "Rp25.000"},
+    {"amount_idr": 50_000,  "credits": 50_000,  "label": "Rp50.000"},
+    {"amount_idr": 100_000, "credits": 100_000, "label": "Rp100.000"},
+    {"amount_idr": 250_000, "credits": 250_000, "label": "Rp250.000"},
+    {"amount_idr": 500_000, "credits": 500_000, "label": "Rp500.000"},
+]
+
+
+async def get_credit_balance(pool: asyncpg.Pool, org_id: str) -> int:
+    """Hitung saldo kredit dari ledger (sum positif + negatif)."""
+    val = await pool.fetchval(
+        "SELECT COALESCE(SUM(credits), 0) FROM credit_ledger WHERE org_id=$1",
+        org_id,
+    )
+    return int(val or 0)
+
+
+async def add_credits(pool: asyncpg.Pool, *, org_id: str, credits: int,
+                      amount_idr: int, kind: str, description: str,
+                      invoice_id: str | None = None) -> dict:
+    row = await pool.fetchrow(
+        """INSERT INTO credit_ledger (org_id, kind, amount_idr, credits, description, invoice_id)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *""",
+        org_id, kind, amount_idr, credits, description,
+        uuid.UUID(invoice_id) if invoice_id else None,
+    )
+    await pool.execute(
+        """INSERT INTO credit_balances (org_id, balance, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (org_id) DO UPDATE SET
+               balance = credit_balances.balance + $2,
+               updated_at = NOW()""",
+        org_id, credits,
+    )
+    return dict(row)
+
+
 async def create_invoice(
     pool: asyncpg.Pool, *, org_id: str, subscription_id: str | None,
     amount_idr: int, description: str, provider: str | None = None,
@@ -269,28 +312,34 @@ def xendit_verify_callback_token(token: str | None) -> bool:
 # ============================================================
 
 async def activate_subscription(pool: asyncpg.Pool, *, org_id: str, plan_key: str,
-                                 billing_cycle: str = "monthly") -> dict:
+                                 billing_cycle: str = "monthly",
+                                 is_free_trial: bool = False) -> dict:
     plan = await get_plan_by_key(pool, plan_key)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{plan_key}' tidak ditemukan")
     days = 365 if billing_cycle == "yearly" else 30
     period_end = datetime.now(timezone.utc) + timedelta(days=days)
+    trial_ends = datetime.now(timezone.utc) + timedelta(days=30) if is_free_trial else None
+    sub_status = "trialing" if is_free_trial else "active"
     row = await pool.fetchrow(
         """INSERT INTO subscriptions (org_id, plan_id, status, billing_cycle,
                                       current_period_start, current_period_end,
-                                      cancel_at_period_end, canceled_at, trial_ends_at)
-           VALUES ($1, $2, 'active', $3, NOW(), $4, FALSE, NULL, NULL)
+                                      cancel_at_period_end, canceled_at, trial_ends_at,
+                                      is_free_trial)
+           VALUES ($1, $2, $3, $4, NOW(), $5, FALSE, NULL, $6, $7)
            ON CONFLICT (org_id) DO UPDATE SET
                plan_id = EXCLUDED.plan_id,
-               status = 'active',
+               status = EXCLUDED.status,
                billing_cycle = EXCLUDED.billing_cycle,
                current_period_start = NOW(),
                current_period_end = EXCLUDED.current_period_end,
                cancel_at_period_end = FALSE,
                canceled_at = NULL,
+               trial_ends_at = EXCLUDED.trial_ends_at,
+               is_free_trial = EXCLUDED.is_free_trial,
                updated_at = NOW()
            RETURNING *""",
-        org_id, plan["id"], billing_cycle, period_end,
+        org_id, plan["id"], sub_status, billing_cycle, period_end, trial_ends, is_free_trial,
     )
     # sinkronkan kolom legacy organizations.plan agar fitur lama tetap konsisten
     legacy_plan = {"free": "starter", "starter": "starter", "pro": "growth",
@@ -350,6 +399,15 @@ async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str
     cycle = (meta.get("billing_cycle") if isinstance(meta, dict) else None) or "monthly"
     if plan_key:
         await activate_subscription(pool, org_id=invoice["org_id"], plan_key=plan_key, billing_cycle=cycle)
+    topup_credits_amount = meta.get("topup_credits") if isinstance(meta, dict) else None
+    if topup_credits_amount and meta.get("kind") == "credit_topup":
+        await add_credits(
+            pool, org_id=invoice["org_id"],
+            credits=int(topup_credits_amount), amount_idr=int(invoice["amount_idr"]),
+            kind="topup",
+            description=f"Top Up Credit Rp{int(topup_credits_amount):,}".replace(",", "."),
+            invoice_id=str(invoice["id"]),
+        )
     await pool.execute(
         """INSERT INTO audit_logs (org_id, action, resource_type, resource_id, metadata)
            VALUES ($1, 'payment', 'invoice', $2, $3)""",
@@ -366,6 +424,12 @@ class CheckoutReq(BaseModel):
     plan_key:      str
     billing_cycle: str = Field(default="monthly", pattern="^(monthly|yearly)$")
     provider:      str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
+    use_free_trial: bool = False
+
+
+class TopupReq(BaseModel):
+    amount_idr: int = Field(..., ge=25_000, le=5_000_000)
+    provider:   str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
 
 
 class CancelReq(BaseModel):
@@ -412,6 +476,37 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         if not plan:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{body.plan_key}' tidak ditemukan")
         amount = plan["price_yearly_idr"] if body.billing_cycle == "yearly" else plan["price_monthly_idr"]
+
+        # Free trial: plan berbayar + eligible + user meminta trial
+        use_trial = (
+            body.use_free_trial
+            and bool(plan.get("free_trial_eligible"))
+            and body.plan_key != "enterprise"
+            and amount > 0
+        )
+        if use_trial:
+            # Cek apakah org ini sudah pernah trial sebelumnya
+            had_trial = await pool.fetchval(
+                "SELECT COUNT(*) FROM subscriptions WHERE org_id=$1 AND is_free_trial=TRUE",
+                user["org_id"],
+            )
+            if had_trial:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Free trial 1 bulan hanya berlaku sekali. Akun Anda sudah pernah menggunakan trial.",
+                )
+            sub = await activate_subscription(
+                pool, org_id=user["org_id"], plan_key=body.plan_key,
+                billing_cycle=body.billing_cycle, is_free_trial=True,
+            )
+            await write_audit_log(
+                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                action="plan_change", resource_type="subscription", resource_id=str(sub["id"]),
+                metadata={"plan_key": body.plan_key, "billing_cycle": body.billing_cycle,
+                          "requires_payment": False, "free_trial": True},
+            )
+            return {"requires_payment": False, "free_trial": True, "subscription": sub}
+
         if amount <= 0:
             # Plan gratis: aktifkan langsung tanpa proses pembayaran
             sub = await activate_subscription(pool, org_id=user["org_id"], plan_key=body.plan_key,
@@ -535,6 +630,111 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             user["org_id"], limit, offset,
         )
         return {"payments": [dict(r) for r in rows]}
+
+    @router.get("/credits")
+    async def get_credits(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        balance = await get_credit_balance(pool, user["org_id"])
+        rows = await pool.fetch(
+            """SELECT id, kind, amount_idr, credits, description, created_at
+               FROM credit_ledger WHERE org_id=$1 ORDER BY created_at DESC LIMIT 20""",
+            user["org_id"],
+        )
+        return {
+            "balance": balance,
+            "topup_packages": TOPUP_PACKAGES,
+            "history": [dict(r) for r in rows],
+        }
+
+    @router.post("/credits/topup", status_code=status.HTTP_201_CREATED)
+    async def topup_credits(
+        body: TopupReq,
+        user: Annotated[dict, Depends(require_permission("billing.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        # Validasi nominal termasuk dalam paket yang diizinkan
+        valid_amounts = {p["amount_idr"] for p in TOPUP_PACKAGES}
+        if body.amount_idr not in valid_amounts:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Nominal top-up tidak valid. Pilihan: {sorted(valid_amounts)}",
+            )
+        sub = await ensure_subscription(pool, user["org_id"])
+        invoice = await create_invoice(
+            pool, org_id=user["org_id"], subscription_id=sub["id"],
+            amount_idr=body.amount_idr,
+            description=f"Top Up Credit Rp{body.amount_idr:,}".replace(",", "."),
+            provider=("manual" if body.provider == "local" else body.provider),
+        )
+        await pool.execute(
+            "UPDATE invoices SET metadata = metadata || $2::jsonb WHERE id=$1",
+            invoice["id"], json.dumps({"topup_credits": body.amount_idr, "kind": "credit_topup"}),
+        )
+
+        org = await pool.fetchrow("SELECT name FROM organizations WHERE id=$1", user["org_id"])
+        customer_name = (org["name"] if org else None) or user.get("full_name") or "Customer"
+        customer_email = user.get("email") or ""
+
+        if body.provider == "local":
+            if not platform_cfg.local_billing_enabled:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Billing lokal dinonaktifkan")
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    inv = dict(await conn.fetchrow(
+                        "SELECT * FROM invoices WHERE id=$1 FOR UPDATE", invoice["id"],
+                    ))
+                    await _mark_invoice_paid(
+                        conn, inv, provider="manual",
+                        provider_tx_id=f"local-{inv['invoice_number']}",
+                        payment_method="local-development",
+                        raw_payload={"mode": "local", "approved_by": user.get("email")},
+                    )
+                    await add_credits(
+                        conn, org_id=user["org_id"], credits=body.amount_idr,
+                        amount_idr=body.amount_idr, kind="topup",
+                        description=f"Top Up Credit (lokal) Rp{body.amount_idr:,}".replace(",", "."),
+                        invoice_id=str(invoice["id"]),
+                    )
+            return {
+                "requires_payment": False,
+                "local": True,
+                "credits_added": body.amount_idr,
+                "new_balance": await get_credit_balance(pool, user["org_id"]),
+                "invoice_id": str(invoice["id"]),
+            }
+
+        if body.provider == "midtrans":
+            result = await midtrans_create_transaction(
+                order_id=invoice["invoice_number"], amount_idr=body.amount_idr,
+                customer_name=customer_name, customer_email=customer_email,
+            )
+            redirect_url = result["redirect_url"]
+            provider_id = invoice["invoice_number"]
+        else:
+            result = await xendit_create_invoice(
+                external_id=invoice["invoice_number"], amount_idr=body.amount_idr,
+                customer_name=customer_name, customer_email=customer_email,
+                description=invoice["description"],
+            )
+            redirect_url = result["invoice_url"]
+            provider_id = result["id"]
+
+        await pool.execute(
+            "UPDATE invoices SET provider_invoice_id=$1, provider_payment_url=$2 WHERE id=$3",
+            provider_id, redirect_url, invoice["id"],
+        )
+        return {
+            "requires_payment": True,
+            "invoice_id": str(invoice["id"]),
+            "invoice_number": invoice["invoice_number"],
+            "amount_idr": body.amount_idr,
+            "credits_pending": body.amount_idr,
+            "provider": body.provider,
+            "redirect_url": redirect_url,
+        }
 
     # ── Webhook: Midtrans HTTP Notification ────────────────────
     @router.post("/webhooks/midtrans", include_in_schema=False)

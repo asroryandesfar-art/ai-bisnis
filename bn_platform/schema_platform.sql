@@ -139,6 +139,30 @@ CREATE TABLE IF NOT EXISTS plans (
 -- Phase 3 Multimodal: kuota image generation per paket (-1 = unlimited)
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_image_generations_per_month INT NOT NULL DEFAULT 10;
 
+-- Credit & Free Trial system (additive)
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS free_trial_eligible BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_free_trial BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Credit ledger: setiap top-up dan debit dicatat di sini
+CREATE TABLE IF NOT EXISTS credit_ledger (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,               -- 'topup' | 'debit' | 'refund' | 'bonus'
+    amount_idr  BIGINT NOT NULL DEFAULT 0,   -- nilai rupiah top-up (hanya topup/bonus)
+    credits     BIGINT NOT NULL,             -- +N (topup/bonus) atau -N (debit), satuan kredit
+    description TEXT NOT NULL DEFAULT '',
+    invoice_id  UUID REFERENCES invoices(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_org ON credit_ledger(org_id, created_at DESC);
+
+-- Cached balance view (updated by trigger on credit_ledger)
+CREATE TABLE IF NOT EXISTS credit_balances (
+    org_id      UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    balance     BIGINT NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id              UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -1151,6 +1175,13 @@ UPDATE plans SET max_image_generations_per_month = 50  WHERE key = 'starter';
 UPDATE plans SET max_image_generations_per_month = 200 WHERE key = 'pro';
 UPDATE plans SET max_image_generations_per_month = 500 WHERE key = 'business';
 UPDATE plans SET max_image_generations_per_month = -1  WHERE key = 'enterprise';
+
+-- Free trial eligibility (1 bulan gratis untuk paket berbayar non-Enterprise)
+UPDATE plans SET free_trial_eligible = FALSE WHERE key = 'free';
+UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'starter';
+UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'pro';
+UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'business';
+UPDATE plans SET free_trial_eligible = FALSE WHERE key = 'enterprise';
 
 -- Katalog permission (dipakai bn_platform/rbac.py — harus sinkron dgn PERMISSIONS const)
 INSERT INTO permissions (key, category, description) VALUES

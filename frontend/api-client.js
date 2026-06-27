@@ -177,10 +177,14 @@ export const api = {
   plans: () => request("/api/billing/plans"),
   subscription: () => request("/api/billing/subscription"),
   usage: () => request("/api/billing/usage"),
-  checkout: (planKey, billingCycle = "monthly", provider = "midtrans") => request("/api/billing/checkout", {
-    method: "POST", body: { plan_key: planKey, billing_cycle: billingCycle, provider },
+  checkout: (planKey, billingCycle = "monthly", provider = "midtrans", useFreeTrial = false) => request("/api/billing/checkout", {
+    method: "POST", body: { plan_key: planKey, billing_cycle: billingCycle, provider, use_free_trial: useFreeTrial },
   }),
   invoices: () => request("/api/billing/invoices"),
+  credits: () => request("/api/billing/credits"),
+  topupCredits: (amountIdr, provider = "midtrans") => request("/api/billing/credits/topup", {
+    method: "POST", body: { amount_idr: amountIdr, provider },
+  }),
 
   inbox: (params = {}) => request(`/api/inbox${encodeQuery(params)}`),
   inboxSummary: () => request("/api/inbox/summary"),
