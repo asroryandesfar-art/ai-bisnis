@@ -987,6 +987,7 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "CREATE INDEX IF NOT EXISTS idx_meta_wa_message_dedup_created ON meta_wa_message_dedup(created_at);",
         "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL;",
         "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'id';",
         """
         CREATE TABLE IF NOT EXISTS human_queue (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -4609,7 +4610,7 @@ async def chat(
     conv = None
     if conv_id:
         conv = await pool.fetchrow(
-            "SELECT id FROM conversations WHERE id=$1 AND bot_id=$2", conv_id, bot_id
+            "SELECT id, language FROM conversations WHERE id=$1 AND bot_id=$2", conv_id, bot_id
         )
         # Connector internal memakai UUID deterministik agar seluruh pesan user
         # dari channel yang sama tetap berada pada satu memory thread.
@@ -4705,7 +4706,12 @@ async def chat(
     # 7. Resolve effective language and build system prompt
     effective_lang = language_middleware.resolve_language(
         user_message=body.message,
-        agent_language=bot.get("language") or "id",
+        agent_language=bot.get("language"),
+        conversation_language=(conv.get("language") if conv else None),
+    )
+    await pool.execute(
+        "UPDATE conversations SET language=$2 WHERE id=$1",
+        conv_id, effective_lang,
     )
     system = language_middleware.build_system_prompt(
         bot["system_prompt"], relevant_chunks, effective_lang
@@ -4726,12 +4732,18 @@ async def chat(
             if crypto_ctx:
                 market_blocks.append(crypto_ctx)
             if market_blocks:
+                market_title = "Financial market data (real-time)" if effective_lang == "en" else "Data pasar finansial (real-time)"
+                market_instruction = (
+                    "Important instruction: If the user asks about prices, exchange rates, stock moves, or crypto moves, use the market data above as the primary basis for the answer. Do not say you lack real-time access when market data is available."
+                    if effective_lang == "en" else
+                    "Instruksi penting: Jika user bertanya harga/kurs/perubahan saham atau kripto, gunakan data pasar di atas sebagai jawaban utama. Jangan bilang tidak punya akses real-time jika data pasar tersedia."
+                )
                 system = (
                     system
-                    + "\n\n## Data pasar finansial (real-time):\n"
+                    + f"\n\n## {market_title}:\n"
                     + "\n\n".join(market_blocks)
-                    + "\n\nInstruksi penting: Jika user bertanya harga/kurs/perubahan saham atau kripto, gunakan data pasar di atas sebagai jawaban utama. "
-                      "Jangan bilang tidak punya akses real-time jika data pasar tersedia."
+                    + "\n\n"
+                    + market_instruction
                 )
         except Exception:
             market_answer = ""
@@ -4762,15 +4774,18 @@ async def chat(
                 timeout=total_news_timeout,
             )
             if news_ctx:
+                news_title = "Latest news (real-time)" if effective_lang == "en" else "Berita terkini (real-time)"
+                news_instruction = (
+                    "Important instruction: Answer based on the news data above and do not add unavailable facts. For each story, include the title, media/feed, publication date when available, and source URL. If article text is available, use that text and quotes as the primary basis. If only an RSS summary is available, summarize it and briefly state that the full article details are not available. If the user asks for solutions or business impact, clearly separate news facts from your analysis."
+                    if effective_lang == "en" else
+                    "Instruksi penting: Jawab berdasarkan data berita di atas dan jangan menambah fakta yang tidak tersedia. Untuk setiap berita, cantumkan judul, media/feed, tanggal terbit jika ada, dan URL sumber. Jika teks artikel tersedia, gunakan teks dan kutipan sebagai dasar utama. Jika hanya ringkasan RSS yang tersedia, tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
+                )
                 system = (
                     system
-                    + "\n\n## Berita terkini (real-time):\n"
+                    + f"\n\n## {news_title}:\n"
                     + news_ctx
-                    + "\n\nInstruksi penting: Jawab berdasarkan data berita di atas dan jangan menambah fakta yang tidak tersedia. "
-                      "Untuk setiap berita, cantumkan judul, media/feed, tanggal terbit jika ada, dan URL sumber. "
-                      "Jika teks artikel tersedia, gunakan teks dan kutipan sebagai dasar utama. Jika hanya ringkasan RSS yang tersedia, "
-                      "tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. "
-                      "Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
+                    + "\n\n"
+                    + news_instruction
                 )
         except Exception as exc:
             logger.warning(
@@ -4817,21 +4832,20 @@ async def chat(
                 )
                 chat_image_url = img_result["image_url"]
                 chat_image_provider = img_result["provider"]
-                system = (
-                    system
-                    + "\n\n## Gambar berhasil dibuat\n"
-                      "Sistem sudah berhasil membuat gambar sesuai permintaan user dan akan ditampilkan "
-                      "langsung di chat. Tulis jawaban singkat (1-2 kalimat) yang menjelaskan gambar yang "
-                      "dibuat sesuai permintaan user. Jangan bilang tidak bisa membuat gambar."
+                image_note = (
+                    "## Image generated successfully\nThe system has generated the requested image and it will be displayed directly in chat. Write a brief answer (1-2 sentences) explaining the generated image according to the user's request. Do not say you cannot create images."
+                    if effective_lang == "en" else
+                    "## Gambar berhasil dibuat\nSistem sudah berhasil membuat gambar sesuai permintaan user dan akan ditampilkan langsung di chat. Tulis jawaban singkat (1-2 kalimat) yang menjelaskan gambar yang dibuat sesuai permintaan user. Jangan bilang tidak bisa membuat gambar."
                 )
+                system = system + "\n\n" + image_note
             except HTTPException as exc:
                 logger.info("Chat+Image dilewati conv=%s: %s", conv_id, exc.detail)
-                system = (
-                    system
-                    + "\n\n## Gambar gagal dibuat\n"
-                    + f"Sistem gagal membuat gambar ({exc.detail}). Jelaskan ke user secara singkat dan sopan, "
-                      "tanpa istilah teknis."
+                image_error_note = (
+                    f"## Image generation failed\nThe system failed to generate the image ({exc.detail}). Briefly and politely explain this to the user without technical jargon."
+                    if effective_lang == "en" else
+                    f"## Gambar gagal dibuat\nSistem gagal membuat gambar ({exc.detail}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
                 )
+                system = system + "\n\n" + image_error_note
             except Exception as exc:
                 logger.warning("Chat+Image error conv=%s: %s", conv_id, exc)
 
@@ -4857,14 +4871,12 @@ async def chat(
                         goal=body.message, steps=ca_steps, status="pending_approval",
                         created_by=user_meta.get("userId"),
                     )
-                    system = (
-                        system
-                        + "\n\n## Permintaan butuh approval\n"
-                          "Permintaan user melibatkan aksi yang mengubah sesuatu di situs lain "
-                          "(klik/isi form/submit) -- sistem TIDAK menjalankannya otomatis, sudah "
-                          "dicatat dan menunggu persetujuan tim. Beri tahu user secara singkat dan "
-                          "sopan bahwa permintaannya sedang menunggu persetujuan tim sebelum dijalankan."
+                    approval_note = (
+                        "## Request requires approval\nThe user's request involves an action that changes something on another site (clicking, filling a form, or submitting). The system did NOT run it automatically; it has been recorded and is waiting for team approval. Briefly and politely tell the user that the request is waiting for team approval before execution."
+                        if effective_lang == "en" else
+                        "## Permintaan butuh approval\nPermintaan user melibatkan aksi yang mengubah sesuatu di situs lain (klik/isi form/submit) -- sistem TIDAK menjalankannya otomatis, sudah dicatat dan menunggu persetujuan tim. Beri tahu user secara singkat dan sopan bahwa permintaannya sedang menunggu persetujuan tim sebelum dijalankan."
                     )
+                    system = system + "\n\n" + approval_note
                 else:
                     ca_result = await ca_agent.execute_read_only(ca_steps)
                     await computer_agent.create_task(
@@ -4876,24 +4888,23 @@ async def chat(
                     if ca_result.get("success"):
                         chat_ca_screenshot_url = ca_result.get("screenshot_url")
                         screenshot_note = (
-                            "\n\nSistem juga sudah mengambil screenshot halaman ini dan akan "
-                            "menampilkannya langsung di chat -- sebutkan itu, jangan bilang tidak bisa "
-                            "mengambil screenshot." if chat_ca_screenshot_url else ""
+                            "\n\nThe system also captured a screenshot of this page and will display it directly in chat. Mention that; do not say you cannot take screenshots." if (chat_ca_screenshot_url and effective_lang == "en") else
+                            "\n\nSistem juga sudah mengambil screenshot halaman ini dan akan menampilkannya langsung di chat -- sebutkan itu, jangan bilang tidak bisa mengambil screenshot." if chat_ca_screenshot_url else ""
                         )
                         system = (
                             system
-                            + "\n\n## Hasil Computer Agent\n"
-                            + (ca_result.get("text") or "(halaman tidak punya teks yang bisa dibaca -- jangan mengarang isi halaman, katakan jujur kalau tidak ada teks yang terbaca)")
+                            + ("\n\n## Computer Agent result\n" if effective_lang == "en" else "\n\n## Hasil Computer Agent\n")
+                            + (ca_result.get("text") or ("(the page has no readable text. Do not invent page contents; be honest that no text was readable)" if effective_lang == "en" else "(halaman tidak punya teks yang bisa dibaca -- jangan mengarang isi halaman, katakan jujur kalau tidak ada teks yang terbaca)"))
                             + screenshot_note
                             + "\n\n" + computer_agent.COMPUTER_AGENT_DATA_BLOCK
                         )
                     else:
-                        system = (
-                            system
-                            + "\n\n## Computer Agent gagal\n"
-                            + f"Sistem gagal menjalankan permintaan ({ca_result.get('error')}). "
-                              "Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
+                        computer_error_note = (
+                            f"## Computer Agent failed\nThe system failed to run the request ({ca_result.get('error')}). Briefly and politely explain this to the user without technical jargon."
+                            if effective_lang == "en" else
+                            f"## Computer Agent gagal\nSistem gagal menjalankan permintaan ({ca_result.get('error')}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
                         )
+                        system = system + "\n\n" + computer_error_note
             except Exception as exc:
                 logger.warning("Chat+ComputerAgent error conv=%s: %s", conv_id, exc)
 
@@ -4926,11 +4937,15 @@ async def chat(
             "_search_api_key": cfg.search_api_key,
             "_searxng_url": cfg.searxng_url,
             "kb_chunks_count": len(relevant_chunks),
+            "selected_language": effective_lang,
         }
         result = await supervisor.process(intelligence_context)
         answer = result.final_answer
 
-        # Output language validation — regenerate once if language mismatch detected
+        # Output language validation — regenerate if language mismatch detected.
+        # The first retry re-runs the full supervisor with a stronger language rule.
+        # If KB language still pulls the answer off-target, the second pass rewrites
+        # only the draft answer in an isolated language-correction prompt.
         if answer and not language_middleware.validate_output_language(answer, effective_lang):
             logger.info(
                 "Language mismatch (expected=%s) conv=%s — retrying with enforcement suffix",
@@ -4947,6 +4962,37 @@ async def chat(
                     result = retry_result
             except Exception as _lang_retry_exc:
                 logger.warning("Language retry failed: %s", _lang_retry_exc)
+
+        if answer and not language_middleware.validate_output_language(answer, effective_lang):
+            logger.info(
+                "Language mismatch persisted (expected=%s) conv=%s — rewriting final answer only",
+                effective_lang, conv_id,
+            )
+            rewrite_system = (
+                "You are a language correction layer. Rewrite the draft answer entirely in English. "
+                "Preserve the meaning and factual content. Do not add new facts. Return only the rewritten answer."
+                if effective_lang == "en" else
+                "Kamu adalah lapisan koreksi bahasa. Tulis ulang draft jawaban sepenuhnya dalam Bahasa Indonesia. "
+                "Pertahankan makna dan fakta. Jangan menambah fakta baru. Kembalikan hanya jawaban yang sudah ditulis ulang."
+            )
+            rewrite_user = (
+                f"User message:\n{body.message}\n\nDraft answer:\n{answer}"
+                if effective_lang == "en" else
+                f"Pesan pengguna:\n{body.message}\n\nDraft jawaban:\n{answer}"
+            )
+            try:
+                rewritten_answer = (await supervisor.cs_agent._call_llm(
+                    [
+                        {"role": "system", "content": rewrite_system},
+                        {"role": "user", "content": rewrite_user},
+                    ],
+                    temperature=0.1,
+                    max_tokens=1400,
+                )).strip()
+                if rewritten_answer:
+                    answer = rewritten_answer
+            except Exception as _lang_rewrite_exc:
+                logger.warning("Language rewrite failed: %s", _lang_rewrite_exc)
 
         # Shortcut data pasar mentah hanya untuk jalur cepat (standard). Mode Pro
         # sudah menganalisis data pasar via reasoning lens & sintesis jawaban —

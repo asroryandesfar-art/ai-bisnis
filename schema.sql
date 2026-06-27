@@ -379,6 +379,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_channel ON cost_records(tenant_id, c
 -- HUMAN HANDOFF (extends the existing conversation lifecycle; no rebuild)
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'id';
 
 CREATE TABLE IF NOT EXISTS human_queue (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

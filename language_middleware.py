@@ -86,6 +86,141 @@ _EN_WORDS: frozenset[str] = frozenset([
 
 
 # ---------------------------------------------------------------------------
+# Normalization and prompt localization helpers
+# ---------------------------------------------------------------------------
+
+def normalize_language(value: str | None) -> LangCode | None:
+    """Normalize UI/DB language values to the internal language codes."""
+    if value is None:
+        return None
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"en", "eng", "english", "en-us", "en-gb"}:
+        return "en"
+    if normalized in {
+        "id", "ind", "indo", "indonesia", "indonesian", "bahasa indonesia",
+        "bahasa", "id-id",
+    }:
+        return "id"
+    return None
+
+
+def _looks_indonesian(text: str | None) -> bool:
+    if not text or not text.strip():
+        return False
+    lowered = text.lower()
+    if any(phrase in lowered for phrase in (
+        "kamu adalah", "jawab", "bahasa indonesia", "gunakan", "jangan",
+        "knowledge base", "pengguna", "pelanggan", "asisten ai",
+    )):
+        return True
+    return detect_language(text) == "id"
+
+
+def _looks_english(text: str | None) -> bool:
+    if not text or not text.strip():
+        return False
+    lowered = text.lower()
+    if any(phrase in lowered for phrase in (
+        "you are", "answer", "respond", "english", "do not", "customer", "assistant",
+    )):
+        return True
+    return detect_language(text) == "en"
+
+
+def _translate_prompt_to_english(prompt: str) -> str:
+    """
+    Best-effort deterministic localization for tenant prompts.
+
+    This is intentionally conservative: known Indonesian instruction phrases are
+    converted so the selected-language system prompt does not keep raw Indonesian
+    directives that can override the language setting.
+    """
+    replacements = [
+        (r"(?i)kamu adalah", "You are"),
+        (r"(?i)anda adalah", "You are"),
+        (r"(?i)asisten ai", "AI assistant"),
+        (r"(?i)jawab selalu dalam bahasa indonesia\.?", "Respond in English."),
+        (r"(?i)jawab dalam bahasa indonesia\.?", "Respond in English."),
+        (r"(?i)gunakan bahasa indonesia\.?", "Use English."),
+        (r"(?i)bahasa indonesia saja", "English only"),
+        (r"(?i)jangan beralih ke bahasa inggris", "Do not switch away from English"),
+        (r"(?i)jangan", "Do not"),
+        (r"(?i)harus", "must"),
+        (r"(?i)selalu", "always"),
+        (r"(?i)pengguna", "user"),
+        (r"(?i)pelanggan", "customer"),
+        (r"(?i)produk", "product"),
+        (r"(?i)harga", "price"),
+        (r"(?i)sopan", "polite"),
+        (r"(?i)profesional", "professional"),
+        (r"(?i)ramah", "friendly"),
+        (r"(?i)singkat", "concise"),
+        (r"(?i)jelas", "clear"),
+        (r"(?i)bantu", "help"),
+        (r"(?i)tentang", "about"),
+        (r"(?i)dengan", "with"),
+        (r"(?i)dan", "and"),
+    ]
+    translated = prompt
+    for pattern, repl in replacements:
+        translated = re.sub(pattern, repl, translated)
+    if _looks_indonesian(translated):
+        return (
+            "Use the tenant-specific role, tone, boundaries, and business context from the "
+            "configured agent prompt, but express all instructions in English. Do not carry "
+            "over any Indonesian-only language rule from that prompt."
+        )
+    return translated
+
+
+def _translate_prompt_to_indonesian(prompt: str) -> str:
+    replacements = [
+        (r"(?i)you are", "Kamu adalah"),
+        (r"(?i)ai assistant", "asisten AI"),
+        (r"(?i)assistant", "asisten"),
+        (r"(?i)answer in english\.?", "Jawab dalam Bahasa Indonesia."),
+        (r"(?i)respond in english\.?", "Jawab dalam Bahasa Indonesia."),
+        (r"(?i)use english\.?", "Gunakan Bahasa Indonesia."),
+        (r"(?i)english only", "Bahasa Indonesia saja"),
+        (r"(?i)do not", "Jangan"),
+        (r"(?i)must", "harus"),
+        (r"(?i)always", "selalu"),
+        (r"(?i)user", "pengguna"),
+        (r"(?i)customer", "pelanggan"),
+        (r"(?i)product", "produk"),
+        (r"(?i)price", "harga"),
+        (r"(?i)polite", "sopan"),
+        (r"(?i)professional", "profesional"),
+        (r"(?i)friendly", "ramah"),
+        (r"(?i)concise", "ringkas"),
+        (r"(?i)clear", "jelas"),
+        (r"(?i)help", "bantu"),
+        (r"(?i)about", "tentang"),
+        (r"(?i)with", "dengan"),
+        (r"(?i)and", "dan"),
+    ]
+    translated = prompt
+    for pattern, repl in replacements:
+        translated = re.sub(pattern, repl, translated)
+    if _looks_english(translated):
+        return (
+            "Gunakan peran, nada, batasan, dan konteks bisnis khusus dari prompt agent "
+            "yang dikonfigurasi, tetapi nyatakan seluruh instruksi dalam Bahasa Indonesia. "
+            "Jangan membawa aturan English-only dari prompt tersebut."
+        )
+    return translated
+
+
+def localize_custom_prompt(custom_prompt: str | None, language: LangCode) -> str | None:
+    """Return a selected-language version of the tenant prompt, never raw opposite-language text."""
+    if not custom_prompt or not custom_prompt.strip():
+        return None
+    prompt = custom_prompt.strip()
+    if language == "en":
+        return _translate_prompt_to_english(prompt) if _looks_indonesian(prompt) else prompt
+    return _translate_prompt_to_indonesian(prompt) if _looks_english(prompt) else prompt
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -109,12 +244,14 @@ def resolve_language(
                 return lang  # type: ignore[return-value]
 
     # Priority 2: agent language setting
-    if agent_language in ("en", "id"):
-        return agent_language  # type: ignore[return-value]
+    normalized_agent_language = normalize_language(agent_language)
+    if normalized_agent_language:
+        return normalized_agent_language
 
     # Priority 3: conversation memory
-    if conversation_language in ("en", "id"):
-        return conversation_language  # type: ignore[return-value]
+    normalized_conversation_language = normalize_language(conversation_language)
+    if normalized_conversation_language:
+        return normalized_conversation_language
 
     # Priority 4: auto-detect
     return detect_language(text)
@@ -231,7 +368,7 @@ def build_system_prompt(
         else:
             kb_header = kb_footer = ""
 
-    base = custom_prompt or base_default
+    base = localize_custom_prompt(custom_prompt, language) or base_default
 
     context = ""
     if chunks:
