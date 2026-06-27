@@ -2737,10 +2737,128 @@ async function toggleRecording(button) {
   } catch(error) { toast(error.name==="NotAllowedError"?"Izin mikrofon ditolak. Aktifkan izin mic pada browser.":error.message,"error"); }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Casper Agentic Workflow — Buildathon 2026
+// ─────────────────────────────────────────────────────────────────────────────
+function casperStatusBadge(status) {
+  const cfg = {
+    confirmed: ['active', '✓ On-Chain'],
+    pending:   ['warning', '⏳ Pending'],
+    failed:    ['error', '✕ Failed'],
+    demo:      ['info', '◎ Demo Mode'],
+  };
+  const [cls, label] = cfg[status] || ['', status];
+  return `<span class="status-badge ${cls}" style="font-size:11px">${label}</span>`;
+}
+
+function casperActionCard(a) {
+  const typeColors = {hire:'#7e57c2',price_change:'#e91e63',marketing:'#ff9800',finance:'#4caf50',sales:'#2196f3',hr:'#9c27b0',operations:'#607d8b',security:'#f44336',customer_support:'#00bcd4',general:'#757575'};
+  const color = typeColors[a.action_type] || '#757575';
+  const hash = a.deploy_hash ? `<code style="font-size:10px;word-break:break-all;color:#555">${a.deploy_hash.startsWith('demo-') ? a.deploy_hash.slice(0,28)+'…(demo)' : a.deploy_hash.slice(0,32)+'…'}</code>` : '<span style="color:#aaa;font-size:11px">—</span>';
+  const explorerLink = a.explorer_url && !a.deploy_hash?.startsWith('demo-')
+    ? `<a href="${esc(a.explorer_url)}" target="_blank" rel="noopener" style="font-size:11px;color:#7e57c2">View on cspr.live ↗</a>`
+    : '';
+  return `<article class="card casper-action-card" data-action-id="${esc(a.action_id)}" style="border-left:3px solid ${color};cursor:pointer">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+      <span style="background:${color}22;color:${color};font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px">${esc(a.action_type.replace('_',' '))}</span>
+      ${casperStatusBadge(a.casper_status)}
+    </div>
+    <p style="margin:0 0 8px;font-size:13px;font-weight:600;line-height:1.4">${esc(a.action_summary.slice(0,140))}${a.action_summary.length>140?'…':''}</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="flex:1">${hash}${explorerLink ? `<br>${explorerLink}` : ''}</div>
+      <time style="font-size:11px;color:#999;white-space:nowrap">${formatDate(a.created_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time>
+    </div>
+  </article>`;
+}
+
+async function renderCasperWorkflow() {
+  setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}<div class="skeleton" style="height:80px;margin-bottom:16px"></div>${skeletonCards(4)}`);
+  try {
+    const [stats, actions, cfg] = await Promise.all([
+      api.casperStats().catch(() => ({ total_actions:0, anchored_on_chain:0, pending:0, failed:0, action_types:{} })),
+      api.casperActions(20).catch(() => []),
+      api.casperConfig().catch(() => null),
+    ]);
+    const topTypes = Object.entries(stats.action_types || {}).sort(([,a],[,b])=>b-a).slice(0,4).map(([k,v])=>`${k.replace('_',' ')}: <strong>${v}</strong>`).join(' · ') || '—';
+    const statsBar = `<div class="grid grid-4" style="margin-bottom:24px">
+      ${metricCard('Total Actions',formatNumber(stats.total_actions),'AI decisions recorded','agents')}
+      ${metricCard('Anchored On-Chain',formatNumber(stats.anchored_on_chain),'Casper Testnet proofs','security')}
+      ${metricCard('Pending',formatNumber(stats.pending),'Awaiting confirmation','observability')}
+      ${metricCard('Failed',formatNumber(stats.failed),'Proof errors','costs')}
+    </div>`;
+    const envBanner = cfg && cfg.env && cfg.env.missing.length
+      ? `<div style="margin-bottom:16px;padding:10px 14px;background:#fff3e0;border:1px solid #ffb300;border-radius:6px;font-size:12px;color:#e65100">
+           <strong>◎ Demo Mode Active</strong> — missing env vars: <code>${cfg.env.missing.map(m=>m.split(' ')[0]).join(', ')}</code>. Proofs are deterministic hashes (not real Casper transactions). Add vars to .env and restart to enable real mode.
+         </div>`
+      : (cfg && cfg.real_mode_available
+          ? `<div style="margin-bottom:16px;padding:8px 14px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:6px;font-size:12px;color:#2e7d32">
+               <strong>✓ Real Mode Active</strong> — CASPER_* env vars configured, Casper Testnet transactions enabled.
+             </div>`
+          : '');
+    const contractInfo = `${envBanner}<div class="card" style="margin-bottom:20px;padding:14px 18px;border:1px solid #d1c4e9;background:#f3e5f5">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-size:11px;font-weight:700;color:#7e57c2;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">AI Proof Registry Smart Contract · Casper Testnet</div>
+          <code style="font-size:11px;color:#4527a0;word-break:break-all">Package: 897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0</code>
+        </div>
+        <a href="https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0" target="_blank" rel="noopener" class="button" style="font-size:12px;white-space:nowrap;background:#7e57c2;color:#fff;border-color:#7e57c2">View Contract ↗</a>
+      </div>
+      <div style="font-size:11px;color:#777;margin-top:6px">Top action types: ${topTypes}</div>
+    </div>`;
+    const grid = actions.length
+      ? `<div class="page-section-label">Recent AI Actions (${actions.length})</div><div class="grid grid-3" id="casper-actions-grid">${actions.map(casperActionCard).join('')}</div>`
+      : `<div class="page-section-label">Recent AI Actions</div>${emptyState('No actions yet','Click "One-Click Demo" to record your first AI business decision on Casper Testnet.',`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button>`)}`;
+    setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}${statsBar}${contractInfo}${grid}`);
+  } catch(error) { setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored to Casper Testnet.")}${errorState(error.message)}`); }
+}
+
+function renderCasperNewActionModal() {
+  const types = ['general','hire','price_change','marketing','finance','hr','sales','operations','security','customer_support'];
+  el("#modal-root").innerHTML = `<div class="modal-overlay" data-dismiss-modal>
+    <div class="modal" style="max-width:540px" role="dialog" aria-modal="true">
+      <div class="modal-head"><h3>New AI Business Action</h3><button class="icon-button" data-dismiss-modal aria-label="Close">${icon('close',16)}</button></div>
+      <form id="casper-action-form" style="padding:20px 24px">
+        <label class="form-label" style="display:block;margin-bottom:12px">
+          <span>Describe the business scenario or decision</span>
+          <textarea name="user_message" class="input" rows="4" placeholder="e.g. Saya perlu merekrut 3 sales executive baru karena pipeline meningkat 200%..." required style="margin-top:6px;width:100%"></textarea>
+        </label>
+        <label class="form-label" style="display:block;margin-bottom:12px">
+          <span>Action type</span>
+          <select name="action_type" class="select" style="margin-top:6px;width:100%">
+            ${types.map(t=>`<option value="${t}">${t.replace('_',' ')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="form-label" style="display:block;margin-bottom:20px">
+          <span>Agent name</span>
+          <input name="agent_name" class="input" type="text" value="BotNesia Supervisor" style="margin-top:6px;width:100%">
+        </label>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="button" data-dismiss-modal>Cancel</button>
+          <button type="submit" class="button button-primary">Anchor to Casper</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+  el("#modal-root").querySelector("[data-dismiss-modal]").addEventListener("click", e => { if(e.target.closest(".modal") && !e.target.dataset.dismissModal) return; el("#modal-root").innerHTML=""; });
+  el("#casper-action-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled=true; btn.textContent="Anchoring…";
+    try {
+      const result = await api.casperCreateAction(data);
+      el("#modal-root").innerHTML="";
+      toast(`Action anchored! ${result.casper_status === 'confirmed' ? '✓ On Casper Testnet' : '◎ Demo mode'}`, result.casper_status==='confirmed'?'success':'info');
+      await renderCasperWorkflow();
+    } catch(err) { toast(err.message,"error"); btn.disabled=false; btn.textContent="Anchor to Casper"; }
+  });
+}
+
 async function route() {
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo};
-  await renderers[state.route]();
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow};
+  const fn = renderers[state.route] || renderDashboard;
+  await fn();
 }
 
 async function submitCreateAgent() {
@@ -3078,6 +3196,9 @@ document.addEventListener("click", async (event) => {
   if(action==="executive-generate-monthly"){ try{ await api.generateExecutiveReport("monthly"); toast("Monthly executive brief dibuat.","success"); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="analyze-business"){ try{ toast("Menganalisis bisnis Anda...","success"); state.businessAnalysis=await api.analyzeBusiness(); await renderExecutive(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="run-investor-demo"){ await runInvestorDemoSequence(); return; }
+  if(action==="casper-demo"){ try{ toast("Submitting demo AI action to Casper Testnet…"); const r=await api.casperDemo(); const modeLabel = r.proof_mode==="real" ? "✓ Real Casper Tx" : "◎ Demo Mode"; toast(`${modeLabel}: ${r.action_summary?.slice(0,60)}…`,"success"); if(state.route==="casper-agentic-workflow") await renderCasperWorkflow(); }catch(error){ console.error("[Casper] demo error:",error); const msg=error?.data?.detail||error?.message||"Unknown error"; toast(`Casper demo failed: ${msg}`,"error"); } return; }
+  if(action==="casper-new-action"){ renderCasperNewActionModal(); return; }
+  const casperCard=event.target.closest(".casper-action-card"); if(casperCard && casperCard.dataset.actionId){ const id=casperCard.dataset.actionId; try{ const detail=await api.casperAction(id); const c=detail.casper||{}; el("#modal-root").innerHTML=`<div class="modal-overlay" data-dismiss-modal><div class="modal" style="max-width:560px" role="dialog"><div class="modal-head"><h3>Action Detail</h3><button class="icon-button" data-dismiss-modal>${icon("close",16)}</button></div><div style="padding:20px 24px"><p style="font-weight:600;margin:0 0 12px">${esc(detail.action_summary)}</p><table class="data-table" style="font-size:12px"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Action Type</td><td>${esc(detail.action_type)}</td></tr><tr><td>Agent</td><td>${esc(detail.agent_name)}</td></tr><tr><td>Casper Status</td><td>${casperStatusBadge(c.status)}</td></tr><tr><td>Deploy Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.deploy_hash||'—')}</code></td></tr><tr><td>Session Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.session_hash||'—')}</code></td></tr><tr><td>Proof Mode</td><td>${esc(c.proof_mode||'—')}</td></tr><tr><td>Submitted</td><td>${c.submitted_at?formatDate(c.submitted_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</td></tr></tbody></table>${c.explorer_url?`<a href="${esc(c.explorer_url)}" target="_blank" rel="noopener" class="button" style="margin-top:16px;background:#7e57c2;color:#fff;border-color:#7e57c2;font-size:12px">View on cspr.live ↗</a>`:''}</div></div></div>`; el("#modal-root").querySelector("[data-dismiss-modal]").addEventListener("click",e=>{if(e.target.closest(".modal")&&!e.target.dataset.dismissModal)return;el("#modal-root").innerHTML="";}); }catch(err){ toast(err.message,"error"); } return; }
   if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
