@@ -171,6 +171,12 @@ button,input,select,textarea{font:inherit}button{color:inherit}a{color:inherit;t
 .billing-usage-bar span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,var(--brand),var(--cyan));transition:width .5s ease}
 .billing-usage-item.near-limit .billing-usage-bar span{background:linear-gradient(90deg,var(--amber),#ffa040)}
 .billing-usage-item.at-limit .billing-usage-bar span{background:var(--red)}
+/* Free trial badge */
+.billing-trial-badge{display:inline-block;margin:4px 0 12px;padding:3px 10px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1px solid #66bb6a;border-radius:12px;font-size:10px;font-weight:700;color:#2e7d32;letter-spacing:.03em}
+/* Trial eyebrow */
+.billing-plan-eyebrow.is-trial{color:#ff8f00;background:rgba(255,143,0,.08);padding:3px 7px;border-radius:4px;display:inline-block}
+/* Consistent card height for 4-col plan grid */
+.billing-plans-grid .billing-plan-card{height:100%;box-sizing:border-box}
 @media(max-width:1180px){.billing-plans-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.billing-plans-grid{grid-template-columns:1fr}}
 

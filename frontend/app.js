@@ -1887,54 +1887,154 @@ async function renderTeam() {
 
 async function renderBilling() {
   loadingPage(t('billing.title'), t('billing.subtitle'));
-  const [plansResult, subResult, usageResult, invoicesResult] = await Promise.all([
+  const [plansResult, subResult, usageResult, invoicesResult, creditsResult] = await Promise.all([
     cachedSettle("plans", () => api.plans(), 300),
     cachedSettle("subscription", () => api.subscription(), 120),
     cachedSettle("usage", () => api.usage(), 45),
     cachedSettle("invoices", () => api.invoices(), 60),
+    settle("credits", api.credits()),
   ]);
   state.plans = plansResult.ok ? plansResult.data.plans || [] : [];
   state.subscription = subResult.ok ? subResult.data : state.subscription;
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
+  const credits = creditsResult.ok ? creditsResult.data : { balance: 0, topup_packages: [], history: [] };
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
   const currentStatus = state.subscription?.subscription?.status || state.org?.billing_status || 'active';
+  const isTrial = state.subscription?.subscription?.is_free_trial || currentStatus === 'trialing';
+  const trialEnds = state.subscription?.subscription?.trial_ends_at;
 
-  // ── Plan cards ──────────────────────────────────────────────────────────
-  const planOrder = ['free','standard','pro','enterprise'];
+  // ── Plan cards (Free, Starter, Pro, Business) in 4-col grid + Enterprise row ──
+  const planOrder = ['free','starter','pro','business','enterprise'];
   const sortedPlans = [...state.plans].sort((a, b) => planOrder.indexOf(a.key) - planOrder.indexOf(b.key));
-  const planCards = sortedPlans.length ? sortedPlans.map((plan) => {
+  const mainPlans = sortedPlans.filter(p => p.key !== 'enterprise');
+  const enterprisePlan = sortedPlans.find(p => p.key === 'enterprise');
+
+  function buildPlanCard(plan, wide = false) {
     const featureConfig = parseFeatures(plan.features);
     const highlights = Array.isArray(featureConfig.highlights) ? featureConfig.highlights : null;
     const rawFeatures = highlights || (Array.isArray(featureConfig) ? featureConfig : Object.keys(featureConfig).filter((k) => featureConfig[k]));
     const features = rawFeatures.length ? rawFeatures : [
-      `${plan.max_agents === -1 ? t('unlimited') : plan.max_agents} AI agents`,
-      `${plan.max_conversations_per_month === -1 ? t('unlimited') : formatNumber(plan.max_conversations_per_month)} conversations/bulan`,
+      `${plan.max_agents === -1 ? 'Unlimited' : plan.max_agents} AI agents`,
+      `${plan.max_conversations_per_month === -1 ? 'Unlimited' : formatNumber(plan.max_conversations_per_month)} percakapan/bulan`,
     ];
     const description = plan.description || featureConfig.description || 'Paket BotNesia';
     const isCustom = !!featureConfig.custom_pricing;
     const isCurrent = plan.key === currentKey;
     const isPopular = plan.key === 'pro';
-    const eyebrowText = isCurrent ? t('billing.current_plan').toUpperCase() : (isPopular ? t('billing.popular') : t('available_plan'));
-    const eyebrowClass = isCurrent ? 'is-current' : (isPopular ? 'is-popular' : '');
+    const hasTrial = !!plan.free_trial_eligible && !isCustom;
+
+    // eyebrow badge
+    let eyebrowHtml = '';
+    if (isCurrent && isTrial) {
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-trial">TRIAL AKTIF${trialEnds ? ' · Berakhir ' + formatDate(trialEnds) : ''}</div>`;
+    } else if (isCurrent) {
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-current">PAKET AKTIF</div>`;
+    } else if (isPopular) {
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-popular">⭐ PALING POPULER</div>`;
+    } else {
+      eyebrowHtml = `<div class="billing-plan-eyebrow" style="visibility:hidden">—</div>`;
+    }
+
+    // free trial badge
+    const trialBadge = hasTrial && !isCurrent
+      ? `<div class="billing-trial-badge">🎁 Gratis 1 Bulan</div>`
+      : '';
+
     const priceHtml = isCustom
-      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price')}</strong><span>${t('billing.contact_sales_short')}</span></div>`
-      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('per_month')}</span></div>`;
-    const featureListHtml = features.slice(0, 10).map((feat) =>
+      ? `<div class="billing-plan-price"><strong>Custom</strong><span>Hubungi Sales</span></div>`
+      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>/bulan</span></div>`;
+
+    const featureListHtml = features.slice(0, wide ? 6 : 8).map(feat =>
       `<li><span class="billing-feature-check">✓</span>${esc(String(feat).replace(/_/g, ' '))}</li>`
     ).join('');
-    const btnLabel = isCurrent ? t('current_plan_btn') : (isCustom ? t('contact_sales') : t('billing.choose_plan'));
-    const btnClass = isCurrent ? 'button' : 'button button-primary';
-    return `<article class="card billing-plan-card ${isCurrent ? 'is-current' : ''} ${isPopular && !isCurrent ? 'is-popular' : ''}">
-      <div class="billing-plan-eyebrow ${eyebrowClass}">${eyebrowText}</div>
-      ${planBadge(plan.key)}
-      <h3 class="billing-plan-name" style="margin-top:10px">${esc(plan.name)}</h3>
-      <p class="billing-plan-desc">${esc(description)}</p>
-      ${priceHtml}
-      <ul class="billing-feature-list">${featureListHtml}</ul>
-      <button class="${btnClass}" style="width:100%" ${isCurrent ? 'disabled' : ''} data-checkout-plan="${esc(plan.key)}">${btnLabel}</button>
+
+    let btnLabel, btnAction;
+    if (isCurrent) {
+      btnLabel = 'Paket Aktif'; btnAction = '';
+    } else if (isCustom) {
+      btnLabel = 'Hubungi Sales'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+    } else if (hasTrial) {
+      btnLabel = 'Coba Gratis 1 Bulan'; btnAction = `data-checkout-trial="${esc(plan.key)}"`;
+    } else if (plan.key === 'free') {
+      btnLabel = 'Mulai Gratis'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+    } else {
+      btnLabel = 'Pilih Paket'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+    }
+
+    const btnClass = isCurrent ? 'button' : (isPopular && !isCurrent ? 'button button-primary' : 'button button-primary');
+    const wideStyle = wide ? 'grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr 1fr auto;align-items:center;gap:24px' : '';
+    const wideFeat = wide ? `<ul class="billing-feature-list" style="columns:2;gap:0 24px;margin:0">${featureListHtml}</ul>` : `<ul class="billing-feature-list">${featureListHtml}</ul>`;
+
+    return `<article class="card billing-plan-card ${isCurrent ? 'is-current' : ''} ${isPopular && !isCurrent ? 'is-popular' : ''}" style="${wideStyle}">
+      <div>
+        ${eyebrowHtml}
+        <h3 class="billing-plan-name">${esc(plan.name)}</h3>
+        <p class="billing-plan-desc">${esc(description)}</p>
+      </div>
+      <div>
+        ${priceHtml}
+        ${trialBadge}
+      </div>
+      ${wideFeat}
+      <div style="min-width:160px">
+        <button class="${btnClass}" style="width:100%;margin-bottom:${hasTrial && !isCurrent && !isCustom ? '6px' : '0'}" ${isCurrent ? 'disabled' : ''} ${btnAction}>${btnLabel}</button>
+        ${hasTrial && !isCurrent ? `<button class="button" style="width:100%;font-size:11px" data-checkout-plan="${esc(plan.key)}">Langsung Berlangganan</button>` : ''}
+      </div>
     </article>`;
-  }).join('') : `<div class="card" style="grid-column:1/-1;padding:20px">${emptyState(t('billing.plans_empty'), t('billing.plans_empty_sub'), '', 'billing')}</div>`;
+  }
+
+  const mainPlanCards = mainPlans.map(p => buildPlanCard(p)).join('');
+  const enterpriseCard = enterprisePlan ? buildPlanCard(enterprisePlan, true) : '';
+  const pricingNote = `<p style="font-size:11px;color:#888;text-align:center;margin:4px 0 20px">
+    Harga bulanan tetap · Kredit tambahan tersedia saat kuota habis · Free trial 1 bulan hanya berlaku sekali untuk paket berbayar
+  </p>`;
+
+  // ── Credit Balance section ──────────────────────────────────────────────
+  const creditBalance = Number(credits.balance || 0);
+  const topupPackages = (credits.topup_packages || [
+    {amount_idr:25000,label:"Rp25.000"},{amount_idr:50000,label:"Rp50.000"},
+    {amount_idr:100000,label:"Rp100.000"},{amount_idr:250000,label:"Rp250.000"},
+    {amount_idr:500000,label:"Rp500.000"},
+  ]);
+  const creditHistoryRows = (credits.history || []).map(h =>
+    `<tr>
+      <td>${statusBadge(h.kind==='topup'||h.kind==='bonus'?'active':'pending', h.kind)}</td>
+      <td>${esc(h.description)}</td>
+      <td style="font-weight:600;color:${h.credits>0?'#2e7d32':'#c62828'}">${h.credits>0?'+':''}${formatNumber(h.credits)}</td>
+      <td>${idr(h.amount_idr)}</td>
+      <td>${formatDate(h.created_at)}</td>
+    </tr>`
+  ).join('');
+  const topupButtons = topupPackages.map(pkg =>
+    `<button class="button" style="padding:10px 14px;font-size:13px;font-weight:600" data-topup="${pkg.amount_idr}">${pkg.label}</button>`
+  ).join('');
+  const creditSection = `
+  <div class="grid grid-2" style="margin-bottom:20px">
+    <div class="card" style="border:2px solid #e8f5e9">
+      <div class="card-head"><h3>💰 Kredit Tersisa</h3></div>
+      <div style="padding:0 20px 20px">
+        <div style="font-size:32px;font-weight:700;color:#2e7d32;margin-bottom:4px">${idr(creditBalance)}</div>
+        <p style="font-size:12px;color:#666;margin:0 0 16px">Kredit dipakai otomatis saat kuota paket habis. 1 kredit = Rp1 pemakaian AI/percakapan.</p>
+        <p style="font-size:11px;color:#888;margin:0">Kuota paket habis? Tambah kredit tanpa upgrade paket.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>⚡ Beli Kredit Tambahan</h3></div>
+      <div style="padding:0 20px 20px">
+        <p style="font-size:12px;color:#555;margin:0 0 12px">Pilih nominal top up kredit:</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">${topupButtons}</div>
+        <p style="font-size:11px;color:#aaa;margin:0">Kredit tidak ada masa kadaluarsa. Berlaku untuk semua paket.</p>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-head"><h3>📋 Riwayat Top Up Kredit</h3></div>
+    ${creditHistoryRows
+      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Keterangan</th><th>Kredit</th><th>Nominal</th><th>Tanggal</th></tr></thead><tbody>${creditHistoryRows}</tbody></table></div>`
+      : `<div style="padding:20px">${emptyState('Belum ada top up','Kredit tambahan akan muncul di sini setelah top up pertama Anda.',`<button class="button button-primary" data-topup="50000">+ Beli Kredit Rp50.000</button>`,'billing')}</div>`
+    }
+  </div>`;
 
   // ── Usage section ───────────────────────────────────────────────────────
   const usageEntries = Object.entries(state.usage || {});
@@ -1948,6 +2048,7 @@ async function renderBilling() {
     return `<div class="billing-usage-item ${atLimit ? 'at-limit' : nearLimit ? 'near-limit' : ''}">
       <div class="billing-usage-head"><span>${esc(key.replace(/_/g, ' '))}</span><b>${formatNumber(used)} / ${isUnlimited ? '∞' : formatNumber(limit)}</b></div>
       <div class="billing-usage-bar"><span style="width:${pct}%"></span></div>
+      ${atLimit ? `<div style="font-size:11px;color:#c62828;margin-top:4px">Kuota habis — <button class="button" style="font-size:11px;padding:2px 8px" data-topup="50000">Beli Kredit</button></div>` : ''}
     </div>`;
   }).join('') : emptyState(t('billing.usage_empty'), t('billing.usage_empty_sub'), '', 'analytics');
 
@@ -1956,13 +2057,19 @@ async function renderBilling() {
     `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`
   ).join('');
 
-  // ── Non-free plans: show upgrade banner if on free/standard ────────────
-  const needsUpgrade = ['free', 'standard'].includes(currentKey);
-  const bannerHtml = needsUpgrade ? upgradeBanner(t('billing.upgrade_banner_title'), t('billing.upgrade_banner')) : '';
+  const trialBanner = isTrial && trialEnds
+    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;font-size:13px">
+         🎁 <strong>Free Trial Aktif</strong> — Paket ${currentKey.charAt(0).toUpperCase()+currentKey.slice(1)} gratis hingga <strong>${formatDate(trialEnds)}</strong>. Setelah masa trial berakhir, billing berjalan sesuai harga paket. <a href="#" style="color:#2e7d32;font-weight:600" data-checkout-plan="${currentKey}">Langsung Aktifkan →</a>
+       </div>`
+    : '';
 
-  setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${currentStatus === 'active' ? 'active' : 'pending'}">${esc(currentStatus)}</span>`)}
-  ${bannerHtml}
-  <div class="billing-plans-grid">${planCards}</div>
+  setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${isTrial ? 'pending' : currentStatus === 'active' ? 'active' : 'pending'}">${esc(isTrial ? 'trial' : currentStatus)}</span>`)}
+  ${trialBanner}
+  <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">Paket Langganan</div>
+  <div class="billing-plans-grid" style="grid-template-columns:repeat(4,1fr)">${mainPlanCards}</div>
+  ${enterpriseCard ? `<div style="margin-top:8px">${enterpriseCard}</div>` : ''}
+  ${pricingNote}
+  ${creditSection}
   <div class="grid grid-2">
     <div class="card">
       <div class="card-head"><h3>${t('billing.usage_title')}</h3><span class="subtle mono" style="font-size:9px">${esc(currentKey.toUpperCase())}</span></div>
@@ -2962,15 +3069,36 @@ async function editKbSop(sopId) {
   catch(error){ toast(error.message,"error"); }
 }
 
-async function checkout(planKey) {
-  if(!confirm(`Continue with the ${planKey} plan?`))return;
+async function checkout(planKey, useFreeTrial = false) {
+  const label = useFreeTrial ? `Mulai free trial 1 bulan paket ${planKey}?` : `Aktifkan paket ${planKey}?`;
+  if(!confirm(label)) return;
   try {
-    const result=await api.checkout(planKey,"monthly","local");
+    const result = await api.checkout(planKey, "monthly", "local", useFreeTrial);
     bustCache("plans","subscription","usage");
-    if(result.redirect_url) location.href=result.redirect_url;
-    else { toast("Subscription activated.","success"); await renderBilling(); }
+    if(result.redirect_url) location.href = result.redirect_url;
+    else {
+      const msg = result.free_trial
+        ? `✓ Free trial 1 bulan paket ${planKey} aktif!`
+        : "Subscription aktif.";
+      toast(msg, "success");
+      await renderBilling();
+    }
   }
-  catch(error){ toast(error.message,"error"); }
+  catch(error){ toast(error.message, "error"); }
+}
+
+async function topupCredits(amountIdr) {
+  if(!confirm(`Top up kredit Rp${Number(amountIdr).toLocaleString('id-ID')}?`)) return;
+  try {
+    const result = await api.topupCredits(Number(amountIdr), "local");
+    bustCache("credits");
+    if(result.redirect_url) location.href = result.redirect_url;
+    else {
+      toast(`✓ Kredit Rp${Number(amountIdr).toLocaleString('id-ID')} berhasil ditambahkan!`, "success");
+      await renderBilling();
+    }
+  }
+  catch(error){ toast(error.message, "error"); }
 }
 
 async function sendPlayground(form) {
@@ -3173,7 +3301,9 @@ document.addEventListener("click", async (event) => {
   const kbSopEdit=event.target.closest("[data-kb-sop-edit]"); if(kbSopEdit){ await editKbSop(kbSopEdit.dataset.kbSopEdit); return; }
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
-  const plan=event.target.closest("[data-checkout-plan]"); if(plan) await checkout(plan.dataset.checkoutPlan);
+  const plan=event.target.closest("[data-checkout-plan]"); if(plan){ await checkout(plan.dataset.checkoutPlan, false); return; }
+  const trialPlan=event.target.closest("[data-checkout-trial]"); if(trialPlan){ await checkout(trialPlan.dataset.checkoutTrial, true); return; }
+  const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();
   if(action==="finance-new-expense") await createExpensePrompt();
   if(action==="finance-ask-ai") await askFinanceAiPrompt();
