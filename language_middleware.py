@@ -248,12 +248,30 @@ def resolve_language(
     if normalized_agent_language:
         return normalized_agent_language
 
-    # Priority 3: conversation memory
+    # Priority 3: auto-detect from current message when signal is clear.
+    # This takes priority over stored conversation language so that a stale "id"
+    # entry from a previous turn never forces Indonesian on an English message.
+    _words = set(re.findall(r"\b[a-z]{2,}\b", text))
+    _id_score = len(_words & _ID_WORDS)
+    _en_score = len(_words & _EN_WORDS)
+    # Strong bilateral signal (≥2 hits for the winning language)
+    if _en_score >= 2 and _en_score > _id_score:
+        return "en"
+    if _id_score >= 2 and _id_score > _en_score:
+        return "id"
+    # Unambiguous one-sided signal: one language has ≥1 hit, the other has zero,
+    # and the message is long enough to be meaningful (≥3 distinct words).
+    if _en_score >= 1 and _id_score == 0 and len(_words) >= 3:
+        return "en"
+    if _id_score >= 1 and _en_score == 0 and len(_words) >= 3:
+        return "id"
+
+    # Priority 4: conversation memory (used when current message is too short/ambiguous)
     normalized_conversation_language = normalize_language(conversation_language)
     if normalized_conversation_language:
         return normalized_conversation_language
 
-    # Priority 4: auto-detect
+    # Priority 5: auto-detect final (even ambiguous short messages)
     return detect_language(text)
 
 

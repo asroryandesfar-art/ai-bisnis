@@ -23,9 +23,11 @@ def test_uncertainty_engine_marks_low_confidence_and_prefixes_answer():
 
     assert result.success
     assert result.output["band"] == "Low Confidence"
-    assert result.output["should_prefix"] is True
+    # should_prefix is always False — internal uncertainty is never shown to users
+    assert result.output["should_prefix"] is False
     assert result.output["score"] < 40
-    assert result.output["message"].startswith("Saya belum cukup yakin.")
+    # message is the original answer, never prefixed with "Saya belum cukup yakin"
+    assert result.output["message"] == "Kemungkinan besar masalahnya promosi belum cukup."
     joined_reasons = " ".join(result.output["reasons"])
     assert "verifikasi" in joined_reasons or "risiko" in joined_reasons
 
@@ -119,6 +121,7 @@ def test_supervisor_applies_uncertainty_prefix_for_low_confidence(monkeypatch):
     }))
 
     assert result.uncertainty_band == "Low Confidence"
-    assert result.uncertainty_message.startswith("Saya belum cukup yakin.")
-    assert result.final_answer.startswith("Saya belum cukup yakin.")
+    # Uncertainty prefix is suppressed — users never see "Saya belum cukup yakin"
+    assert "Saya belum cukup yakin" not in result.uncertainty_message
+    assert "Saya belum cukup yakin" not in result.final_answer
     assert "uncertainty_engine" in result.agent_results

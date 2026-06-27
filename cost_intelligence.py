@@ -8,11 +8,20 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 
-# Groq public pricing, USD per 1M tokens. Override with AI_MODEL_PRICING_JSON.
+# Provider pricing, USD per 1M tokens. Override any entry with AI_MODEL_PRICING_JSON.
 DEFAULT_MODEL_PRICING = {
-    "llama-3.1-8b-instant":                       {"input": Decimal("0.05"),  "output": Decimal("0.08")},
-    "llama-3.3-70b-versatile":                     {"input": Decimal("0.59"),  "output": Decimal("0.79")},
-    "meta-llama/llama-4-scout-17b-16e-instruct":   {"input": Decimal("0.11"),  "output": Decimal("0.34")},
+    # Groq
+    "llama-3.1-8b-instant":                       {"input": Decimal("0.05"),   "output": Decimal("0.08")},
+    "llama-3.3-70b-versatile":                     {"input": Decimal("0.59"),   "output": Decimal("0.79")},
+    "meta-llama/llama-4-scout-17b-16e-instruct":   {"input": Decimal("0.11"),   "output": Decimal("0.34")},
+    # Gemini 2.5
+    "gemini-2.5-flash":                            {"input": Decimal("0.075"),  "output": Decimal("0.30")},
+    "gemini-2.5-flash-preview-05-20":              {"input": Decimal("0.075"),  "output": Decimal("0.30")},
+    "gemini-2.5-pro":                              {"input": Decimal("1.25"),   "output": Decimal("10.00")},
+    "gemini-2.5-pro-preview-06-05":                {"input": Decimal("1.25"),   "output": Decimal("10.00")},
+    # Gemini 1.5 (legacy)
+    "gemini-1.5-flash":                            {"input": Decimal("0.075"),  "output": Decimal("0.30")},
+    "gemini-1.5-pro":                              {"input": Decimal("1.25"),   "output": Decimal("5.00")},
 }
 
 
@@ -36,7 +45,11 @@ def _pricing_registry() -> dict[str, dict[str, Decimal]]:
 def estimate_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> Decimal:
     """Estimate provider cost using USD prices per one million tokens."""
     registry = _pricing_registry()
-    rates = registry.get(model)
+    # Strip provider prefix (e.g. "gemini:gemini-2.5-flash" → "gemini-2.5-flash")
+    bare = model.split(":")[-1] if ":" in model else model
+    rates = registry.get(model) or registry.get(bare)
+    if rates is None:
+        rates = registry.get(bare.split("/")[-1])
     if rates is None:
         rates = registry.get(model.split("/")[-1])
     if rates is None:

@@ -141,8 +141,12 @@ class Settings(BaseSettings):
     image_provider:       str = "replicate"  # replicate | openai | google_imagen | stability | fal
     image_provider_fallback_order: str = "google_imagen,replicate"  # dipakai saat caller TIDAK minta provider spesifik
     openai_api_key:       str = ""
-    google_api_key:       str = ""
-    gemini_model:         str = "gemini-1.5-flash"
+    google_api_key:       str = ""       # legacy name, still read from GOOGLE_API_KEY
+    gemini_api_key:       str = ""       # preferred: GEMINI_API_KEY
+    gemini_model:         str = "gemini-2.5-flash"
+    gemini_pro_model:     str = "gemini-2.5-pro"
+    gemini_timeout:       int = 30
+    gemini_max_retry:     int = 3
     stability_api_key:    str = ""
     fal_api_key:          str = ""
     image_moderation_enabled: bool = True
@@ -152,6 +156,11 @@ class Settings(BaseSettings):
     groq_cheap_model:     str = "llama-3.1-8b-instant"
     groq_base_url:        str = "https://api.groq.com/openai/v1"
     groq_whisper_model:   str = "whisper-large-v3-turbo"
+
+    @property
+    def effective_gemini_api_key(self) -> str:
+        """GEMINI_API_KEY takes priority over legacy GOOGLE_API_KEY."""
+        return self.gemini_api_key or self.google_api_key
 
     # Integrations (optional)
     gmail_client_id:      str = ""
@@ -314,8 +323,11 @@ def should_use_cloud(plan: str, billing_status: str) -> bool:
 
 def get_supervisor(use_cloud: bool) -> SupervisorAgent:
     global _supervisor_cloud
-    if not cfg.groq_api_key:
-        raise RuntimeError("Cloud AI belum dikonfigurasi. Isi GROQ_API_KEY di .env lalu restart server.")
+    if not cfg.effective_gemini_api_key and not cfg.groq_api_key:
+        raise RuntimeError(
+            "Cloud AI belum dikonfigurasi. "
+            "Isi GEMINI_API_KEY (atau GOOGLE_API_KEY) atau GROQ_API_KEY di .env lalu restart server."
+        )
 
     if _supervisor_cloud is None:
         _supervisor_cloud = SupervisorAgent(
@@ -323,8 +335,11 @@ def get_supervisor(use_cloud: bool) -> SupervisorAgent:
             model=cfg.groq_model,
             base_url=(cfg.groq_base_url or "").strip() or None,
             app_url=cfg.app_url,
-            gemini_api_key=cfg.google_api_key,
+            gemini_api_key=cfg.effective_gemini_api_key,
             gemini_model=cfg.gemini_model,
+            gemini_pro_model=cfg.gemini_pro_model,
+            gemini_timeout=cfg.gemini_timeout,
+            gemini_max_retry=cfg.gemini_max_retry,
         )
 
     return _supervisor_cloud
@@ -338,8 +353,11 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             model=cfg.groq_cheap_model or cfg.groq_model,
             base_url=(cfg.groq_base_url or "").strip() or None,
             app_url=cfg.app_url,
-            gemini_api_key=cfg.google_api_key,
+            gemini_api_key=cfg.effective_gemini_api_key,
             gemini_model=cfg.gemini_model,
+            gemini_pro_model=cfg.gemini_pro_model,
+            gemini_timeout=cfg.gemini_timeout,
+            gemini_max_retry=cfg.gemini_max_retry,
         )
     return _knowledge_builder_agent
 
@@ -2357,7 +2375,7 @@ async def _moderate_prompt(text: str) -> bool:
 def _image_provider_kwargs() -> dict:
     return {
         "openai_api_key": cfg.openai_api_key,
-        "google_api_key": cfg.google_api_key,
+        "google_api_key": cfg.effective_gemini_api_key,
         "stability_api_key": cfg.stability_api_key,
         "fal_api_key": cfg.fal_api_key,
         "replicate_tokens": _get_replicate_tokens(),
@@ -5914,13 +5932,14 @@ async def health():
         "db":      db_ok,
         "schema":  schema_ok if db_ok else False,
         "ai": {
-            "configured": bool(cfg.groq_api_key),
-            "provider": "groq" if cfg.groq_api_key else None,
-            "model": cfg.groq_model if cfg.groq_api_key else None,
-            "fallback_provider": "gemini" if cfg.google_api_key else None,
-            "fallback_model": cfg.gemini_model if cfg.google_api_key else None,
+            "configured": bool(cfg.effective_gemini_api_key or cfg.groq_api_key),
+            "primary_provider": "gemini" if cfg.effective_gemini_api_key else ("groq" if cfg.groq_api_key else None),
+            "primary_model": cfg.gemini_model if cfg.effective_gemini_api_key else (cfg.groq_model if cfg.groq_api_key else None),
+            "pro_model": cfg.gemini_pro_model if cfg.effective_gemini_api_key else None,
+            "fallback_provider": "groq" if (cfg.effective_gemini_api_key and cfg.groq_api_key) else None,
+            "fallback_model": cfg.groq_model if (cfg.effective_gemini_api_key and cfg.groq_api_key) else None,
         },
-        "model":   f"groq:{cfg.groq_model}",
+        "model": f"gemini:{cfg.gemini_model}" if cfg.effective_gemini_api_key else f"groq:{cfg.groq_model}",
         "version": "1.0.0",
     }
 

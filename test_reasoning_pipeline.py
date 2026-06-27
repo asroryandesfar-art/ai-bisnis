@@ -156,7 +156,7 @@ def test_supervisor_pro_mode_complex_query(monkeypatch):
                 "conclusion": "Tren bearish jangka pendek dengan support di 55k.",
                 "confidence": 70,
             }
-        if "konsultan ahli" in system:
+        if "konsultan" in system and ("eksekutif" in system or "McKinsey" in system or "executive" in system.lower()):
             return {
                 "answer": "BTC turun dari 70k ke 59k karena tekanan jual besar dan sentimen pasar negatif.",
                 "confidence_score": 72,
@@ -278,7 +278,7 @@ def test_supervisor_pro_mode_retry_loop_stops_at_max_retries(monkeypatch):
             return {"agents_to_invoke": ["market_technical"], "execution_strategy": "parallel", "synthesis_focus": "fokus"}
         if "analis pasar teknikal" in system:
             return {"analysis": "Analisis pasar.", "conclusion": "Tren bearish.", "confidence": 60}
-        if "konsultan ahli" in system:
+        if "konsultan" in system and ("eksekutif" in system or "McKinsey" in system or "executive" in system.lower()):
             synth_calls["n"] += 1
             return {
                 "answer": f"Jawaban versi {synth_calls['n']}.",
@@ -301,7 +301,8 @@ def test_supervisor_pro_mode_retry_loop_stops_at_max_retries(monkeypatch):
     assert synth_calls["n"] == MAX_RETRIES + 1
     assert verify_calls["n"] == MAX_RETRIES + 1
     assert result.uncertainty_band == "Low Confidence"
-    assert result.final_answer.startswith("Saya belum cukup yakin.")
+    # Uncertainty prefix is suppressed — users never see internal confidence disclaimers
+    assert "Saya belum cukup yakin" not in result.final_answer
     assert f"Jawaban versi {MAX_RETRIES + 1}." in result.final_answer
 
 
@@ -319,7 +320,7 @@ def test_supervisor_pro_mode_retry_loop_stops_when_verified(monkeypatch):
             return {"agents_to_invoke": ["market_technical"], "execution_strategy": "parallel", "synthesis_focus": "fokus"}
         if "analis pasar teknikal" in system:
             return {"analysis": "Analisis pasar.", "conclusion": "Tren bearish.", "confidence": 60}
-        if "konsultan ahli" in system:
+        if "konsultan" in system and ("eksekutif" in system or "McKinsey" in system or "executive" in system.lower()):
             synth_calls["n"] += 1
             return {
                 "answer": f"Jawaban versi {synth_calls['n']}.",
@@ -366,7 +367,7 @@ def test_risk_lens_receives_cross_context_from_other_lenses(monkeypatch):
         if "analis risiko" in system:
             captured["messages"] = messages
             return {"analysis": "Risiko utama adalah volatilitas tinggi.", "conclusion": "Waspadai volatilitas lanjutan.", "confidence": 55}
-        if "konsultan ahli" in system:
+        if "konsultan" in system and ("eksekutif" in system or "McKinsey" in system or "executive" in system.lower()):
             return {"answer": "Jawaban lengkap.", "confidence_score": 70, "topics": [], "suggested_followup": None, "reasoning_summary": ""}
         if "quality checker" in system:
             return {"verified": True, "confidence_score": 70, "issues": []}
