@@ -70,11 +70,80 @@ class BaseAgent:
         model: str | None = None,
         base_url: str | None = None,
         app_url: str = "https://botnesia.id",
+        gemini_api_key: str | None = None,
+        gemini_model: str | None = None,
     ):
         self.api_key = api_key or ""
         self.model   = model or ""
         self.base_url = base_url or ""
         self.app_url = app_url
+        self.gemini_api_key = gemini_api_key or ""
+        self.gemini_model = gemini_model or "gemini-1.5-flash"
+
+    def _gemini_messages_payload(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        response_format: dict | None = None,
+    ) -> dict:
+        system_parts: list[dict] = []
+        contents: list[dict] = []
+        for msg in messages:
+            role = str(msg.get("role") or "user")
+            content = str(msg.get("content") or "")
+            if not content:
+                continue
+            if role == "system":
+                system_parts.append({"text": content})
+                continue
+            contents.append({
+                "role": "model" if role == "assistant" else "user",
+                "parts": [{"text": content}],
+            })
+        if not contents:
+            contents.append({"role": "user", "parts": [{"text": ""}]})
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        }
+        if response_format and response_format.get("type") == "json_object":
+            generation_config["responseMimeType"] = "application/json"
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": generation_config,
+        }
+        if system_parts:
+            payload["systemInstruction"] = {"parts": system_parts}
+        return payload
+
+    async def _call_gemini(
+        self,
+        messages: list[dict],
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
+        response_format: dict | None = None,
+    ) -> str:
+        if not self.gemini_api_key:
+            raise RuntimeError("GOOGLE_API_KEY kosong. Gemini fallback tidak aktif.")
+        model = self.gemini_model or "gemini-1.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        payload = self._gemini_messages_payload(messages, temperature, max_tokens, response_format)
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(url, params={"key": self.gemini_api_key}, json=payload)
+            resp.raise_for_status()
+            data = resp.json() or {}
+        usage = data.get("usageMetadata") or {}
+        add_token_usage(
+            model=f"gemini:{model}",
+            prompt_tokens=usage.get("promptTokenCount", 0),
+            completion_tokens=usage.get("candidatesTokenCount", 0),
+        )
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return ""
+        parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
+        return "".join(str(part.get("text") or "") for part in parts).strip()
 
     async def _call_llm(
         self,
@@ -104,6 +173,7 @@ class BaseAgent:
             "Content-Type": "application/json",
         }
         max_attempts = 3
+        groq_rate_limited = False
         async with httpx.AsyncClient(timeout=60) as client:
             for model_index, model in enumerate(models):
                 payload = {
@@ -119,15 +189,24 @@ class BaseAgent:
                         resp = await client.post(
                             f"{base_url}/chat/completions", json=payload, headers=headers
                         )
-                        if resp.status_code == 429 and attempt < max_attempts - 1:
-                            await asyncio.sleep(2 ** attempt)
-                            continue
+                        if resp.status_code == 429:
+                            groq_rate_limited = True
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(2 ** attempt)
+                                continue
                         resp.raise_for_status()
                         data = resp.json() or {}
                         break
                     break
-                except httpx.HTTPStatusError:
+                except httpx.HTTPStatusError as exc:
+                    if exc.response is not None and exc.response.status_code == 429:
+                        groq_rate_limited = True
                     if model_index >= len(models) - 1:
+                        if groq_rate_limited and self.gemini_api_key:
+                            return await self._call_gemini(
+                                messages, temperature=temperature, max_tokens=max_tokens,
+                                response_format=response_format,
+                            )
                         raise
         usage = data.get("usage") or {}
         add_token_usage(

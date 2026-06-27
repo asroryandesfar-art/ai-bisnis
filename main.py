@@ -142,6 +142,7 @@ class Settings(BaseSettings):
     image_provider_fallback_order: str = "google_imagen,replicate"  # dipakai saat caller TIDAK minta provider spesifik
     openai_api_key:       str = ""
     google_api_key:       str = ""
+    gemini_model:         str = "gemini-1.5-flash"
     stability_api_key:    str = ""
     fal_api_key:          str = ""
     image_moderation_enabled: bool = True
@@ -322,6 +323,8 @@ def get_supervisor(use_cloud: bool) -> SupervisorAgent:
             model=cfg.groq_model,
             base_url=(cfg.groq_base_url or "").strip() or None,
             app_url=cfg.app_url,
+            gemini_api_key=cfg.google_api_key,
+            gemini_model=cfg.gemini_model,
         )
 
     return _supervisor_cloud
@@ -335,6 +338,8 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             model=cfg.groq_cheap_model or cfg.groq_model,
             base_url=(cfg.groq_base_url or "").strip() or None,
             app_url=cfg.app_url,
+            gemini_api_key=cfg.google_api_key,
+            gemini_model=cfg.gemini_model,
         )
     return _knowledge_builder_agent
 
@@ -5912,6 +5917,8 @@ async def health():
             "configured": bool(cfg.groq_api_key),
             "provider": "groq" if cfg.groq_api_key else None,
             "model": cfg.groq_model if cfg.groq_api_key else None,
+            "fallback_provider": "gemini" if cfg.google_api_key else None,
+            "fallback_model": cfg.gemini_model if cfg.google_api_key else None,
         },
         "model":   f"groq:{cfg.groq_model}",
         "version": "1.0.0",

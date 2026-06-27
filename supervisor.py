@@ -333,20 +333,32 @@ class SupervisorAgent:
         model: str | None = None,
         base_url: str | None = None,
         app_url: str = "https://botnesia.id",
+        gemini_api_key: str | None = None,
+        gemini_model: str | None = None,
     ):
         # Cloud-only: api_key dipakai untuk LLM dan memori.
-        kwargs = {"api_key": api_key or "", "base_url": base_url or "", "app_url": app_url}
+        provider_kwargs = {
+            "api_key": api_key or "",
+            "base_url": base_url or "",
+            "app_url": app_url,
+        }
+        kwargs = {
+            **provider_kwargs,
+            "gemini_api_key": gemini_api_key or "",
+            "gemini_model": gemini_model or "gemini-1.5-flash",
+        }
         strong_model = model or "meta-llama/llama-4-scout-17b-16e-instruct"
         # Agen internal pipeline pakai model ringan untuk hemat RPD quota Groq.
         # Hanya cs_agent (jawaban utama ke user) yang pakai strong model.
         fast_kwargs = {**kwargs, "model": "llama-3.1-8b-instant"}
         strong_kwargs = {**kwargs, "model": strong_model}
+        memory_kwargs = {**provider_kwargs, "model": "llama-3.1-8b-instant"}
 
         self.cs_agent        = CSAgent(**strong_kwargs)
         self.escalation_agent = EscalationAgent(**fast_kwargs)
         self.analytics_agent  = AnalyticsAgent(**fast_kwargs)
         self.trainer_agent    = TrainerAgent(**fast_kwargs)
-        self.memory_agent     = MemoryAgent(**fast_kwargs)
+        self.memory_agent     = MemoryAgent(**memory_kwargs)
 
         # Intelligence Platform — agen ringan (read-mostly di jalur realtime,
         # penulisan berat dilakukan async setelah jawaban terkirim)
