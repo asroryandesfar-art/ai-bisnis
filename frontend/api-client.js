@@ -338,6 +338,7 @@ export const api = {
   casperDemo: () => request("/api/casper/workflow/demo", { method: "POST" }),
   casperStats: () => request("/api/casper/workflow/stats"),
   casperAnchor: (body) => request("/api/casper/anchor", { method: "POST", body }),
+  casperConfig: () => request("/api/casper/workflow/config"),
 };
 
 export async function settle(label, promise) {

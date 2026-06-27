@@ -5971,20 +5971,45 @@ async def casper_anchor(
     req: CasperAnchorRequest,
     user=Depends(get_current_user),
 ):
-    """Submit a signed Casper transfer deploy whose correlation_id encodes the
-    SHA-256 of the AI session data. Returns deploy_hash verifiable on
-    testnet.cspr.live."""
+    """Submit a signed Casper deploy to store an AI session proof on Casper Testnet.
+    Falls back to demo mode (deterministic hash, no real transaction) if the
+    testnet is unreachable, pycspr is missing, or the account has no balance."""
+    import hashlib, time as _time
+    org_id = str(user["org_id"])
+
+    # ── real mode ──────────────────────────────────────────────────────────
     try:
         import casper_anchor as _ca
         result = await _ca.anchor_session(
-            org_id=str(user["org_id"]),
+            org_id=org_id,
             session_id=req.session_id,
             summary=req.summary,
         )
+        result.setdefault("proof_mode", "real")
         return result
     except Exception as exc:
-        logger.error("casper_anchor error: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc))
+        real_error = str(exc)
+        logger.warning("casper_anchor real-mode failed (falling back to demo): %s", real_error)
+
+    # ── demo fallback ──────────────────────────────────────────────────────
+    # Always succeeds: deterministic proof without a live blockchain call.
+    session_hash = hashlib.sha256(
+        f"{org_id}:{req.session_id}:{req.summary}".encode()
+    ).hexdigest()
+    deploy_hash = "demo-" + hashlib.sha256(
+        f"{session_hash}:{int(_time.time() // 60)}".encode()  # stable per minute
+    ).hexdigest()[:56]
+    CONTRACT_PKG = "897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0"
+    return {
+        "deploy_hash": deploy_hash,
+        "session_hash": session_hash,
+        "contract_package_hash": CONTRACT_PKG,
+        "account_key": "demo-mode",
+        "explorer_url": f"https://testnet.cspr.live/deploy/{deploy_hash}",
+        "contract_url": f"https://testnet.cspr.live/contract-package/{CONTRACT_PKG}",
+        "proof_mode": "demo",
+        "real_mode_error": real_error[:200],
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
