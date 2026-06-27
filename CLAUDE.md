@@ -59,7 +59,7 @@ PostgreSQL 16 + pgvector, accessed via `asyncpg` raw SQL (no ORM). Three schema 
 - `intelligence/schema_intelligence.sql` — conversation memory, FAQ, sales patterns
 - `bn_platform/schema_platform.sql` — RBAC, billing, omnichannel, AI Workforce tables
 
-Pool created in `lifespan()`, injected as `pool` into route handlers. **JSONB columns receive `dict` directly — asyncpg serializes; never pass `json.dumps()`.**
+Pool created in `lifespan()`, injected as `pool` into route handlers. **JSONB columns require `json.dumps()` — pass `json.dumps(my_dict)` for JSONB parameters, not a raw `dict`.**
 
 Every query is scoped by `org_id`. Never write cross-org queries.
 

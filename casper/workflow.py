@@ -228,7 +228,7 @@ def build_router(get_pool, get_current_user):
                 req.agent_name,
                 action_type,
                 decision["summary"],
-                decision["detail"],
+                json.dumps(decision["detail"]),
                 req.user_message,
                 now,
             )
