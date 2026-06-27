@@ -72,13 +72,22 @@ class BaseAgent:
         app_url: str = "https://botnesia.id",
         gemini_api_key: str | None = None,
         gemini_model: str | None = None,
+        gemini_pro_model: str | None = None,
+        gemini_timeout: float = 30.0,
+        gemini_max_retry: int = 3,
     ):
         self.api_key = api_key or ""
         self.model   = model or ""
         self.base_url = base_url or ""
         self.app_url = app_url
         self.gemini_api_key = gemini_api_key or ""
-        self.gemini_model = gemini_model or "gemini-1.5-flash"
+        self.gemini_model = gemini_model or "gemini-2.5-flash"
+        self.gemini_pro_model = gemini_pro_model or "gemini-2.5-pro"
+        self.gemini_timeout = gemini_timeout
+        self.gemini_max_retry = gemini_max_retry
+
+        # Lazy-initialized router (set on first _call_llm if gemini key is set)
+        self._router = None
 
     def _gemini_messages_payload(
         self,
@@ -117,33 +126,40 @@ class BaseAgent:
             payload["systemInstruction"] = {"parts": system_parts}
         return payload
 
+    def _get_gemini_provider(self):
+        """Lazy-init GeminiProvider using this agent's config."""
+        from ai_providers.gemini import GeminiProvider
+        return GeminiProvider(
+            api_key=self.gemini_api_key,
+            model=self.gemini_model,
+            pro_model=self.gemini_pro_model,
+            timeout=self.gemini_timeout,
+            max_retries=self.gemini_max_retry,
+        )
+
     async def _call_gemini(
         self,
         messages: list[dict],
         temperature: float = 0.3,
         max_tokens: int = 1024,
         response_format: dict | None = None,
+        *,
+        model: str | None = None,
     ) -> str:
         if not self.gemini_api_key:
-            raise RuntimeError("GOOGLE_API_KEY kosong. Gemini fallback tidak aktif.")
-        model = self.gemini_model or "gemini-1.5-flash"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        payload = self._gemini_messages_payload(messages, temperature, max_tokens, response_format)
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(url, params={"key": self.gemini_api_key}, json=payload)
-            resp.raise_for_status()
-            data = resp.json() or {}
-        usage = data.get("usageMetadata") or {}
-        add_token_usage(
-            model=f"gemini:{model}",
-            prompt_tokens=usage.get("promptTokenCount", 0),
-            completion_tokens=usage.get("candidatesTokenCount", 0),
+            raise RuntimeError("GOOGLE_API_KEY / GEMINI_API_KEY kosong. Gemini tidak aktif.")
+        from ai_providers.types import LLMRequest
+        req = LLMRequest(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
         )
-        candidates = data.get("candidates") or []
-        if not candidates:
-            return ""
-        parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
-        return "".join(str(part.get("text") or "") for part in parts).strip()
+        provider = self._get_gemini_provider()
+        resp = await provider.complete(req, model=model)
+        if resp.error:
+            raise RuntimeError(f"Gemini error: {resp.error}")
+        return resp.content
 
     async def _call_llm(
         self,
@@ -151,20 +167,51 @@ class BaseAgent:
         temperature: float = 0.3,
         max_tokens:  int   = 1024,
         response_format: dict | None = None,
+        *,
+        tier: str = "standard",
+        task_type: str = "chat",
     ) -> str:
         """
-        Cloud LLM call via Groq chat completions.
+        Smart LLM call: Gemini primary (Flash/Pro by tier) when key is set,
+        Groq fallback otherwise or on Gemini failure.
         """
-        if not self.api_key:
-            raise RuntimeError("API key kosong. Set GROQ_API_KEY untuk mode cloud.")
+        # ── Gemini primary path ──────────────────────────────────────────────
+        if self.gemini_api_key:
+            from ai_providers.gemini import GeminiProvider
+            from ai_providers.types import LLMRequest, PRO_TASK_TYPES
+            use_pro = (tier == "pro") or (task_type.lower() in PRO_TASK_TYPES)
+            model = self.gemini_pro_model if use_pro else self.gemini_model
+            provider = self._get_gemini_provider()
+            req = LLMRequest(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+            try:
+                resp = await provider.complete(req, model=model)
+                if resp.error is None:
+                    return resp.content
+                # Gemini returned an error — fall through to Groq
+            except Exception:
+                pass
 
+            # Groq fallback after Gemini failure
+            if not self.api_key:
+                raise RuntimeError(
+                    "Gemini tidak dapat dihubungi dan GROQ_API_KEY tidak tersedia."
+                )
+
+        elif not self.api_key:
+            raise RuntimeError("API key kosong. Set GEMINI_API_KEY atau GROQ_API_KEY.")
+
+        # ── Groq path ────────────────────────────────────────────────────────
         base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
         default_model = self.model or "meta-llama/llama-4-scout-17b-16e-instruct"
         selected_model = routed_model(default_model)
         models = [selected_model]
         if selected_model != default_model:
             models.append(default_model)
-        # Selalu tambah 8b sebagai last-resort fallback saat model utama rate-limited
         _FAST_FALLBACK = "llama-3.1-8b-instant"
         if _FAST_FALLBACK not in models:
             models.append(_FAST_FALLBACK)
@@ -173,7 +220,6 @@ class BaseAgent:
             "Content-Type": "application/json",
         }
         max_attempts = 3
-        groq_rate_limited = False
         async with httpx.AsyncClient(timeout=60) as client:
             for model_index, model in enumerate(models):
                 payload = {
@@ -190,7 +236,6 @@ class BaseAgent:
                             f"{base_url}/chat/completions", json=payload, headers=headers
                         )
                         if resp.status_code == 429:
-                            groq_rate_limited = True
                             if attempt < max_attempts - 1:
                                 await asyncio.sleep(2 ** attempt)
                                 continue
@@ -199,14 +244,7 @@ class BaseAgent:
                         break
                     break
                 except httpx.HTTPStatusError as exc:
-                    if exc.response is not None and exc.response.status_code == 429:
-                        groq_rate_limited = True
                     if model_index >= len(models) - 1:
-                        if groq_rate_limited and self.gemini_api_key:
-                            return await self._call_gemini(
-                                messages, temperature=temperature, max_tokens=max_tokens,
-                                response_format=response_format,
-                            )
                         raise
         usage = data.get("usage") or {}
         add_token_usage(

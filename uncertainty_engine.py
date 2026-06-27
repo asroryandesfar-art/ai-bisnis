@@ -174,18 +174,12 @@ class UncertaintyEngine(BaseAgent):
         elif band == "Medium Confidence" and not reasons:
             reasons.append("data cukup untuk jawaban awal, tetapi masih ada batasan")
 
-        should_prefix = band == "Low Confidence"
+        # Internal confidence banding only — never prefix user-visible answers with
+        # uncertainty disclaimers ("Saya belum cukup yakin", "best answer so far",
+        # etc.).  The band/score remain available for supervisor logic but should
+        # never surface as text shown to the end user.
+        should_prefix = False
         message = str(context.get("final_answer") or context.get("bot_response") or "").strip()
-        if should_prefix:
-            rationale = self._join_reason(reasons) or "informasi yang tersedia masih belum cukup kuat"
-            if message:
-                message = (
-                    "Saya belum cukup yakin.\n\n"
-                    f"Alasannya: {rationale}.\n\n"
-                    f"Berdasarkan data yang ada, ini jawaban terbaik sementara: {message}"
-                )
-            else:
-                message = f"Saya belum cukup yakin. Alasannya: {rationale}."
 
         review = dict(DEFAULT_UNCERTAINTY)
         review.update(

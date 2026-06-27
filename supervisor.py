@@ -335,6 +335,9 @@ class SupervisorAgent:
         app_url: str = "https://botnesia.id",
         gemini_api_key: str | None = None,
         gemini_model: str | None = None,
+        gemini_pro_model: str | None = None,
+        gemini_timeout: float = 30.0,
+        gemini_max_retry: int = 3,
     ):
         # Cloud-only: api_key dipakai untuk LLM dan memori.
         provider_kwargs = {
@@ -345,7 +348,10 @@ class SupervisorAgent:
         kwargs = {
             **provider_kwargs,
             "gemini_api_key": gemini_api_key or "",
-            "gemini_model": gemini_model or "gemini-1.5-flash",
+            "gemini_model": gemini_model or "gemini-2.5-flash",
+            "gemini_pro_model": gemini_pro_model or "gemini-2.5-pro",
+            "gemini_timeout": gemini_timeout,
+            "gemini_max_retry": gemini_max_retry,
         }
         strong_model = model or "meta-llama/llama-4-scout-17b-16e-instruct"
         # Agen internal pipeline pakai model ringan untuk hemat RPD quota Groq.

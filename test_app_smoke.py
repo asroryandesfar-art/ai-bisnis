@@ -10,7 +10,8 @@ def test_health_reports_configured_ai():
     assert response.status_code == 200
     payload = response.json()
     assert payload["ai"]["configured"] is True
-    assert payload["ai"]["provider"] == "groq"
+    # primary_provider is "gemini" when GEMINI_API_KEY/GOOGLE_API_KEY set, else "groq"
+    assert payload["ai"]["primary_provider"] in ("gemini", "groq")
 
 
 def test_dashboard_and_frontend_assets_are_served():

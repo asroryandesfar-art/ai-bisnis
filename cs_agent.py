@@ -8,11 +8,25 @@ import language_middleware
 
 
 SYNTHESIS_SYSTEM_PROMPT = (
-    "Kamu adalah konsultan ahli yang menggabungkan analisis dari tim spesialis menjadi satu "
-    "jawaban yang koheren, mendalam, dan mudah dipahami untuk pengguna bisnis. Susun jawaban "
-    "seperti konsultan profesional: berikan konteks/alasan lalu kesimpulan yang jelas. "
-    "Jika confidence rendah, akui ketidakpastian secara eksplisit. "
+    "Kamu adalah konsultan bisnis tingkat eksekutif. "
+    "Gabungkan analisis dari tim spesialis menjadi satu jawaban komprehensif untuk pengguna bisnis. "
+    "Untuk pertanyaan bisnis/strategi, susun dengan struktur profesional: "
+    "Ringkasan Eksekutif → Analisis Masalah → Akar Masalah → Strategi → Rencana Implementasi → "
+    "KPI & Metrik → Manfaat & ROI yang Diharapkan → Risiko & Mitigasi → Rekomendasi Akhir. "
+    "Gunakan tabel, bullet point, dan struktur yang rapi — jangan paragraf panjang tanpa struktur. "
+    "Jangan pernah menyebut confidence score, nama provider AI, atau proses internal. "
     "Balas SELALU dalam Bahasa Indonesia, dan HANYA dalam format JSON."
+)
+
+SYNTHESIS_SYSTEM_PROMPT_EN = (
+    "You are an executive-level business consultant (McKinsey standard). "
+    "Synthesize the specialist team analysis into one comprehensive answer for a business user. "
+    "For business/strategy questions, use this structure: "
+    "Executive Summary → Problem Analysis → Root Cause → Recommended Strategy → Implementation Plan → "
+    "KPIs & Metrics → Expected Benefits & ROI → Risks & Mitigation → Alternative Options → Final Recommendation. "
+    "Use tables, bullet points, and clear structure — never plain paragraphs for business questions. "
+    "Never mention confidence scores, AI provider names, or internal reasoning processes. "
+    "ALWAYS respond 100% in English. Return ONLY JSON format."
 )
 
 
@@ -24,42 +38,52 @@ class CSAgent(BaseAgent):
         "Menjawab pertanyaan pelanggan secara langsung berguna menggunakan konteks percakapan + knowledge base.",
         "Menjaga jawaban jujur dan bebas placeholder/karangan saat data spesifik belum tersedia.",
     ]
-    system_prompt = """Kamu adalah asisten AI bisnis BotNesia yang menggunakan Groq untuk menjawab pertanyaan pengguna.
+    system_prompt = """Kamu adalah asisten AI bisnis BotNesia yang memberikan konsultasi tingkat enterprise, bukan sekadar chatbot biasa.
 
-Tugasmu:
-1. Pahami tujuan pengguna dan berikan jawaban yang langsung berguna.
-2. Untuk masalah teknis, jelaskan penyebab yang paling mungkin lalu berikan langkah pemeriksaan/perbaikan berurutan, meskipun detail pengguna belum lengkap.
-3. Setelah memberikan solusi awal, kamu boleh meminta maksimal dua informasi penting untuk mempersempit diagnosis.
-4. Untuk strategi bisnis, berikan rekomendasi konkret, prioritas tindakan, dan contoh bila membantu.
-5. Jika user bertanya integrasi channel (WhatsApp/Facebook/Instagram/Gmail/Website), jelaskan langkah setup ringkas di BotNesia.
-6. Jika user meminta gambar (logo/ilustrasi/poster/banner/mascot/desain), sistem AKAN OTOMATIS membuat gambarnya dan menampilkannya di chat — jangan bilang tidak bisa membuat gambar, cukup beri penjelasan singkat tentang gambar yang dibuat. Untuk kebutuhan lain seperti analisis gambar, generate dokumen (PDF/DOCX/XLSX/PPTX), atau voice, arahkan ke menu **Multimedia Studio** di dashboard.
+Kemampuan utama:
+1. **Strategi bisnis**: berikan rekomendasi konkret, prioritas tindakan, dan analisis ROI — bukan saran generik.
+2. **Masalah teknis**: diagnosis akar masalah dan langkah perbaikan berurutan (bahkan tanpa detail lengkap dari user).
+3. **Pertanyaan bisnis** (penjualan, marketing, operasional, CRM, keuangan, pertumbuhan, AI, SaaS): jawab seperti konsultan senior, gunakan tabel/bullet/metrik.
+4. **Integrasi channel** (WhatsApp/Facebook/Instagram/Gmail/Website): jelaskan langkah setup ringkas di BotNesia.
+5. **Multimedia**: jika user meminta gambar, sistem AKAN OTOMATIS membuatnya — jelaskan singkat apa yang dibuat. Untuk analisis gambar, dokumen (PDF/DOCX/XLSX/PPTX), atau voice, arahkan ke **Multimedia Studio** di dashboard.
 
-Aturan:
-- Jawab SELALU dalam Bahasa Indonesia.
-- Jangan mengganti jawaban dengan formulir klarifikasi umum. Berikan solusi awal terlebih dahulu.
-- Jangan mengarang fakta. Bedakan fakta dari dugaan atau diagnosis sementara.
-- Jangan membuat placeholder seperti "Rp X", harga perkiraan, nama paket, URL, batas fitur, atau kebijakan yang tidak tersedia di konteks. Jika data spesifik belum tersedia, katakan tepat bagian mana yang belum diketahui lalu beri langkah untuk memastikannya.
-- Untuk berita, gunakan hanya data pada konteks berita real-time. Cantumkan judul, media, tanggal terbit, dan URL sumber yang tersedia. Jika hanya ada judul/ringkasan RSS, nyatakan batasan itu tanpa menolak merangkum informasi yang tersedia.
+Aturan format:
+- Untuk pertanyaan bisnis/strategi: wajib gunakan bullet point, tabel, atau langkah bernomor — jangan paragraf panjang.
+- Untuk pertanyaan teknis: berikan langkah bernomor.
+- Untuk pertanyaan sederhana: langsung dan ringkas.
+
+Aturan perilaku:
+- Jika user memberikan peran khusus ("jadilah Sales Director", "berperan sebagai CEO saya"), ambil dan pertahankan peran itu sepanjang percakapan.
+- Jangan pernah berkata "saya tidak yakin", "AI sedang berpikir", atau mengekspos reasoning internal.
+- Jangan gunakan klise AI atau minta maaf yang tidak perlu.
+- Jangan mengarang fakta atau buat placeholder seperti "Rp X", nama paket palsu, atau URL yang tidak tersedia di konteks.
 - Output HARUS berupa teks jawaban saja, tanpa JSON atau metadata internal.
+
+KRITIS: SELALU jawab 100% dalam Bahasa Indonesia. Setiap kata harus Bahasa Indonesia. Jangan mencampur bahasa.
 """
 
-    english_system_prompt = """You are BotNesia's business AI assistant using Groq to answer user questions.
+    english_system_prompt = """You are BotNesia's intelligent business AI assistant — built to deliver enterprise-grade consulting, not generic chatbot responses.
 
-Your tasks:
-1. Understand the user's goal and give a directly useful answer.
-2. For technical issues, explain the most likely cause and provide ordered checks or fixes, even when the user's details are incomplete.
-3. After giving an initial solution, you may ask at most two important questions to narrow the diagnosis.
-4. For business strategy, provide concrete recommendations, action priorities, and examples when helpful.
-5. If the user asks about channel integrations (WhatsApp/Facebook/Instagram/Gmail/Website), explain concise setup steps in BotNesia.
-6. If the user asks to create an image (logo/illustration/poster/banner/mascot/design), the system WILL automatically create it and display it in chat. Do not say you cannot create images; briefly explain the generated image. For other needs such as image analysis, document generation (PDF/DOCX/XLSX/PPTX), or voice, direct the user to Multimedia Studio in the dashboard.
+Core capabilities:
+1. **Business strategy**: give concrete recommendations, prioritized actions, and ROI-focused insights — never vague advice.
+2. **Technical issues**: diagnose with root cause + ordered fix steps, even with incomplete user details.
+3. **Business intelligence** (sales, marketing, operations, CRM, finance, growth, AI, SaaS, workflow): respond like a senior consultant — use tables, bullets, metrics, KPIs.
+4. **Channel integrations** (WhatsApp/Facebook/Instagram/Gmail/Website): explain concise BotNesia setup steps.
+5. **Multimedia**: if the user requests image creation, the system WILL automatically generate it — briefly describe what was created. For image analysis, document generation (PDF/DOCX/XLSX/PPTX), or voice, direct to Multimedia Studio.
 
-Rules:
-- ALWAYS answer in English.
-- Do not replace the answer with a generic clarification form. Give an initial solution first.
-- Do not invent facts. Distinguish facts from assumptions or temporary diagnosis.
-- Do not create placeholders such as "Rp X", estimated prices, package names, URLs, feature limits, or policies that are not available in context. If specific data is unavailable, say exactly what is unknown and how to verify it.
-- For news, use only the real-time news context. Include available title, media, publication date, and source URL. If only RSS title/summary is available, state that limitation without refusing to summarize available information.
-- Output MUST be the answer text only, without JSON or internal metadata.
+Format rules:
+- For business/strategy questions: MUST use bullet points, tables, or numbered steps — never plain paragraphs.
+- For technical questions: provide numbered steps.
+- For simple questions: be concise and direct.
+
+Behavior rules:
+- If the user assigns you a specific role ("act as Sales Director", "be my CEO"), adopt and maintain that persona throughout the conversation.
+- Never say "I'm not sure", "AI is thinking", "based on available data", or expose internal reasoning.
+- Never use AI clichés, unnecessary apologies, or filler phrases like "Sure, I'll help you with that."
+- Do not invent facts or create placeholders ("Rp X", fake package names, unverified URLs, unavailable policies).
+- Output MUST be the answer text only — no JSON, no metadata, no internal system notes.
+
+CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. Never mix languages.
 """
 
     def _selected_language(self, context: dict) -> language_middleware.LangCode:
@@ -124,7 +148,7 @@ Rules:
         selected_language = self._selected_language(context)
 
         # Mode cloud: pakai LLM supaya bisa jawab pertanyaan bebas.
-        if self.api_key:
+        if self.api_key or self.gemini_api_key:
             history = context.get("messages", [])
 
             system_parts = [self._system_prompt_for(selected_language).strip()]
@@ -222,26 +246,43 @@ Rules:
         critique_brief = format_devil_critique(critique)
         if not critique.get("needs_revision") or not critique_brief:
             return {"answer": draft_answer, "revised": False}
+        lang = self._selected_language(context)
+        is_en = (lang == "en")
         evidence = []
         knowledge = str(context.get("knowledge_base_context") or "").strip()
         if knowledge:
-            evidence.append("Knowledge/data tersedia:\n" + knowledge[:5000])
+            label = "Available knowledge/data:\n" if is_en else "Knowledge/data tersedia:\n"
+            evidence.append(label + knowledge[:5000])
         for name, output in (specialist_results or {}).items():
             if isinstance(output, dict) and output.get("conclusion"):
                 evidence.append(f"{name}: {output['conclusion']}")
-        prompt = (
-            f"Pertanyaan pengguna: {context.get('user_message', '')}\n\n"
-            f"Draft jawaban: {draft_answer}\n\n"
-            f"Kritik DevilAdvocate internal:\n{critique_brief}\n\n"
-            + ("\n\n".join(evidence) if evidence else "Tidak ada bukti tambahan.")
-            + "\n\nRevisi draft menjadi jawaban yang objektif: hapus atau lunakkan klaim tanpa bukti, "
-              "jelaskan asumsi dan trade-off, akui keterbatasan, serta sebutkan bahwa alternatif dapat "
-              "lebih unggul pada kondisi tertentu bila relevan. Jangan menyebut proses internal atau DevilAdvocate. "
-              "Jangan menambah fakta baru. Balas JSON: {\"answer\": \"jawaban revisi\"}."
-        )
+        if is_en:
+            prompt = (
+                f"User question: {context.get('user_message', '')}\n\n"
+                f"Draft answer: {draft_answer}\n\n"
+                f"Internal critique:\n{critique_brief}\n\n"
+                + ("\n\n".join(evidence) if evidence else "No additional evidence.")
+                + "\n\nRevise the draft into an objective, balanced answer: remove or soften unsupported claims, "
+                  "explain assumptions and trade-offs, and note that alternatives may be better in certain conditions "
+                  "where relevant. Do not mention internal processes or the critique system. Do not add new facts. "
+                  'Reply JSON: {"answer": "revised answer"}.'
+            )
+            sys_msg = "You are a neutral, evidence-based consulting answer editor. Reply ONLY JSON."
+        else:
+            prompt = (
+                f"Pertanyaan pengguna: {context.get('user_message', '')}\n\n"
+                f"Draft jawaban: {draft_answer}\n\n"
+                f"Kritik internal:\n{critique_brief}\n\n"
+                + ("\n\n".join(evidence) if evidence else "Tidak ada bukti tambahan.")
+                + "\n\nRevisi draft menjadi jawaban yang objektif: hapus atau lunakkan klaim tanpa bukti, "
+                  "jelaskan asumsi dan trade-off, dan sebutkan bahwa alternatif dapat lebih unggul pada "
+                  "kondisi tertentu bila relevan. Jangan menyebut proses internal. Jangan menambah fakta baru. "
+                  'Balas JSON: {"answer": "jawaban revisi"}.'
+            )
+            sys_msg = "Kamu adalah editor jawaban konsultan yang netral, evidence-based. Balas HANYA JSON."
         result = await self._call_llm_json(
             [
-                {"role": "system", "content": "Kamu adalah editor jawaban konsultan yang netral, evidence-based, dan anti-marketing berlebihan. Balas HANYA JSON."},
+                {"role": "system", "content": sys_msg},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1, max_tokens=1400, default={"answer": draft_answer},
@@ -262,6 +303,8 @@ Rules:
         socratic_brief = str(context.get("_socratic_brief") or "").strip()
         first_principle_brief = str(context.get("_first_principle_brief") or "").strip()
 
+        is_en = (selected_language == "en")
+
         specialist_blocks: list[str] = []
         confidences: list[float] = []
         for lens, out in (specialist_results or {}).items():
@@ -274,68 +317,98 @@ Rules:
             conf = out.get("confidence")
             if isinstance(conf, (int, float)):
                 confidences.append(conf)
-            block = (
-                f"### Analis {lens} (confidence: {conf if conf is not None else 'n/a'})\n"
-                f"Analisis: {analysis}\n"
-                f"Kesimpulan: {conclusion}"
-            )
-            limitations = (out.get("limitations") or "").strip()
-            if limitations:
-                block += f"\nKeterbatasan: {limitations}"
-            next_action = (out.get("suggested_next_action") or "").strip()
-            if next_action:
-                block += f"\nSaran tindak lanjut: {next_action}"
+            if is_en:
+                block = (
+                    f"### {lens.replace('_', ' ').title()} Analysis\n"
+                    f"Analysis: {analysis}\n"
+                    f"Conclusion: {conclusion}"
+                )
+                limitations = (out.get("limitations") or "").strip()
+                if limitations:
+                    block += f"\nLimitations: {limitations}"
+                next_action = (out.get("suggested_next_action") or "").strip()
+                if next_action:
+                    block += f"\nNext action: {next_action}"
+            else:
+                block = (
+                    f"### Analis {lens}\n"
+                    f"Analisis: {analysis}\n"
+                    f"Kesimpulan: {conclusion}"
+                )
+                limitations = (out.get("limitations") or "").strip()
+                if limitations:
+                    block += f"\nKeterbatasan: {limitations}"
+                next_action = (out.get("suggested_next_action") or "").strip()
+                if next_action:
+                    block += f"\nSaran tindak lanjut: {next_action}"
             specialist_blocks.append(block)
 
-        specialist_text = "\n\n".join(specialist_blocks) or "(tidak ada hasil spesialis)"
+        no_specialist = "(no specialist results)" if is_en else "(tidak ada hasil spesialis)"
+        specialist_text = "\n\n".join(specialist_blocks) or no_specialist
         avg_confidence = round(sum(confidences) / len(confidences)) if confidences else None
 
-        prompt_parts = [f"Pertanyaan pengguna: {user_message}"]
-        if first_principle_brief:
+        if is_en:
+            prompt_parts = [f"User question: {user_message}"]
+            if first_principle_brief:
+                prompt_parts.append("## Internal first-principles decomposition\n" + first_principle_brief)
+            if socratic_brief:
+                prompt_parts.append("## Internal Socratic brief (do not surface as reasoning)\n" + socratic_brief)
+            if kb_context:
+                prompt_parts.append(f"## Additional context\n{kb_context.strip()}")
+            prompt_parts.append(f"## Specialist team analysis\n{specialist_text}")
+            if plan.get("synthesis_focus"):
+                prompt_parts.append(f"## Synthesis focus\n{plan['synthesis_focus']}")
+            devil_feedback = context.get("_devil_advocate_feedback")
+            if devil_feedback:
+                prompt_parts.append(f"## Objectivity critique (must follow)\n{devil_feedback}")
+            feedback = context.get("_verification_feedback")
+            if feedback:
+                prompt_parts.append(f"## Verification improvement notes\n{feedback}")
             prompt_parts.append(
-                "## Decomposition first-principles internal\n" + first_principle_brief
+                "Build the final answer for the user by synthesizing the specialist analysis above. "
+                "Deliver executive-level output: structured, concrete, and actionable. "
+                "Never mention confidence scores, AI providers, or internal reasoning. "
+                'Return ONLY JSON: {"answer": "<full answer>", '
+                '"confidence_score": <0-100>, "topics": ["..."], '
+                '"suggested_followup": "<follow-up question or null>", '
+                '"reasoning_summary": "<brief internal reasoning summary>"}'
             )
-        if socratic_brief:
+        else:
+            prompt_parts = [f"Pertanyaan pengguna: {user_message}"]
+            if first_principle_brief:
+                prompt_parts.append("## Decomposition first-principles internal\n" + first_principle_brief)
+            if socratic_brief:
+                prompt_parts.append("## Brief Socratic internal (jangan uraikan proses berpikir)\n" + socratic_brief)
+            if kb_context:
+                prompt_parts.append(f"## Konteks tambahan\n{kb_context.strip()}")
+            prompt_parts.append(f"## Hasil analisis tim spesialis\n{specialist_text}")
+            if plan.get("synthesis_focus"):
+                prompt_parts.append(f"## Fokus sintesis\n{plan['synthesis_focus']}")
+            devil_feedback = context.get("_devil_advocate_feedback")
+            if devil_feedback:
+                prompt_parts.append(f"## Kritik objektivitas internal yang tetap wajib dipatuhi\n{devil_feedback}")
+            feedback = context.get("_verification_feedback")
+            if feedback:
+                prompt_parts.append(f"## Catatan perbaikan dari verifikasi\n{feedback}")
             prompt_parts.append(
-                "## Brief Socratic internal (jangan uraikan proses berpikir)\n" + socratic_brief
+                "Susun jawaban akhir untuk pengguna: gabungkan analisis tim spesialis di atas "
+                "menjadi satu jawaban komprehensif tingkat eksekutif — konkret, terstruktur, dan actionable. "
+                "Jangan menyebut confidence score, nama provider AI, atau proses internal.\n\n"
+                'Jawab dalam format JSON: {"answer": "<jawaban lengkap untuk pengguna>", '
+                '"confidence_score": <0-100>, "topics": ["..."], '
+                '"suggested_followup": "<pertanyaan lanjutan atau null>", '
+                '"reasoning_summary": "<ringkasan singkat alur penalaran>"}'
             )
-        if kb_context:
-            prompt_parts.append(f"## Konteks tambahan\n{kb_context.strip()}")
-        prompt_parts.append(f"## Hasil analisis tim spesialis\n{specialist_text}")
-        if avg_confidence is not None:
-            prompt_parts.append(f"Rata-rata confidence spesialis: {avg_confidence}/100")
-        if plan.get("synthesis_focus"):
-            prompt_parts.append(f"## Fokus sintesis\n{plan['synthesis_focus']}")
-        devil_feedback = context.get("_devil_advocate_feedback")
-        if devil_feedback:
-            prompt_parts.append(
-                f"## Kritik objektivitas internal yang tetap wajib dipatuhi\n{devil_feedback}"
-            )
-        feedback = context.get("_verification_feedback")
-        if feedback:
-            prompt_parts.append(f"## Catatan perbaikan dari verifikasi\n{feedback}")
 
-        prompt_parts.append(
-            "Susun jawaban akhir untuk pengguna: gabungkan analisis tim spesialis di atas "
-            "menjadi satu jawaban koheren seperti konsultan ahli, dengan konteks/alasan lalu "
-            "kesimpulan yang jelas. Jika confidence rendah, akui ketidakpastian secara eksplisit.\n\n"
-            'Jawab dalam format JSON: {"answer": "<jawaban lengkap untuk pengguna>", '
-            '"confidence_score": <0-100>, "topics": ["..."], '
-            '"suggested_followup": "<pertanyaan lanjutan atau null>", '
-            '"reasoning_summary": "<ringkasan singkat alur penalaran>"}'
-        )
         prompt = "\n\n".join(prompt_parts)
 
         result = await self._call_llm_json(
             [
-                {"role": "system", "content": (
-                    "You are an expert consultant who combines specialist team analysis into one coherent, deep, easy-to-understand answer for a business user. Write like a professional consultant: provide context/reasoning and a clear conclusion. If confidence is low, explicitly acknowledge uncertainty. ALWAYS answer in English, and ONLY in JSON format."
-                    if selected_language == "en" else SYNTHESIS_SYSTEM_PROMPT
-                )},
+                {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT_EN if is_en else SYNTHESIS_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
-            max_tokens=1400,
+            max_tokens=2000,
             default={},
         )
 
