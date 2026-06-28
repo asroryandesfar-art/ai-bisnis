@@ -222,26 +222,29 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
         pool = get_pool()
         mgr = get_manager()
 
+        # Accept dulu — harus dilakukan sebelum close/send apapun
+        await websocket.accept()
+
         # Validasi token
         org_id: str | None = None
         try:
             payload = decode_token(token)
             org_id = str(payload["org"])
         except Exception:
-            await websocket.close(code=4001, reason="Token tidak valid")
+            await websocket.send_json({"type": "error", "message": "Token tidak valid atau kadaluarsa"})
+            await websocket.close(code=4001)
             return
 
         # Tunggu pesan "ready" dari agent
-        await websocket.accept()
         try:
             raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
             msg = json.loads(raw)
         except Exception:
-            await websocket.close(code=4002, reason="Handshake timeout")
+            await websocket.close(code=4002)
             return
 
         if msg.get("type") != "ready":
-            await websocket.close(code=4003, reason="Expected ready message")
+            await websocket.close(code=4003)
             return
 
         meta = {
@@ -251,8 +254,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
             "version": msg.get("version", "1.0.0"),
         }
 
-        # Sudah accept di atas, perlu koneksi yang sudah accept
-        # Daftarkan koneksi (tanpa accept lagi)
+        # Daftarkan koneksi
         mgr._connections[org_id] = websocket
         mgr._meta[org_id] = meta
         try:
