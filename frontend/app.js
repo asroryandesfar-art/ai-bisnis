@@ -1919,7 +1919,7 @@ async function renderBilling() {
   state.subscription = subResult.ok ? subResult.data : state.subscription;
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
-  const credits = creditsResult.ok ? creditsResult.data : { balance: 0, topup_packages: [], history: [] };
+  const credits = creditsResult.ok ? creditsResult.data : { addon_conversation_balance: 0, topup_packages: [], history: [] };
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
   const currentStatus = state.subscription?.subscription?.status || state.org?.billing_status || 'active';
   const isTrial = state.subscription?.subscription?.is_free_trial || currentStatus === 'trialing';
@@ -2014,32 +2014,42 @@ async function renderBilling() {
   const enterpriseCard = enterprisePlan ? buildPlanCard(enterprisePlan, true) : '';
   const pricingNote = `<p style="font-size:11px;color:#888;text-align:center;margin:4px 0 20px">${t('billing.pricing_note')}</p>`;
 
-  // ── Credit Balance section ──────────────────────────────────────────────
-  const creditBalance = Number(credits.balance || 0);
+  // ── Addon Conversation Balance section ─────────────────────────────────
+  // balance = jumlah percakapan tambahan, BUKAN Rupiah
+  const addonBalance = Number(credits.addon_conversation_balance ?? credits.balance ?? 0);
   const topupPackages = (credits.topup_packages || [
-    {amount_idr:25000,label:"Rp25.000"},{amount_idr:50000,label:"Rp50.000"},
-    {amount_idr:100000,label:"Rp100.000"},{amount_idr:250000,label:"Rp250.000"},
-    {amount_idr:500000,label:"Rp500.000"},
+    {amount_idr:25000,conversations:1000,label:"Rp25.000"},
+    {amount_idr:50000,conversations:2500,label:"Rp50.000"},
+    {amount_idr:100000,conversations:5000,label:"Rp100.000"},
+    {amount_idr:250000,conversations:15000,label:"Rp250.000"},
+    {amount_idr:500000,conversations:35000,label:"Rp500.000"},
   ]);
-  const creditHistoryRows = (credits.history || []).map(h =>
-    `<tr>
-      <td>${statusBadge(h.kind==='topup'||h.kind==='bonus'?'active':'pending', h.kind)}</td>
+  const creditHistoryRows = (credits.history || []).map(h => {
+    const convCount = Number(h.conversations ?? 0);
+    const isPaid = h.kind === 'topup' || h.kind === 'bonus';
+    return `<tr>
+      <td>${statusBadge(isPaid ? 'active' : 'pending', h.kind)}</td>
       <td>${esc(h.description)}</td>
-      <td style="font-weight:600;color:${h.credits>0?'#2e7d32':'#c62828'}">${h.credits>0?'+':''}${formatNumber(h.credits)}</td>
       <td>${idr(h.amount_idr)}</td>
+      <td style="font-weight:600;color:${convCount>0?'#2e7d32':'#c62828'}">${convCount>0?'+':''}${formatNumber(convCount)} ${t('billing.conversations_unit')}</td>
       <td>${formatDate(h.created_at)}</td>
-    </tr>`
-  ).join('');
+      <td>${statusBadge(isPaid ? 'active' : 'pending', isPaid ? 'Paid' : 'Pending')}</td>
+    </tr>`;
+  }).join('');
   const topupButtons = topupPackages.map(pkg =>
-    `<button class="button" style="padding:10px 14px;font-size:13px;font-weight:600" data-topup="${pkg.amount_idr}">${pkg.label}</button>`
+    `<button class="button" style="padding:10px 18px;font-size:13px;font-weight:600;line-height:1.4;text-align:center" data-topup="${pkg.amount_idr}">
+      <span style="display:block">${esc(pkg.label)}</span>
+      <span style="display:block;font-size:11px;font-weight:400;color:#2e7d32">+${formatNumber(pkg.conversations)} ${t('billing.conversations_unit')}</span>
+    </button>`
   ).join('');
   const creditSection = `
   <div class="grid grid-2" style="margin-bottom:20px">
     <div class="card" style="border:2px solid #e8f5e9">
       <div class="card-head"><h3>${t('billing.credits_balance')}</h3></div>
       <div style="padding:0 20px 20px">
-        <div style="font-size:32px;font-weight:700;color:#2e7d32;margin-bottom:4px">${idr(creditBalance)}</div>
-        <p style="font-size:12px;color:#666;margin:0 0 16px">${t('billing.credits_desc')}</p>
+        <div style="font-size:36px;font-weight:700;color:#2e7d32;margin-bottom:2px">${formatNumber(addonBalance)}</div>
+        <div style="font-size:13px;color:#555;margin-bottom:12px">${t('billing.conversations_unit')}</div>
+        <p style="font-size:12px;color:#666;margin:0 0 8px">${t('billing.credits_desc')}</p>
         <p style="font-size:11px;color:#888;margin:0">${t('billing.credits_hint')}</p>
       </div>
     </div>
@@ -2055,7 +2065,7 @@ async function renderBilling() {
   <div class="card" style="margin-bottom:20px">
     <div class="card-head"><h3>${t('billing.credits_history')}</h3></div>
     ${creditHistoryRows
-      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('billing.credits_col_type')}</th><th>${t('billing.credits_col_desc')}</th><th>${t('billing.credits_col_credits')}</th><th>${t('billing.credits_col_amount')}</th><th>${t('billing.credits_col_date')}</th></tr></thead><tbody>${creditHistoryRows}</tbody></table></div>`
+      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('billing.credits_col_type')}</th><th>${t('billing.credits_col_desc')}</th><th>${t('billing.credits_col_amount')}</th><th>${t('billing.credits_col_credits')}</th><th>${t('billing.credits_col_date')}</th><th>${t('billing.credits_col_status')}</th></tr></thead><tbody>${creditHistoryRows}</tbody></table></div>`
       : `<div style="padding:20px">${emptyState(t('billing.credits_empty'), t('billing.credits_empty_sub'), `<button class="button button-primary" data-topup="50000">${t('billing.credits_empty_btn')}</button>`, 'billing')}</div>`
     }
   </div>`;
@@ -3112,13 +3122,18 @@ async function checkout(planKey, useFreeTrial = false) {
 }
 
 async function topupCredits(amountIdr) {
-  if(!confirm(`Top up kredit Rp${Number(amountIdr).toLocaleString('id-ID')}?`)) return;
+  // Cari paket yang sesuai untuk tampilkan info percakapan di konfirmasi
+  const pkgMap = {25000:1000, 50000:2500, 100000:5000, 250000:15000, 500000:35000};
+  const convCount = pkgMap[Number(amountIdr)];
+  const convLabel = convCount ? ` (+${convCount.toLocaleString('id-ID')} ${t('billing.conversations_unit')})` : '';
+  if(!confirm(`Top up Rp${Number(amountIdr).toLocaleString('id-ID')}${convLabel}?`)) return;
   try {
     const result = await api.topupCredits(Number(amountIdr), "local");
     bustCache("credits");
     if(result.redirect_url) location.href = result.redirect_url;
     else {
-      toast(`✓ Kredit Rp${Number(amountIdr).toLocaleString('id-ID')} berhasil ditambahkan!`, "success");
+      const added = result.conversations_added ?? convCount ?? 0;
+      toast(`✓ +${added.toLocaleString('id-ID')} ${t('billing.conversations_unit')} berhasil ditambahkan!`, "success");
       await renderBilling();
     }
   }

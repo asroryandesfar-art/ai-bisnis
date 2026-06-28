@@ -167,30 +167,45 @@ def _generate_invoice_number() -> str:
 
 # Nominal top-up yang tersedia (IDR -> kredit konversi 1:1 IDR)
 TOPUP_PACKAGES = [
-    {"amount_idr": 25_000,  "credits": 25_000,  "label": "Rp25.000"},
-    {"amount_idr": 50_000,  "credits": 50_000,  "label": "Rp50.000"},
-    {"amount_idr": 100_000, "credits": 100_000, "label": "Rp100.000"},
-    {"amount_idr": 250_000, "credits": 250_000, "label": "Rp250.000"},
-    {"amount_idr": 500_000, "credits": 500_000, "label": "Rp500.000"},
+    {"amount_idr": 25_000,  "conversations": 1_000,  "label": "Rp25.000"},
+    {"amount_idr": 50_000,  "conversations": 2_500,  "label": "Rp50.000"},
+    {"amount_idr": 100_000, "conversations": 5_000,  "label": "Rp100.000"},
+    {"amount_idr": 250_000, "conversations": 15_000, "label": "Rp250.000"},
+    {"amount_idr": 500_000, "conversations": 35_000, "label": "Rp500.000"},
 ]
 
+# Lookup: amount_idr → conversations
+_TOPUP_CONV_MAP: dict = {p["amount_idr"]: p["conversations"] for p in TOPUP_PACKAGES}
 
-async def get_credit_balance(pool: asyncpg.Pool, org_id: str) -> int:
-    """Hitung saldo kredit dari ledger (sum positif + negatif)."""
+
+async def get_addon_conversation_balance(pool: asyncpg.Pool, org_id: str) -> int:
+    """Hitung sisa percakapan tambahan (addon) dari ledger."""
     val = await pool.fetchval(
-        "SELECT COALESCE(SUM(credits), 0) FROM credit_ledger WHERE org_id=$1",
+        "SELECT COALESCE(SUM(conversations), 0) FROM credit_ledger WHERE org_id=$1",
         org_id,
     )
     return int(val or 0)
 
 
-async def add_credits(pool: asyncpg.Pool, *, org_id: str, credits: int,
+# Alias lama — backward compat
+async def get_credit_balance(pool: asyncpg.Pool, org_id: str) -> int:
+    return await get_addon_conversation_balance(pool, org_id)
+
+
+async def add_credits(pool: asyncpg.Pool, *, org_id: str, conversations: int,
                       amount_idr: int, kind: str, description: str,
-                      invoice_id: str | None = None) -> dict:
+                      invoice_id: str | None = None,
+                      credits: int = 0) -> dict:
+    """Tambah atau kurangi addon conversation balance.
+
+    conversations = jumlah percakapan (+N topup, -N debit).
+    credits diabaikan (legacy field, tidak dipakai di UI).
+    """
     row = await pool.fetchrow(
-        """INSERT INTO credit_ledger (org_id, kind, amount_idr, credits, description, invoice_id)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *""",
-        org_id, kind, amount_idr, credits, description,
+        """INSERT INTO credit_ledger
+               (org_id, kind, amount_idr, credits, conversations, description, invoice_id)
+           VALUES ($1, $2, $3, 0, $4, $5, $6) RETURNING *""",
+        org_id, kind, amount_idr, conversations, description,
         uuid.UUID(invoice_id) if invoice_id else None,
     )
     await pool.execute(
@@ -199,7 +214,7 @@ async def add_credits(pool: asyncpg.Pool, *, org_id: str, credits: int,
            ON CONFLICT (org_id) DO UPDATE SET
                balance = credit_balances.balance + $2,
                updated_at = NOW()""",
-        org_id, credits,
+        org_id, conversations,
     )
     return dict(row)
 
@@ -399,13 +414,17 @@ async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str
     cycle = (meta.get("billing_cycle") if isinstance(meta, dict) else None) or "monthly"
     if plan_key:
         await activate_subscription(pool, org_id=invoice["org_id"], plan_key=plan_key, billing_cycle=cycle)
-    topup_credits_amount = meta.get("topup_credits") if isinstance(meta, dict) else None
-    if topup_credits_amount and meta.get("kind") == "credit_topup":
+    topup_amount = meta.get("topup_credits") if isinstance(meta, dict) else None
+    if topup_amount and meta.get("kind") == "credit_topup":
+        amount_idr = int(invoice["amount_idr"])
+        conv_count = _TOPUP_CONV_MAP.get(amount_idr, 0)
+        pkg = next((p for p in TOPUP_PACKAGES if p["amount_idr"] == amount_idr), None)
+        label = pkg["label"] if pkg else f"Rp{amount_idr:,}".replace(",", ".")
         await add_credits(
             pool, org_id=invoice["org_id"],
-            credits=int(topup_credits_amount), amount_idr=int(invoice["amount_idr"]),
+            conversations=conv_count, amount_idr=amount_idr,
             kind="topup",
-            description=f"Top Up Credit Rp{int(topup_credits_amount):,}".replace(",", "."),
+            description=f"Top Up Percakapan Tambahan {label}",
             invoice_id=str(invoice["id"]),
         )
     await pool.execute(
@@ -636,14 +655,14 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         user: Annotated[dict, Depends(get_current_user)],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        balance = await get_credit_balance(pool, user["org_id"])
+        balance = await get_addon_conversation_balance(pool, user["org_id"])
         rows = await pool.fetch(
-            """SELECT id, kind, amount_idr, credits, description, created_at
+            """SELECT id, kind, amount_idr, conversations, description, created_at
                FROM credit_ledger WHERE org_id=$1 ORDER BY created_at DESC LIMIT 20""",
             user["org_id"],
         )
         return {
-            "balance": balance,
+            "addon_conversation_balance": balance,
             "topup_packages": TOPUP_PACKAGES,
             "history": [dict(r) for r in rows],
         }
@@ -655,18 +674,19 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
-        # Validasi nominal termasuk dalam paket yang diizinkan
         valid_amounts = {p["amount_idr"] for p in TOPUP_PACKAGES}
         if body.amount_idr not in valid_amounts:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 f"Nominal top-up tidak valid. Pilihan: {sorted(valid_amounts)}",
             )
+        conv_count = _TOPUP_CONV_MAP[body.amount_idr]
+        pkg = next(p for p in TOPUP_PACKAGES if p["amount_idr"] == body.amount_idr)
         sub = await ensure_subscription(pool, user["org_id"])
         invoice = await create_invoice(
             pool, org_id=user["org_id"], subscription_id=sub["id"],
             amount_idr=body.amount_idr,
-            description=f"Top Up Credit Rp{body.amount_idr:,}".replace(",", "."),
+            description=f"Top Up Percakapan Tambahan {pkg['label']}",
             provider=("manual" if body.provider == "local" else body.provider),
         )
         await pool.execute(
@@ -693,16 +713,16 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
                         raw_payload={"mode": "local", "approved_by": user.get("email")},
                     )
                     await add_credits(
-                        conn, org_id=user["org_id"], credits=body.amount_idr,
+                        conn, org_id=user["org_id"], conversations=conv_count,
                         amount_idr=body.amount_idr, kind="topup",
-                        description=f"Top Up Credit (lokal) Rp{body.amount_idr:,}".replace(",", "."),
+                        description=f"Top Up Percakapan Tambahan {pkg['label']} (lokal)",
                         invoice_id=str(invoice["id"]),
                     )
             return {
                 "requires_payment": False,
                 "local": True,
-                "credits_added": body.amount_idr,
-                "new_balance": await get_credit_balance(pool, user["org_id"]),
+                "conversations_added": conv_count,
+                "addon_conversation_balance": await get_addon_conversation_balance(pool, user["org_id"]),
                 "invoice_id": str(invoice["id"]),
             }
 
@@ -731,7 +751,7 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             "invoice_id": str(invoice["id"]),
             "invoice_number": invoice["invoice_number"],
             "amount_idr": body.amount_idr,
-            "credits_pending": body.amount_idr,
+            "conversations_pending": conv_count,
             "provider": body.provider,
             "redirect_url": redirect_url,
         }
