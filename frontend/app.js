@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-4";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-5";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,7 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-4";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-5";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
@@ -1817,14 +1817,14 @@ async function renderAgentCenter() {
            <div style="border-top:1px solid var(--border);padding-top:14px">
              <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-               <select id="la-tool" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px">
+               <select id="la-tool" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="const d={get_info:'',list_dir:'{"path":"~/"}',read_file:'{"path":"~/contoh.txt"}',run_command:'{"command":"ls -la ~/"}',find_files:'{"pattern":"*.py","dir":"~/"}'};document.getElementById('la-args').value=d[this.value]||''">
                  <option value="get_info">get_info — info sistem</option>
                  <option value="list_dir">list_dir — isi folder</option>
                  <option value="read_file">read_file — baca file</option>
                  <option value="run_command">run_command — jalankan perintah</option>
                  <option value="find_files">find_files — cari file</option>
                </select>
-               <input id="la-args" type="text" placeholder='args JSON, misal: {"path":"~/"}' style="flex:1;min-width:200px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px">
+               <input id="la-args" type="text" placeholder="(kosong = {})" style="flex:1;min-width:200px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px">
                <button class="button button-sm button-primary" data-action="local-agent-test">Kirim</button>
              </div>
              <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:200px;white-space:pre-wrap"></pre>
@@ -3425,11 +3425,16 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-test"){
-    const tool = document.getElementById("la-tool")?.value || "get_info";
-    const argsRaw = document.getElementById("la-args")?.value?.trim() || "{}";
-    const pre = document.getElementById("la-result");
+    const toolEl = document.getElementById("la-tool");
+    const argsEl = document.getElementById("la-args");
+    const pre    = document.getElementById("la-result");
+    const tool   = toolEl?.value || "get_info";
+    const argsRaw = (argsEl?.value || "").trim();
     let args = {};
-    try { args = JSON.parse(argsRaw); } catch { toast("Args JSON tidak valid","error"); return; }
+    if(argsRaw){
+      try { args = JSON.parse(argsRaw); }
+      catch { toast('Args harus JSON. Contoh: {"path":"~/"}', "error"); return; }
+    }
     if(pre){ pre.style.display="block"; pre.textContent="⏳ Mengirim perintah..."; }
     try{
       const r = await api.localAgentExecute({tool, args, timeout:30});
