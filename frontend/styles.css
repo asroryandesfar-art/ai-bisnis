@@ -460,3 +460,19 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .platform-dot.blog{background:rgba(139,124,255,.15);color:var(--brand)}
 .platform-dot.email{background:rgba(244,189,98,.15);color:var(--amber)}
 .platform-dot.whatsapp{background:rgba(37,211,102,.15);color:#25d366}
+
+/* ── Markdown rendering in chat bubbles ─────────────────────────────────── */
+.message-bubble .md-h3{margin:14px 0 6px;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--text);border-bottom:1px solid var(--line);padding-bottom:4px}
+.message-bubble .md-h4{margin:12px 0 4px;font-size:12px;font-weight:700;color:var(--text)}
+.message-bubble .md-h5,.message-bubble .md-h6{margin:8px 0 4px;font-size:11px;font-weight:600;color:var(--text-2)}
+.message-bubble .md-hr{border:none;border-top:1px solid var(--line);margin:12px 0}
+.message-bubble .md-blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--brand);background:rgba(139,124,255,.07);border-radius:0 6px 6px 0}
+.message-bubble .md-blockquote p{margin:0;color:var(--text-2);font-style:italic}
+.message-bubble .md-arrow{text-align:center;color:var(--brand);font-size:16px;line-height:1;margin:4px 0;opacity:.7}
+.message-bubble .md-table-wrap{overflow-x:auto;margin:10px 0}
+.message-bubble .md-table{width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.message-bubble .md-table th{background:rgba(139,124,255,.12);color:var(--text);font-weight:700;padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.message-bubble .md-table td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text-2);vertical-align:top}
+.message-bubble .md-table tr:last-child td{border-bottom:none}
+.message-bubble .md-table tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+.message-bubble .md-table strong{color:var(--text)}
