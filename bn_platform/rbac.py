@@ -95,6 +95,9 @@ PERMISSIONS: dict[str, str] = {
     "action_executor.read":    "Melihat riwayat eksekusi goal agent (Action Executor)",
     "action_executor.execute": "Menjalankan goal multi-langkah via Action Executor pipeline",
     "permission_grants.manage": "Mengelola grant izin aksi agent (permit/deny per-permission)",
+    "local_agent.manage":  "Install, hubungkan, dan putus BotNesia Local Agent di komputer user",
+    "local_agent.execute": "Kirim perintah ke Local Agent (akses file, terminal, browser lokal)",
+    "local_agent.read":    "Lihat riwayat perintah Local Agent",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -115,6 +118,7 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "sandbox.manage",
         "action_executor.read", "action_executor.execute",
         "permission_grants.manage",
+        "local_agent.manage", "local_agent.execute", "local_agent.read",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
     "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read", "terminal.read", "action_executor.read"},
