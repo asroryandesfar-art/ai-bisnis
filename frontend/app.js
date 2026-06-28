@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260625-agent-center-runtask-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,7 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260625-agent-center-runtask-1";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-1";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
