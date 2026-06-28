@@ -10,8 +10,13 @@ def test_health_reports_configured_ai():
     assert response.status_code == 200
     payload = response.json()
     assert payload["ai"]["configured"] is True
-    # primary_provider is "gemini" when GEMINI_API_KEY/GOOGLE_API_KEY set, else "groq"
-    assert payload["ai"]["primary_provider"] in ("gemini", "groq")
+    # providers dict lists all three provider slots
+    providers = payload["ai"]["providers"]
+    assert "gemini" in providers
+    assert "openrouter" in providers
+    assert "groq" in providers
+    # at least one must be active
+    assert any(p["active"] for p in providers.values())
 
 
 def test_dashboard_and_frontend_assets_are_served():
@@ -108,5 +113,10 @@ def test_local_nightly_schedule_always_targets_next_24_hours():
 def test_cs_prompt_forbids_unsourced_price_placeholders():
     from cs_agent import CSAgent
 
+    # Prompt must forbid fabricated price placeholders
     assert "Rp X" in CSAgent.system_prompt
-    assert "tidak tersedia di konteks" in CSAgent.system_prompt
+    # Prompt must forbid hallucinated facts / unsourced information
+    assert any(
+        phrase in CSAgent.system_prompt
+        for phrase in ("tidak tersedia di konteks", "JANGAN mengarang", "jangan mengarang")
+    )

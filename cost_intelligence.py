@@ -19,9 +19,30 @@ DEFAULT_MODEL_PRICING = {
     "gemini-2.5-flash-preview-05-20":              {"input": Decimal("0.075"),  "output": Decimal("0.30")},
     "gemini-2.5-pro":                              {"input": Decimal("1.25"),   "output": Decimal("10.00")},
     "gemini-2.5-pro-preview-06-05":                {"input": Decimal("1.25"),   "output": Decimal("10.00")},
+    # Gemini 2.0
+    "gemini-2.0-flash":                            {"input": Decimal("0.10"),   "output": Decimal("0.40")},
     # Gemini 1.5 (legacy)
     "gemini-1.5-flash":                            {"input": Decimal("0.075"),  "output": Decimal("0.30")},
     "gemini-1.5-pro":                              {"input": Decimal("1.25"),   "output": Decimal("5.00")},
+    # OpenRouter — OpenAI via OpenRouter
+    "openai/gpt-4o":                               {"input": Decimal("2.50"),   "output": Decimal("10.00")},
+    "openai/gpt-4o-mini":                          {"input": Decimal("0.15"),   "output": Decimal("0.60")},
+    "openai/o1-mini":                              {"input": Decimal("3.00"),   "output": Decimal("12.00")},
+    # OpenRouter — Anthropic via OpenRouter
+    "anthropic/claude-3.5-sonnet":                 {"input": Decimal("3.00"),   "output": Decimal("15.00")},
+    "anthropic/claude-3.5-haiku":                  {"input": Decimal("0.80"),   "output": Decimal("4.00")},
+    "anthropic/claude-3-haiku":                    {"input": Decimal("0.25"),   "output": Decimal("1.25")},
+    # OpenRouter — DeepSeek via OpenRouter
+    "deepseek/deepseek-chat":                      {"input": Decimal("0.27"),   "output": Decimal("1.10")},
+    "deepseek/deepseek-r1":                        {"input": Decimal("0.55"),   "output": Decimal("2.19")},
+    # OpenRouter — Qwen via OpenRouter
+    "qwen/qwen-2.5-72b-instruct":                  {"input": Decimal("0.35"),   "output": Decimal("0.40")},
+    "qwen/qwen-2.5-coder-32b-instruct":            {"input": Decimal("0.06"),   "output": Decimal("0.06")},
+    # OpenRouter — Mistral via OpenRouter
+    "mistralai/mistral-7b-instruct":               {"input": Decimal("0.06"),   "output": Decimal("0.06")},
+    "mistralai/mixtral-8x22b-instruct":            {"input": Decimal("0.90"),   "output": Decimal("0.90")},
+    # OpenRouter — Meta Llama via OpenRouter
+    "meta-llama/llama-3.3-70b-instruct":           {"input": Decimal("0.59"),   "output": Decimal("0.79")},
 }
 
 
