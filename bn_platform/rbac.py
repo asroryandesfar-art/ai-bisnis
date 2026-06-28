@@ -88,6 +88,13 @@ PERMISSIONS: dict[str, str] = {
     "execution_log.read":     "Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)",
     "channel_messaging.read":    "Melihat riwayat/status pesan keluar yang dibuat agent lewat Tool Framework",
     "channel_messaging.approve": "Menyetujui/menolak pengiriman pesan keluar (WhatsApp/Telegram/Instagram/Facebook) yang dibuat agent",
+    "terminal.read":    "Melihat riwayat eksekusi terminal dan audit log",
+    "terminal.execute": "Menjalankan perintah shell/terminal melalui agent",
+    "terminal.approve": "Menyetujui/menolak perintah terminal berbahaya",
+    "sandbox.manage":   "Membuat dan mengelola sandbox session terisolasi",
+    "action_executor.read":    "Melihat riwayat eksekusi goal agent (Action Executor)",
+    "action_executor.execute": "Menjalankan goal multi-langkah via Action Executor pipeline",
+    "permission_grants.manage": "Mengelola grant izin aksi agent (permit/deny per-permission)",
 }
 
 # Role sistem -> daftar permission (cermin dari seed role_permissions di SQL;
@@ -104,9 +111,13 @@ SYSTEM_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "learning.read", "learning.write", "research.read",
         "computer_agent.read", "computer_agent.write", "execution_log.read",
         "channel_messaging.read",
+        "terminal.read", "terminal.execute",
+        "sandbox.manage",
+        "action_executor.read", "action_executor.execute",
+        "permission_grants.manage",
     },
     "agent":   {"bots.read", "conversations.read", "conversations.reply", "knowledge.read"},
-    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read"},
+    "viewer":  {"bots.read", "conversations.read", "analytics.read", "knowledge.read", "finance.read", "marketing.read", "operations.read", "workforce.read", "learning.read", "research.read", "terminal.read", "action_executor.read"},
 }
 
 ROLE_ORDER = ["owner", "admin", "manager", "agent", "viewer"]

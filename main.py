@@ -6096,6 +6096,7 @@ try:
     from bn_platform.self_learning import build_self_learning_router
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
+    from bn_platform.action_executor_router import build_action_executor_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -6357,6 +6358,14 @@ try:
         build_system_health_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        build_action_executor_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
         ),
         prefix="/api",
     )

@@ -1232,7 +1232,14 @@ INSERT INTO permissions (key, category, description) VALUES
  ('computer_agent.approve', 'computer_agent', 'Menyetujui/menolak aksi tulis (klik/isi form/submit) Computer Agent'),
  ('execution_log.read',     'execution_log',  'Melihat log eksekusi terpadu lintas-sistem (chat agent, AI Workforce, Computer Agent, Workflow Builder)'),
  ('channel_messaging.read',    'channel_messaging', 'Melihat riwayat/status pesan keluar yang dibuat agent lewat Tool Framework'),
- ('channel_messaging.approve', 'channel_messaging', 'Menyetujui/menolak pengiriman pesan keluar (WhatsApp/Telegram/Instagram/Facebook) yang dibuat agent')
+ ('channel_messaging.approve', 'channel_messaging', 'Menyetujui/menolak pengiriman pesan keluar (WhatsApp/Telegram/Instagram/Facebook) yang dibuat agent'),
+ ('terminal.read',    'terminal', 'Melihat riwayat eksekusi terminal dan audit log'),
+ ('terminal.execute', 'terminal', 'Menjalankan perintah shell/terminal melalui agent'),
+ ('terminal.approve', 'terminal', 'Menyetujui/menolak perintah terminal berbahaya'),
+ ('sandbox.manage',   'sandbox',  'Membuat dan mengelola sandbox session terisolasi'),
+ ('action_executor.read',    'action_executor', 'Melihat riwayat eksekusi goal agent (Action Executor)'),
+ ('action_executor.execute', 'action_executor', 'Menjalankan goal multi-langkah via Action Executor pipeline'),
+ ('permission_grants.manage', 'permission_grants', 'Mengelola grant izin aksi agent (permit/deny per-permission)')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1267,7 +1274,11 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'operations.read', 'operations.write', 'workforce.read', 'workforce.write',
                 'learning.read', 'learning.write', 'research.read',
                 'computer_agent.read', 'computer_agent.write', 'execution_log.read',
-                'channel_messaging.read')
+                'channel_messaging.read',
+                'terminal.read', 'terminal.execute',
+                'sandbox.manage',
+                'action_executor.read', 'action_executor.execute',
+                'permission_grants.manage')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -1279,7 +1290,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.org_id IS NULL AND r.key = 'viewer'
-  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read', 'learning.read', 'research.read')
+  AND p.key IN ('bots.read', 'conversations.read', 'analytics.read', 'knowledge.read', 'finance.read', 'marketing.read', 'operations.read', 'workforce.read', 'learning.read', 'research.read', 'terminal.read', 'action_executor.read')
 ON CONFLICT DO NOTHING;
 
 -- 6 Template Marketplace (instal 1-klik -> membuat bot baru terisi konfigurasi & FAQ awal)
