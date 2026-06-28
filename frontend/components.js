@@ -115,26 +115,121 @@ export function formatDate(value, options = {}) {
 }
 export function relativeTime(value) {
   if (!value) return "—"; const seconds = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
-  if (seconds < 60) return `${Math.floor(seconds)}d lalu`; if (seconds < 3600) return `${Math.floor(seconds/60)}m lalu`;
-  if (seconds < 86400) return `${Math.floor(seconds/3600)}j lalu`; return `${Math.floor(seconds/86400)}h lalu`;
+  if (seconds < 60) return `${Math.floor(seconds)}${t('time.sec_ago')}`;
+  if (seconds < 3600) return `${Math.floor(seconds/60)}${t('time.min_ago')}`;
+  if (seconds < 86400) return `${Math.floor(seconds/3600)}${t('time.hour_ago')}`;
+  return `${Math.floor(seconds/86400)}${t('time.day_ago')}`;
 }
 export function idr(value) { return new Intl.NumberFormat("id-ID", { style:"currency", currency:"IDR", maximumFractionDigits:0 }).format(Number(value || 0)); }
 
-const navGroups = [
-  ["command-center","Command Center","dashboard", [["dashboard","Dashboard"],["casper-agentic-workflow","Casper Agentic"],["executive","Executive Center"],["workforce-overview","Workforce Overview"],["investor-demo","Investor Demo"]]],
-  ["workforce","Workforce","agents", [["agents","AI Agents"],["chat","AI Chat"],["finance","Finance Agent"],["marketing","Marketing Agent"],["hr","HR Agent"],["operations","Operations Agent"],["marketplace","Agent Marketplace"]]],
-  ["tasks","Tasks","workflow-builder", [["workflow-builder","Automation"],["workforce","Workforce Orchestration"]]],
-  ["communications","Communications","communication-center", [["conversations","Inbox"],["handoffs","Human Handoff"],["communication-center","Communication Center"],["channels","Integrations"]]],
-  ["knowledge","Knowledge","knowledge", [["knowledge","Knowledge"],["kb-builder","Knowledge Builder"],["learning","Feedback Learning"],["self-learning","Self-Learning Center"],["improvement","AI Improvement"]]],
-  ["business","Business","analytics", [["analytics","Analytics"],["multimedia","Multimedia Studio"],["handoffs","Customers"]]],
-  ["agent-os","Agent OS","agent-center", [["agent-center","Agent Center"],["routing-logs","Routing Logs"],["observability","AI Observability"],["costs","Cost Intelligence"]]],
-  ["organization","Organization","team", [["team","Team"],["security","Security"]]],
-  ["billing","Billing","billing", [["billing","Billing"]]],
-  ["settings","Settings","settings", [["settings","Settings"],["founder","Founder OS"],["about","About BotNesia"],["founder-story","Founder Story"]]],
-];
+function getNavGroups() {
+  const n = (k) => t(`nav.item.${k}`);
+  const g = (k) => t(`nav.group.${k}`);
+  return [
+    ["command-center", g("command-center"), "dashboard", [
+      ["dashboard", n("dashboard")],
+      ["casper-agentic-workflow", n("casper-agentic-workflow")],
+      ["executive", n("executive")],
+      ["workforce-overview", n("workforce-overview")],
+      ["investor-demo", n("investor-demo")],
+    ]],
+    ["workforce", g("workforce"), "agents", [
+      ["agents", n("agents")],
+      ["chat", n("chat")],
+      ["finance", n("finance")],
+      ["marketing", n("marketing")],
+      ["hr", n("hr")],
+      ["operations", n("operations")],
+      ["marketplace", n("marketplace")],
+    ]],
+    ["tasks", g("tasks"), "workflow-builder", [
+      ["workflow-builder", n("workflow-builder")],
+      ["workforce", n("workforce")],
+    ]],
+    ["communications", g("communications"), "communication-center", [
+      ["conversations", n("conversations")],
+      ["handoffs", n("handoffs")],
+      ["communication-center", n("communication-center")],
+      ["channels", n("channels")],
+    ]],
+    ["knowledge", g("knowledge"), "knowledge", [
+      ["knowledge", n("knowledge")],
+      ["kb-builder", n("kb-builder")],
+      ["learning", n("learning")],
+      ["self-learning", n("self-learning")],
+      ["improvement", n("improvement")],
+    ]],
+    ["business", g("business"), "analytics", [
+      ["analytics", n("analytics")],
+      ["multimedia", n("multimedia")],
+      ["handoffs", n("handoffs-customers")],
+    ]],
+    ["agent-os", g("agent-os"), "agent-center", [
+      ["agent-center", n("agent-center")],
+      ["routing-logs", n("routing-logs")],
+      ["observability", n("observability")],
+      ["costs", n("costs")],
+    ]],
+    ["organization", g("organization"), "team", [
+      ["team", n("team")],
+      ["security", n("security")],
+    ]],
+    ["billing", g("billing"), "billing", [
+      ["billing", n("billing")],
+    ]],
+    ["settings", g("settings"), "settings", [
+      ["settings", n("settings")],
+      ["founder", n("founder")],
+      ["about", n("about")],
+      ["founder-story", n("founder-story")],
+    ]],
+  ];
+}
+
+function getRouteMeta() {
+  const r = (k) => [t(`route.${k}.title`), t(`route.${k}.desc`)];
+  return {
+    founder: r("founder"),
+    dashboard: r("dashboard"),
+    agents: r("agents"),
+    chat: r("chat"),
+    conversations: r("conversations"),
+    analytics: r("analytics"),
+    observability: r("observability"),
+    "routing-logs": r("routing-logs"),
+    channels: r("channels"),
+    costs: r("costs"),
+    marketplace: r("marketplace"),
+    handoffs: r("handoffs"),
+    learning: r("learning"),
+    improvement: r("improvement"),
+    knowledge: r("knowledge"),
+    "kb-builder": r("kb-builder"),
+    "workflow-builder": r("workflow-builder"),
+    finance: r("finance"),
+    marketing: r("marketing"),
+    hr: r("hr"),
+    operations: r("operations"),
+    executive: r("executive"),
+    workforce: r("workforce"),
+    "self-learning": r("self-learning"),
+    "workforce-overview": r("workforce-overview"),
+    "agent-center": r("agent-center"),
+    "communication-center": r("communication-center"),
+    "casper-agentic-workflow": r("casper-agentic-workflow"),
+    about: r("about"),
+    "founder-story": r("founder-story"),
+    "investor-demo": r("investor-demo"),
+    multimedia: r("multimedia"),
+    team: r("team"),
+    security: r("security"),
+    billing: r("billing"),
+    settings: r("settings"),
+  };
+}
 
 export function sidebar({ route, org, user, counts = {}, founderAccess = false, openSections = new Set() }) {
-  const groups = navGroups.map(([key, label, groupIcon, links]) => [key, label, groupIcon, links.filter(([k]) => k !== "founder" || founderAccess)]).filter(([, , , links]) => links.length);
+  const groups = getNavGroups().map(([key, label, groupIcon, links]) => [key, label, groupIcon, links.filter(([k]) => k !== "founder" || founderAccess)]).filter(([, , , links]) => links.length);
   const items = groups.map(([key, label, groupIcon, links]) => {
     const isOpen = openSections.has(key) || links.some(([k]) => k === route);
     const children = links.map(([k,l]) => {
@@ -148,43 +243,8 @@ export function sidebar({ route, org, user, counts = {}, founderAccess = false, 
   return `<div class="sidebar-head"><a class="brand" href="#dashboard" aria-label="BotNesia — Go to dashboard"><img class="brand-logo" src="${BRAND_LOGO}" alt="BotNesia logo"><span>BOTNESIA</span></a><div class="workspace-switcher" role="status" aria-label="Current workspace: ${esc(org?.name || 'Workspace')}, plan: ${planBadgeText}"><strong class="truncate">${esc(org?.name || 'Workspace')}</strong><small>${planBadgeText} · ${esc(org?.slug || 'tenant')}</small></div></div><nav class="nav" role="navigation" aria-label="Main navigation">${items}</nav><div class="sidebar-footer"><div class="user-chip"><span class="avatar" aria-hidden="true">${initials(user?.full_name || user?.email)}</span><div class="truncate"><strong class="truncate">${esc(user?.full_name || 'Workspace Admin')}</strong><small class="truncate">${esc(user?.email || '')}</small></div><button class="icon-button" data-action="logout" title="${t('signout')}" aria-label="${t('signout')}">${icon('arrow',14)}</button></div></div>`;
 }
 
-const routeMeta = {
-  founder:["Founder Operating System","Platform-wide revenue, growth, retention, AI economics, and business health"],
-  dashboard:["AI Business Command Center","Kelola pelanggan, penjualan, marketing, dan tim AI dari satu tempat."], agents:["AI Workforce","Pantau karyawan AI yang sedang bekerja untuk bisnis Anda."],
-  chat:["AI Chat","Ngobrol langsung dengan AI agent kamu - seperti ChatGPT atau Claude"],
-  conversations:["Inbox","Percakapan pelanggan dari semua channel."], analytics:["Analytics","Performa bisnis dan customer journey."],
-  observability:["AI Observability","Agent execution health, latency, tokens, failures, and request traces"],
-  "routing-logs":["Routing Logs","Per-message Intent Router decisions: intent, selected agent, confidence, and handoff status"],
-  channels:["Integrations","Hubungkan channel pelanggan dan tool bisnis."],
-  costs:["Cost Intelligence","AI operating cost, budget health, and model efficiency"],
-  marketplace:["Agent Marketplace","Install, update, and manage reusable AI agents"],
-  handoffs:["Human Handoff","AI escalation queue, ownership, SLA, and resolution workflow"],
-  learning:["Feedback Learning","User feedback, failed questions, knowledge gaps, and improvement queue"],
-  improvement:["AI Improvement Center","Self-evaluation: top issues, knowledge gaps, agent weaknesses, and AI-suggested improvements for admin review"],
-  knowledge:["Knowledge Base","Ground your agents with trusted company knowledge"],
-  "kb-builder":["Knowledge Builder","Auto-generate FAQ, SOP, summaries, categories, and quality scores from your documents"],
-  "workflow-builder":["Workflow Builder","Rancang automasi AI Agent ala n8n/Zapier — trigger, condition, agent, action, dan notification"],
-  finance:["Finance","Revenue, invoice, payment, dan laporan keuangan bisnis."],
-  marketing:["Sales & Marketing","Lead, campaign, konten, dan peluang closing."],
-  hr:["HR Center","AI Workforce: CV screening, candidate scoring, interview questions, evaluasi karyawan, dan rekomendasi training"],
-  operations:["Operations Center","AI Workforce: tenant health, workflow & SLA monitoring, weekly/monthly report, dan critical alert"],
-  executive:["Executive Center","AI Workforce: AI CEO Assistant — company health score, executive brief, growth/cost/revenue insight lintas-domain"],
-  workforce:["Workforce Orchestration","AI Workforce: koordinasi task lintas-agent, deteksi konflik, eskalasi, dan human approval workflow"],
-  "self-learning":["Self-Learning Center","AI Workforce: insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot"],
-  "workforce-overview":["AI Workforce Overview","Company health score lintas Finance/Marketing/HR/Operations/Security/Executive — satu tampilan untuk seluruh AI Workforce"],
-  "agent-center":["Agent Center","Direktori semua AI agent, jalankan Run Task lewat Task Engine, execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging"],
-  "communication-center":["Communication Center","Status koneksi, response rate, response time, satisfaction, dan AI resolution rate lintas semua channel pelanggan"],
-  "casper-agentic-workflow":["Casper Agentic Workflow","AI agent business decisions anchored immutably to Casper Testnet blockchain — verifiable, audit-proof, decentralised."],
-  about:["About BotNesia","Visi, misi, dan alasan BotNesia dibangun"],
-  "founder-story":["Founder Story","Cerita di balik BotNesia dan misi pendirinya"],
-  "investor-demo":["Investor Demo Mode","AI menganalisis skenario bisnis simulasi secara live — root cause, rekomendasi, action plan, dan prediksi pertumbuhan"],
-  multimedia:["Multimedia Studio","Generate gambar, analisis gambar (Vision AI), dan buat dokumen PDF/DOCX/XLSX/PPTX"],
-  team:["Team & Tenants","People, roles, access, and workspace identity"],
-  security:["Security","Keamanan akun, akses tim, dan risiko bisnis."],
-  billing:["Billing","Subscription, invoice, dan penggunaan paket."], settings:["Settings","Preferensi workspace dan konfigurasi platform."],
-};
 export function topbar({ route, health }) {
-  const [title, description] = routeMeta[route] || routeMeta.dashboard;
+  const [title, description] = (getRouteMeta()[route] || getRouteMeta().dashboard);
   const isActive = health?.status === 'ok';
   return `<div class="topbar-left"><button class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="Toggle navigation menu" aria-expanded="false">${icon('menu')}</button><img class="topbar-logo" src="${BRAND_LOGO}" alt="BotNesia logo" aria-hidden="true"><div class="page-heading" role="heading" aria-level="1"><h1>${title}</h1><p>${description}</p></div></div><div class="topbar-actions" role="toolbar" aria-label="Topbar actions"><label class="search-box" aria-label="Global search">${icon('search',15)}<input data-global-search placeholder="${t('search_placeholder')}" aria-label="${t('search_placeholder')}" autocomplete="off"><kbd class="mono" aria-label="Shortcut: Command K">⌘K</kbd></label><span class="status-badge ${isActive?'active':'error'}" role="status" aria-live="polite">${isActive?t('status_active'):t('status_down')}</span>${langSwitcherHtml()}<button class="icon-button" data-action="notifications" title="Notifications" aria-label="Notifications">${icon('bell')}</button></div>`;
 }
@@ -232,7 +292,7 @@ export function readonlyField(label, value) {
 
 export function agentCard(bot) {
   const status = bot.status || "inactive";
-  return `<article class="card card-hover agent-card" data-agent-id="${esc(bot.id)}" role="button" tabindex="0" aria-label="Agent: ${esc(bot.name)}, status: ${esc(status)}"><div class="agent-card-top"><span class="agent-icon" aria-hidden="true">${initials(bot.name)}</span><div style="min-width:0;flex:1"><h3 class="truncate">${esc(bot.name)}</h3>${statusBadge(status)}</div><button class="icon-button" data-agent-id="${esc(bot.id)}" aria-label="More options for ${esc(bot.name)}">${icon('more',14)}</button></div><p>${esc(bot.greeting || 'AI agent configured for customer operations.')}</p><div class="agent-stats"><div><b>${formatNumber(bot.total_convs)}</b><span>Conversations</span></div><div><b>${formatNumber(bot.total_msgs)}</b><span>Messages</span></div></div></article>`;
+  return `<article class="card card-hover agent-card" data-agent-id="${esc(bot.id)}" role="button" tabindex="0" aria-label="Agent: ${esc(bot.name)}, status: ${esc(status)}"><div class="agent-card-top"><span class="agent-icon" aria-hidden="true">${initials(bot.name)}</span><div style="min-width:0;flex:1"><h3 class="truncate">${esc(bot.name)}</h3>${statusBadge(status)}</div><button class="icon-button" data-agent-id="${esc(bot.id)}" aria-label="More options for ${esc(bot.name)}">${icon('more',14)}</button></div><p>${esc(bot.greeting || 'AI agent configured for customer operations.')}</p><div class="agent-stats"><div><b>${formatNumber(bot.total_convs)}</b><span>${t('page.agents.convs')}</span></div><div><b>${formatNumber(bot.total_msgs)}</b><span>${t('page.agents.msgs')}</span></div></div></article>`;
 }
 
 export function activityItem(item) {
@@ -245,7 +305,7 @@ export function modal({ title, body, footer = "", wide = false }) {
 }
 
 export function agentDrawer(bot) {
-  return `<div class="drawer-head"><div><span class="eyebrow">AGENT DETAIL</span><h3 style="margin:7px 0 0">${esc(bot.name)}</h3></div><button class="icon-button" data-action="close-drawer">${icon('close')}</button></div><div class="drawer-body"><div class="drawer-section"><div class="agent-card-top"><span class="agent-icon">${initials(bot.name)}</span><div><strong>${esc(bot.name)}</strong><div style="margin-top:6px">${statusBadge(bot.status)}</div></div></div></div><form id="agent-detail-form" data-agent-id="${esc(bot.id)}"><div class="form-grid"><label class="field"><span>Agent name</span><input name="name" value="${esc(bot.name)}" required></label><label class="field"><span>Status</span><select name="status"><option value="active" ${bot.status==='active'?'selected':''}>Active</option><option value="training" ${bot.status==='training'?'selected':''}>Training</option><option value="inactive" ${bot.status==='inactive'?'selected':''}>Inactive</option></select></label><label class="field full"><span>Greeting message</span><textarea name="greeting" style="min-height:90px">${esc(bot.greeting || '')}</textarea></label><label class="field full"><span>System prompt</span><textarea name="system_prompt" placeholder="Define role, tone, boundaries, and business context...">${esc(bot.system_prompt || '')}</textarea></label><label class="field"><span>Language</span><select name="language"><option value="id" ${bot.language==='id'?'selected':''}>Bahasa Indonesia</option><option value="en" ${bot.language==='en'?'selected':''}>English</option></select></label><label class="field"><span>Brand color</span><input name="primary_color" type="color" value="${esc(bot.primary_color || '#8b7cff')}"></label><label class="field"><span>Reasoning Mode</span><select name="reasoning_mode"><option value="standard" ${bot.reasoning_mode!=='pro'?'selected':''}>Standard (fast)</option><option value="pro" ${bot.reasoning_mode==='pro'?'selected':''}>Pro (deep analysis)</option></select><small style="color:var(--text-muted);display:block;margin-top:4px">Pro: untuk pertanyaan kompleks/analitis, agent merencanakan, bernalar lewat tim spesialis, dan memverifikasi jawaban sebelum dikirim (lebih lambat &amp; lebih dalam).</small></label></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px"><button class="button button-primary" type="submit">Save changes</button></div></form></div>`;
+  return `<div class="drawer-head"><div><span class="eyebrow">${t('agent.detail')}</span><h3 style="margin:7px 0 0">${esc(bot.name)}</h3></div><button class="icon-button" data-action="close-drawer">${icon('close')}</button></div><div class="drawer-body"><div class="drawer-section"><div class="agent-card-top"><span class="agent-icon">${initials(bot.name)}</span><div><strong>${esc(bot.name)}</strong><div style="margin-top:6px">${statusBadge(bot.status)}</div></div></div></div><form id="agent-detail-form" data-agent-id="${esc(bot.id)}"><div class="form-grid"><label class="field"><span>${t('agent.field.name')}</span><input name="name" value="${esc(bot.name)}" required></label><label class="field"><span>${t('agent.field.status')}</span><select name="status"><option value="active" ${bot.status==='active'?'selected':''}>${t('agent.status.active')}</option><option value="training" ${bot.status==='training'?'selected':''}>${t('agent.status.training')}</option><option value="inactive" ${bot.status==='inactive'?'selected':''}>${t('agent.status.inactive')}</option></select></label><label class="field full"><span>${t('agent.field.greeting')}</span><textarea name="greeting" style="min-height:90px">${esc(bot.greeting || '')}</textarea></label><label class="field full"><span>${t('agent.field.prompt')}</span><textarea name="system_prompt" placeholder="Define role, tone, boundaries, and business context...">${esc(bot.system_prompt || '')}</textarea></label><label class="field"><span>${t('agent.field.language')}</span><select name="language"><option value="id" ${bot.language==='id'?'selected':''}>Bahasa Indonesia</option><option value="en" ${bot.language==='en'?'selected':''}>English</option></select></label><label class="field"><span>${t('agent.field.color')}</span><input name="primary_color" type="color" value="${esc(bot.primary_color || '#8b7cff')}"></label><label class="field"><span>${t('agent.field.reasoning')}</span><select name="reasoning_mode"><option value="standard" ${bot.reasoning_mode!=='pro'?'selected':''}>${t('agent.field.reasoning_standard')}</option><option value="pro" ${bot.reasoning_mode==='pro'?'selected':''}>${t('agent.field.reasoning_pro')}</option></select><small style="color:var(--text-muted);display:block;margin-top:4px">${t('agent.field.reasoning_note')}</small></label></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px"><button class="button button-primary" type="submit">${t('agent.save_changes')}</button></div></form></div>`;
 }
 
 export function toast(message, type = "") {

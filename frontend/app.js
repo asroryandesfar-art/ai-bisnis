@@ -91,7 +91,7 @@ function loadingPage(title, description, skeletonCount = 4) {
 }
 
 async function renderDashboard() {
-  loadingPage("Command Center", "Monitor live AI operations, customer demand, and team workload from one place.");
+  loadingPage(t('route.dashboard.title'), t('route.dashboard.desc'));
   const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
   const results = await Promise.all([
     bot ? settle("analytics", api.botAnalytics(bot.id, 30)) : Promise.resolve({ok:false}),
@@ -136,7 +136,7 @@ async function renderDashboard() {
   ].filter(Boolean);
   const opportunityHtml = opportunities.length
     ? opportunities.map(([title,detail,owner]) => `<li><span></span><div><strong>${esc(title)}</strong><p>${esc(detail)}</p></div><em>${esc(owner)}</em></li>`).join("")
-    : `<li><span></span><div><strong>Tidak ada yang butuh perhatian khusus</strong><p>Semua domain AI Workforce dalam kondisi normal hari ini.</p></div></li>`;
+    : `<li><span></span><div><strong>${t('page.dashboard.no_attention')}</strong><p>${t('page.dashboard.all_normal')}</p></div></li>`;
 
   const workforce = [
     ["Finance Agent", overdueInvoices ? "Needs Attention" : "Healthy", `${formatNumber(pendingInvoices)} invoice pending`, idr(finance.revenue_30d_idr || 0) + " revenue 30 hari", overdueInvoices ? `${formatNumber(overdueInvoices)} invoice overdue perlu reminder` : "Tidak ada invoice overdue", "finance"],
@@ -144,7 +144,7 @@ async function renderDashboard() {
     ["HR Agent", pendingTraining ? "Needs Attention" : "Healthy", `${formatNumber(Object.values(hr.candidates_by_status || {}).reduce((s,n)=>s+Number(n||0),0))} kandidat aktif`, `${formatNumber(pendingTraining)} rekomendasi training`, hr.avg_evaluation_score_90d != null ? `Avg evaluasi karyawan: ${hr.avg_evaluation_score_90d}` : "Belum ada data evaluasi", "hr"],
     ["Executive Agent", health.label || "—", `Company health ${health.overall ?? "—"}/100`, `${formatNumber(Object.keys(health.by_domain || {}).length)} domain dipantau`, "Health score lintas Finance/Marketing/HR/Operations/Security/Sales", "executive"],
     ["Security Agent", security.risk_level || "—", `Risk level: ${security.risk_level || "—"}`, `${formatNumber(security.suspicious_sessions_count || 0)} sesi mencurigakan`, openSecurityAlerts ? `${formatNumber(openSecurityAlerts)} alert terbuka` : "Tidak ada alert terbuka", "security"],
-  ].map(([name,status,current,weekly,last,iconName]) => `<article class="workforce-employee" data-route="${iconName}"><div class="employee-head"><span class="employee-avatar">${initials(name)}</span><div><h3>${esc(name)}</h3><span class="employee-status"><i></i>${esc(status)}</span></div></div><dl><div><dt>Status</dt><dd>${esc(current)}</dd></div><div><dt>30 hari</dt><dd>${esc(weekly)}</dd></div><div><dt>Perlu perhatian</dt><dd>${esc(last)}</dd></div></dl></article>`).join("");
+  ].map(([name,status,current,weekly,last,iconName]) => `<article class="workforce-employee" data-route="${iconName}"><div class="employee-head"><span class="employee-avatar">${initials(name)}</span><div><h3>${esc(name)}</h3><span class="employee-status"><i></i>${esc(status)}</span></div></div><dl><div><dt>${t('common.status')}</dt><dd>${esc(current)}</dd></div><div><dt>${t('page.dashboard.domain_30d')}</dt><dd>${esc(weekly)}</dd></div><div><dt>${t('page.dashboard.domain_attention')}</dt><dd>${esc(last)}</dd></div></dl></article>`).join("");
 
   const healthDescriptionParts = [];
   if (overdueInvoices) healthDescriptionParts.push(`${formatNumber(overdueInvoices)} invoice overdue`);
@@ -158,29 +158,29 @@ async function renderDashboard() {
     <section class="business-hero">
       <div class="business-hero-copy">
         <img class="business-hero-logo" src="/assets/brand/botnesia-clean-logo.png" alt="BotNesia logo">
-        <span class="eyebrow">AI WORKFORCE PLATFORM</span>
-        <h2>AI Business Command Center</h2>
-        <p>Kelola pelanggan, penjualan, marketing, dan tim AI dari satu tempat.</p>
+        <span class="eyebrow">${t('page.dashboard.hero_eyebrow')}</span>
+        <h2>${t('page.dashboard.hero_title')}</h2>
+        <p>${t('page.dashboard.hero_desc')}</p>
         <div class="business-quick-actions">
-          <button class="button button-primary" data-route="chat">${icon('chat',14)} Open AI Chat</button>
-          <button class="button" data-route="conversations">${icon('conversations',14)} Open Inbox</button>
+          <button class="button button-primary" data-route="chat">${icon('chat',14)} ${t('page.dashboard.open_ai_chat')}</button>
+          <button class="button" data-route="conversations">${icon('conversations',14)} ${t('page.dashboard.open_inbox')}</button>
         </div>
       </div>
       <div class="business-health-card" data-route="executive">
-        <span>Business Health Score</span>
+        <span>${t('page.dashboard.business_health')}</span>
         <strong>${health.overall ?? "—"}<small>/100</small></strong>
         <p>${esc(healthDescription)}</p>
       </div>
     </section>
     <section class="business-kpis">
-      <article data-route="finance"><span>Revenue (30 hari)</span><strong>${idr(finance.revenue_30d_idr || 0)}</strong><small>${formatNumber(pendingInvoices)} invoice pending</small></article>
-      <article data-route="conversations"><span>Active Conversations</span><strong>${formatNumber(overview.conversations_30d ?? summary.total_convs ?? 0)}</strong><small>30 hari terakhir</small></article>
-      <article data-route="handoffs"><span>Human Handoff</span><strong>${formatNumber(queue.length)}</strong><small>Menunggu di queue</small></article>
-      <article data-route="operations"><span>Operations Health</span><strong>${opsHealth.score ?? "—"}</strong><small>${esc(opsHealth.label || "—")}</small></article>
+      <article data-route="finance"><span>${t('page.dashboard.revenue_30d')}</span><strong>${idr(finance.revenue_30d_idr || 0)}</strong><small>${formatNumber(pendingInvoices)} invoice pending</small></article>
+      <article data-route="conversations"><span>${t('page.dashboard.active_convs')}</span><strong>${formatNumber(overview.conversations_30d ?? summary.total_convs ?? 0)}</strong><small>${t('page.dashboard.last_30d')}</small></article>
+      <article data-route="handoffs"><span>${t('page.dashboard.human_handoff')}</span><strong>${formatNumber(queue.length)}</strong><small>${t('page.dashboard.waiting_queue')}</small></article>
+      <article data-route="operations"><span>${t('page.dashboard.ops_health')}</span><strong>${opsHealth.score ?? "—"}</strong><small>${esc(opsHealth.label || "—")}</small></article>
     </section>
     <section class="business-main-grid">
-      <div class="business-panel workforce-panel"><div class="business-section-head"><div><span class="eyebrow">AI WORKFORCE STATUS</span><h3>Tim AI sedang bekerja</h3></div><button class="button button-ghost" data-route="workforce-overview">Lihat semua</button></div><div class="workforce-grid">${workforce}</div></div>
-      <aside class="business-panel opportunities-panel"><div class="business-section-head"><div><span class="eyebrow">TODAY'S OPPORTUNITIES</span><h3>Yang perlu diperhatikan hari ini</h3></div></div><ul class="opportunity-list">${opportunityHtml}</ul></aside>
+      <div class="business-panel workforce-panel"><div class="business-section-head"><div><span class="eyebrow">${t('page.dashboard.workforce_eyebrow')}</span><h3>${t('page.dashboard.workforce_heading')}</h3></div><button class="button button-ghost" data-route="workforce-overview">${t('page.dashboard.view_all')}</button></div><div class="workforce-grid">${workforce}</div></div>
+      <aside class="business-panel opportunities-panel"><div class="business-section-head"><div><span class="eyebrow">${t('page.dashboard.opps_eyebrow')}</span><h3>${t('page.dashboard.opps_heading')}</h3></div></div><ul class="opportunity-list">${opportunityHtml}</ul></aside>
     </section>
   </section>`);
 }
@@ -249,22 +249,22 @@ async function renderAgents() {
   const inactive = total - active;
   const statsHtml = total ? `<div class="agent-page-stats">
     <div class="agent-stat-chip">${icon('agents',12)}<span>${total} agent${total !== 1 ? 's' : ''}</span></div>
-    <div class="agent-stat-chip"><span class="dot dot-active"></span><span>${active} active</span></div>
-    ${inactive ? `<div class="agent-stat-chip"><span class="dot dot-inactive"></span><span>${inactive} inactive</span></div>` : ''}
+    <div class="agent-stat-chip"><span class="dot dot-active"></span><span>${active} ${t('page.agents.stat_active')}</span></div>
+    ${inactive ? `<div class="agent-stat-chip"><span class="dot dot-inactive"></span><span>${inactive} ${t('page.agents.stat_inactive')}</span></div>` : ''}
   </div>` : '';
-  setPage(`${pageHeader("AI Agent Center","Manage every AI persona, prompt, channel assignment, and lifecycle state.",`<button class="button button-primary" data-action="create-agent">${icon('plus',14)} New agent</button>`)}${statsHtml}${total ? `<div class="grid grid-3">${state.bots.map(agentCard).join('')}</div>` : emptyState("No AI agents yet","Deploy your first agent — define its role, system prompt, greeting, and operating language.",`<button class="button button-primary" data-action="create-agent">Deploy first agent</button>`)}`);
+  setPage(`${pageHeader(t('page.agents.title'), t('page.agents.subtitle'), `<button class="button button-primary" data-action="create-agent">${icon('plus',14)} ${t('page.agents.new_btn')}</button>`)}${statsHtml}${total ? `<div class="grid grid-3">${state.bots.map(agentCard).join('')}</div>` : emptyState(t('page.agents.empty_title'), t('page.agents.empty_desc'), `<button class="button button-primary" data-action="create-agent">${t('page.agents.deploy_btn')}</button>`)}`);
 }
 
 async function renderChat() {
   if (!state.bots.length) {
-    setPage(`${pageHeader("AI Chat","Talk directly with your AI agent — like ChatGPT or Claude.")}${emptyState("No AI agent yet","Deploy an agent first to start chatting.",`<button class="button button-primary" data-action="create-agent">Deploy agent</button>`)}`);
+    setPage(`${pageHeader(t('page.chat.title'), t('page.chat.subtitle'))}${emptyState(t('page.chat.no_agent_title'), t('page.chat.no_agent_desc'), `<button class="button button-primary" data-action="create-agent">${t('page.chat.deploy_btn')}</button>`)}`);
     return;
   }
   const bot = state.bots.find((item) => item.id === state.selectedBotId) || state.bots[0];
   state.selectedBotId = bot.id;
   const options = state.bots.map((item) => `<option value="${esc(item.id)}" ${item.id===bot.id?"selected":""}>${esc(item.name)}</option>`).join("");
-  const body = `<div class="card chat-page"><div class="card-head"><div><h3>${esc(bot.name)}</h3><p class="chat-page-intro">Voice, images, and text — all in one place. Real AI responses from your configured agent.</p></div><div class="chat-agent-select"><select class="select" data-chat-page-bot aria-label="Switch agent">${options}</select><button class="button" data-action="new-chat" aria-label="New chat">${icon('plus',14)} New chat</button></div></div><div id="playground-messages" class="messages chat-page-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="chat-page-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><label class="icon-button" title="Upload &amp; analyze image" aria-label="Upload image">${icon("upload",17)}<input type="file" data-chat-image-upload accept="image/png,image/jpeg,image/webp,image/gif" hidden></label><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice" aria-label="Record voice message">${icon("mic",17)}</button><textarea name="message" placeholder="Message the agent..." required aria-label="Message input"></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies aloud" aria-label="Toggle speech">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} Send</button></form><div class="voice-status" data-voice-status aria-live="polite">Mic ready · AI replies will be read aloud</div></div></div>`;
-  setPage(`${pageHeader("AI Chat","Talk directly with your AI agent — like ChatGPT or Claude.")}${body}`);
+  const body = `<div class="card chat-page"><div class="card-head"><div><h3>${esc(bot.name)}</h3><p class="chat-page-intro">Voice, images, and text — all in one place. Real AI responses from your configured agent.</p></div><div class="chat-agent-select"><select class="select" data-chat-page-bot aria-label="Switch agent">${options}</select><button class="button" data-action="new-chat" aria-label="${t('page.chat.new_chat')}">${icon('plus',14)} ${t('page.chat.new_chat')}</button></div></div><div id="playground-messages" class="messages chat-page-messages"><div class="message"><div class="message-bubble">${esc(bot.greeting||"Halo! Ada yang bisa saya bantu?")}</div></div></div><div class="chat-page-footer"><form data-playground-form class="chat-composer" data-bot-id="${esc(bot.id)}"><label class="icon-button" title="Upload &amp; analyze image" aria-label="Upload image">${icon("upload",17)}<input type="file" data-chat-image-upload accept="image/png,image/jpeg,image/webp,image/gif" hidden></label><button class="icon-button record-button" type="button" data-action="toggle-recording" title="Record voice" aria-label="Record voice message">${icon("mic",17)}</button><textarea name="message" placeholder="${t('page.chat.message_placeholder')}" required aria-label="Message input"></textarea><button class="icon-button" type="button" data-action="toggle-speech" title="Read AI replies aloud" aria-label="Toggle speech">${icon("speaker",17)}</button><button class="button button-primary" type="submit" data-action="send-chat">${icon("send",14)} ${t('page.chat.send')}</button></form><div class="voice-status" data-voice-status aria-live="polite">${t('page.chat.voice_ready')}</div></div></div>`;
+  setPage(`${pageHeader(t('page.chat.title'), t('page.chat.subtitle'))}${body}`);
 }
 
 async function loadConversationData(botId = state.selectedBotId) {
@@ -284,18 +284,18 @@ function feedbackControls(messageId, conversationId, selected = "") {
 }
 
 async function renderFeedbackLearning() {
-  loadingPage("Feedback Learning", "Turn real user feedback into knowledge, prompt, and workflow improvements.");
+  loadingPage(t('page.learning.title'), t('page.learning.subtitle'));
   let data, queueData;
   try { [data, queueData] = await Promise.all([api.feedbackSummary(30), api.feedbackQueue()]); }
   catch (error) { setPage(errorState(error.message)); return; }
   const listCard = (title, rows, empty, negative = false) => `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div>${rows.length?`<div class="feedback-list">${rows.map((row)=>`<div class="feedback-list-item"><strong>${esc(row.question || 'No question recorded')}</strong><p>${esc(row.comment || row.failure_reason || row.answer || '')}</p><span class="subtle">${formatNumber(row.feedback_count || row.failure_count || row.occurrence_count || 1)} ${negative?'failures':'signals'}</span></div>`).join('')}</div>`:emptyState(empty,"Feedback will appear after users rate AI answers.")}</div>`;
   const queueRows = (queueData.queue || []).map((item) => `<tr><td><span class="table-title">${esc(item.question)}</span><div class="subtle" style="margin-top:4px">${esc(item.failure_reason || '')}</div></td><td>${statusBadge(item.action_type,item.action_type)}</td><td>${formatNumber(item.occurrence_count)}</td><td>${statusBadge(item.status,item.status)}</td><td><div style="display:flex;gap:6px">${item.status==='pending'?`<button class="button" data-learning-action="in_progress" data-learning-id="${esc(item.id)}">Start</button>`:''}${item.status!=='resolved'&&item.status!=='dismissed'?`<button class="button button-primary" data-learning-action="resolved" data-learning-id="${esc(item.id)}">Resolve</button>`:''}</div></td></tr>`).join('');
-  setPage(`${pageHeader("Feedback Learning","User ratings feed a governed queue for knowledge, prompt, and workflow improvements.",`<span class="status-badge active">30-day feedback window</span>`)}
+  setPage(`${pageHeader(t('page.learning.title'), t('page.learning.subtitle'),`<span class="status-badge active">30-day feedback window</span>`)}
   <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Total Feedback",formatNumber(data.total_feedback),`${formatNumber(data.helpful)} helpful`,`learning`)}${metricCard("Helpful Rate",`${Number(data.helpful_rate||0).toFixed(1)}%`,"Positive user ratings","dashboard","trend-up")}${metricCard("Not Helpful",formatNumber(data.not_helpful),"Answers requiring review","observability",data.not_helpful?'trend-down':'trend-up')}${metricCard("Learning Queue",formatNumber(data.queue?.pending),`${formatNumber(data.queue?.in_progress)} in progress`,`knowledge`)}</div>
-  <div class="page-section-label">Top signals</div>
-  <div class="grid grid-2" style="margin-bottom:16px">${listCard("Top Positive Feedback",data.top_positive_feedback||[],"No positive feedback")}${listCard("Top Negative Feedback",data.top_negative_feedback||[],"No negative feedback",true)}${listCard("Most Failed Questions",data.most_failed_questions||[],"No failed questions",true)}${listCard("Knowledge Gaps",data.knowledge_gaps||[],"No knowledge gaps",true)}</div>
-  <div class="page-section-label">Learning queue</div>
-  <div class="card"><div class="card-head"><div><h3>Learning Queue</h3><span class="subtle">Setiap item butuh tindakan: update knowledge, prompt, atau workflow</span></div>${data.queue?.pending ? `<span class="approval-count-badge">${formatNumber(data.queue.pending)}</span>` : ''}</div>${queueRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Failed question</th><th>Action</th><th>Signals</th><th>Status</th><th></th></tr></thead><tbody>${queueRows}</tbody></table></div>`:emptyState("Learning queue kosong","Rating 'Not Helpful' otomatis membuat item actionable di sini.")}</div>`);
+  <div class="page-section-label">${t('page.learning.top_signals')}</div>
+  <div class="grid grid-2" style="margin-bottom:16px">${listCard(t('page.learning.top_positive'),data.top_positive_feedback||[],"No positive feedback")}${listCard(t('page.learning.top_negative'),data.top_negative_feedback||[],"No negative feedback",true)}${listCard(t('page.learning.failed_qs'),data.most_failed_questions||[],"No failed questions",true)}${listCard(t('page.learning.knowledge_gaps'),data.knowledge_gaps||[],"No knowledge gaps",true)}</div>
+  <div class="page-section-label">${t('page.learning.queue_label')}</div>
+  <div class="card"><div class="card-head"><div><h3>${t('page.learning.queue_title')}</h3><span class="subtle">${t('page.learning.queue_sub')}</span></div>${data.queue?.pending ? `<span class="approval-count-badge">${formatNumber(data.queue.pending)}</span>` : ''}</div>${queueRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('page.learning.col_question')}</th><th>${t('page.learning.col_action')}</th><th>${t('page.learning.col_signals')}</th><th>${t('page.learning.col_status')}</th><th></th></tr></thead><tbody>${queueRows}</tbody></table></div>`:emptyState(t('page.learning.empty_queue'),t('page.learning.empty_queue_desc'))}</div>`);
 }
 
 function improvementSeverityStatus(severity) {
@@ -347,7 +347,7 @@ async function renderImprovement() {
 }
 
 async function renderHumanHandoff() {
-  loadingPage("Human Handoff", "Monitor escalations and let human agents take over safely.");
+  loadingPage(t('page.handoff.title'), t('page.handoff.subtitle'));
   let data, stats;
   try {
     [data, stats] = await Promise.all([api.handoffQueue({limit:100}), api.handoffStats()]);
@@ -360,34 +360,34 @@ async function renderHumanHandoff() {
     const mine = String(item.assigned_agent_id || "") === String(state.user?.id || "");
     const status = pending ? "pending" : item.status;
     const actions = pending
-      ? `<button class="button button-primary" data-claim-handoff="${esc(item.id)}">Claim</button>`
+      ? `<button class="button button-primary" data-claim-handoff="${esc(item.id)}">${t('page.handoff.claim')}</button>`
       : assigned && mine
-        ? `<button class="button" data-reply-handoff="${esc(item.id)}">Reply</button><button class="button button-primary" data-resolve-handoff="${esc(item.id)}">Resolve</button>`
-        : assigned ? `<span class="subtle">Owned by ${esc(item.assigned_agent_name || "another agent")}</span>` : "";
+        ? `<button class="button" data-reply-handoff="${esc(item.id)}">${t('page.handoff.reply')}</button><button class="button button-primary" data-resolve-handoff="${esc(item.id)}">${t('page.handoff.resolve')}</button>`
+        : assigned ? `<span class="subtle">${t('page.handoff.owned_by')} ${esc(item.assigned_agent_name || "another agent")}</span>` : "";
     const slaBreached = item.sla_due_at && new Date(item.sla_due_at) < new Date() && item.status !== "resolved";
-    return `<tr><td><span class="table-title">${esc(item.end_user_name || item.end_user_id || "Anonymous customer")}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(String(item.conversation_id).slice(0,8))}</div></td><td>${esc(item.reason || "manual")}</td><td>${statusBadge(status,status)}</td><td>${statusBadge(item.priority || "medium")}</td><td>${esc(item.assigned_agent_name || "Unassigned")}</td><td class="${slaBreached?'trend-down':''}">${item.sla_due_at ? relativeTime(item.sla_due_at) : "—"}${slaBreached?' · breached':''}</td><td><div style="display:flex;gap:6px;align-items:center">${actions}</div></td></tr>`;
+    return `<tr><td><span class="table-title">${esc(item.end_user_name || item.end_user_id || t('page.handoff.anonymous'))}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(String(item.conversation_id).slice(0,8))}</div></td><td>${esc(item.reason || "manual")}</td><td>${statusBadge(status,status)}</td><td>${statusBadge(item.priority || "medium")}</td><td>${esc(item.assigned_agent_name || t('page.handoff.unassigned'))}</td><td class="${slaBreached?'trend-down':''}">${item.sla_due_at ? relativeTime(item.sla_due_at) : "—"}${slaBreached?` ${t('page.handoff.breached')}`:''}</td><td><div style="display:flex;gap:6px;align-items:center">${actions}</div></td></tr>`;
   }).join("");
-  setPage(`${pageHeader("Human Handoff","AI pauses while a human owns the conversation, then resumes after resolution.",`<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
+  setPage(`${pageHeader(t('page.handoff.title'), t('page.handoff.subtitle'),`<button class="button" data-action="refresh">${icon('refresh',14)} ${t('common.refresh')}</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Pending",formatNumber(summary.waiting),`${formatNumber(summary.urgent_waiting)} urgent`,`handoffs`,summary.waiting?'trend-down':'trend-up')}${metricCard("Assigned",formatNumber(summary.assigned),"Currently owned by agents","team")}${metricCard("Resolved",formatNumber(summary.resolved_24h),"Last 24 hours","dashboard","trend-up")}${metricCard("SLA Breached",formatNumber(summary.sla_breached),summary.avg_resolution_minutes_7d?`${summary.avg_resolution_minutes_7d}m avg resolution`:"No resolution data","analytics",summary.sla_breached?'trend-down':'trend-up')}</div>
-  ${summary.sla_breached ? `<div class="page-section-label" style="color:var(--red)">Handoff queue — ${summary.sla_breached} SLA breached</div>` : '<div class="page-section-label">Handoff queue</div>'}
-  <div class="card"><div class="card-head"><div><h3>Handoff Queue</h3><span class="subtle">Pending, assigned, and resolved conversations</span></div><span class="status-badge active">Tenant isolated</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Reason</th><th>Status</th><th>Priority</th><th>Assigned to</th><th>SLA</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No handoffs","AI escalations will appear here when human assistance is required.")}</div>`);
+  ${summary.sla_breached ? `<div class="page-section-label" style="color:var(--red)">${t('page.handoff.queue_label')} — ${summary.sla_breached} SLA breached</div>` : `<div class="page-section-label">${t('page.handoff.queue_label')}</div>`}
+  <div class="card"><div class="card-head"><div><h3>${t('page.handoff.queue_label')}</h3><span class="subtle">Pending, assigned, and resolved conversations</span></div><span class="status-badge active">Tenant isolated</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('page.handoff.col_customer')}</th><th>${t('page.handoff.col_reason')}</th><th>${t('page.handoff.col_status')}</th><th>${t('page.handoff.col_priority')}</th><th>${t('page.handoff.col_assigned')}</th><th>${t('page.handoff.col_sla')}</th><th>${t('page.handoff.col_action')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState(t('page.handoff.empty_title'),t('page.handoff.empty_desc'))}</div>`);
 }
 
 async function renderConversations() {
-  loadingPage("Conversation Center","Unified customer conversations with AI context and human handoff visibility.");
-  if (!state.selectedBotId) { setPage(pageHeader("Conversation Center","Unified inbox across every channel.") + emptyState("No agent selected","Create an agent before opening the conversation center.")); return; }
+  loadingPage(t('page.conv.title'), t('page.conv.subtitle'));
+  if (!state.selectedBotId) { setPage(pageHeader(t('page.conv.title'), t('page.conv.subtitle')) + emptyState(t('page.conv.no_agent_title'), t('page.conv.no_agent_desc'))); return; }
   try { await loadConversationData(); } catch (error) { setPage(errorState(error.message)); return; }
   const options = state.bots.map((bot) => `<option value="${esc(bot.id)}" ${bot.id===state.selectedBotId?'selected':''}>${esc(bot.name)}</option>`).join("");
   const handoffCount = state.conversations.filter((c) => c.handoff_needed).length;
   const rows = state.conversations.map((conv) => {
-    const name = conv.end_user_name || conv.end_user_email || 'Anonymous';
+    const name = conv.end_user_name || conv.end_user_email || t('page.conv.anonymous');
     const channelLabel = esc(conv.channel || 'website');
-    const stateLabel = conv.handoff_needed ? '<span style="color:var(--amber)">Needs handoff</span>' : esc(conv.inbox_state || 'AI handled');
+    const stateLabel = conv.handoff_needed ? `<span style="color:var(--amber)">${t('page.conv.needs_handoff')}</span>` : esc(conv.inbox_state || t('page.conv.ai_handled'));
     return `<div class="conversation-row ${conv.id===state.selectedConversationId?'active':''}" data-conversation-id="${esc(conv.id)}" role="button" tabindex="0" aria-label="Conversation with ${esc(name)}"><span class="avatar">${initials(name)}</span><div class="truncate"><strong class="truncate">${esc(name)}</strong><p class="truncate">${channelLabel} · ${stateLabel}</p></div><span class="activity-time">${relativeTime(conv.last_msg_at || conv.started_at)}</span></div>`;
   }).join("");
-  const chat = state.selectedConversationId ? renderMessagePanel() : `<div class="conv-select-prompt">${icon('chat',30)}<h3>Select a conversation</h3><p>Open a thread to review messages, latency, confidence scores, and knowledge sources.</p></div>`;
-  const tabsHtml = `<div class="conv-status-tabs" role="tablist"><button class="conv-tab active" role="tab" aria-selected="true">All <span class="mono" style="margin-left:4px;font-size:9px">${state.conversations.length}</span></button>${handoffCount ? `<button class="conv-tab" role="tab" aria-selected="false" style="color:var(--amber)">Handoff <span class="mono" style="margin-left:4px;font-size:9px">${handoffCount}</span></button>` : ''}</div>`;
-  setPage(`${pageHeader("Conversation Center","Review customer threads, inspect AI answers, and continue testing agents.",`<select class="select" data-conversation-bot aria-label="Switch agent">${options}</select>`)}<div class="conversation-layout"><aside class="conversation-list"><div class="conversation-list-head"><input class="input" style="width:100%;min-width:0" data-conversation-search placeholder="Search conversations..." aria-label="Search conversations"></div>${tabsHtml}<div data-conversation-rows>${rows || emptyState("No conversations","This agent has not received a conversation yet.")}</div></aside><section class="chat-window" id="conversation-chat" aria-live="polite">${chat}</section></div>`);
+  const chat = state.selectedConversationId ? renderMessagePanel() : `<div class="conv-select-prompt">${icon('chat',30)}<h3>${t('page.conv.select_title')}</h3><p>${t('page.conv.select_desc')}</p></div>`;
+  const tabsHtml = `<div class="conv-status-tabs" role="tablist"><button class="conv-tab active" role="tab" aria-selected="true">${t('page.conv.all_tab')} <span class="mono" style="margin-left:4px;font-size:9px">${state.conversations.length}</span></button>${handoffCount ? `<button class="conv-tab" role="tab" aria-selected="false" style="color:var(--amber)">${t('page.conv.handoff_tab')} <span class="mono" style="margin-left:4px;font-size:9px">${handoffCount}</span></button>` : ''}</div>`;
+  setPage(`${pageHeader(t('page.conv.title'), t('page.conv.subtitle'), `<select class="select" data-conversation-bot aria-label="Switch agent">${options}</select>`)}<div class="conversation-layout"><aside class="conversation-list"><div class="conversation-list-head"><input class="input" style="width:100%;min-width:0" data-conversation-search placeholder="${t('page.conv.search')}" aria-label="${t('page.conv.search')}"></div>${tabsHtml}<div data-conversation-rows>${rows || emptyState(t('page.conv.empty_title'), t('page.conv.empty_desc'))}</div></aside><section class="chat-window" id="conversation-chat" aria-live="polite">${chat}</section></div>`);
 }
 
 function renderMessagePanel() {
@@ -434,8 +434,8 @@ function drawDoughnutChart(key, selector, labels, values) {
 }
 
 async function renderAnalytics(days = state.analyticsDays) {
-  loadingPage("Analytics","Measure service quality, customer demand, and agent performance.");
-  if (!state.selectedBotId) { setPage(pageHeader("Analytics","Performance insights for your AI fleet.") + emptyState("No agent data","Deploy an agent to start collecting analytics.")); return; }
+  loadingPage(t('page.analytics.title'), t('page.analytics.subtitle'));
+  if (!state.selectedBotId) { setPage(pageHeader(t('page.analytics.title'), t('page.analytics.subtitle')) + emptyState(t('page.analytics.no_agent'), t('page.analytics.no_agent_desc'))); return; }
   state.analyticsDays = Number(days) || 30;
   try { state.analytics = await api.botAnalytics(state.selectedBotId, state.analyticsDays); }
   catch (error) { setPage(errorState(error.message)); return; }
@@ -448,8 +448,8 @@ async function renderAnalytics(days = state.analyticsDays) {
     `<button class="button button-sm ${state.analyticsDays===d?'button-primary':''}" data-analytics-days="${d}">${d === 90 ? '90d' : d === 30 ? '30d' : '7d'}</button>`
   ).join('');
   const coveragePct = Math.max(0, 100 - Math.round((summary.handoff_count||0) / (summary.total_convs||1) * 100));
-  setPage(`${pageHeader("Analytics","Track conversation volume, AI quality, and the questions customers ask most.",`<div style="display:flex;gap:8px;align-items:center"><select class="select" data-analytics-bot aria-label="Switch agent">${options}</select><div class="analytics-period-row" role="group" aria-label="Time period">${periodTabs}</div></div>`)}
-  <div class="grid grid-4">${metricCard("Conversations",formatNumber(summary.total_convs),`${formatNumber(summary.total_msgs)} messages`,"chat")}${metricCard("AI Resolution",`${resolution}%`,`${summary.handoff_count||0} handoffs`,"dashboard",resolution>=80?'trend-up':'')}${metricCard("Avg Rating",summary.avg_rating?`${Number(summary.avg_rating).toFixed(1)}/5`:'—',"Customer satisfaction","analytics")}${metricCard("AI Latency",summary.avg_latency_ms?`${Math.round(summary.avg_latency_ms)}ms`:'—',"Response time","agents")}</div>
+  setPage(`${pageHeader(t('page.analytics.title'), t('page.analytics.subtitle'),`<div style="display:flex;gap:8px;align-items:center"><select class="select" data-analytics-bot aria-label="Switch agent">${options}</select><div class="analytics-period-row" role="group" aria-label="Time period">${periodTabs}</div></div>`)}
+  <div class="grid grid-4">${metricCard(t('page.conv.all_tab')+" "+t('page.agents.convs'),formatNumber(summary.total_convs),`${formatNumber(summary.total_msgs)} messages`,"chat")}${metricCard("AI Resolution",`${resolution}%`,`${summary.handoff_count||0} handoffs`,"dashboard",resolution>=80?'trend-up':'')}${metricCard("Avg Rating",summary.avg_rating?`${Number(summary.avg_rating).toFixed(1)}/5`:'—',"Customer satisfaction","analytics")}${metricCard("AI Latency",summary.avg_latency_ms?`${Math.round(summary.avg_latency_ms)}ms`:'—',"Response time","agents")}</div>
   <div class="page-section-label">Conversation Volume</div>
   <div class="grid grid-2">
     <div class="card"><div class="card-head"><h3>Daily conversations</h3><span class="status-badge active">Live</span></div><div class="card-body"><div style="height:280px"><canvas id="analytics-chart"></canvas></div></div></div>
@@ -460,7 +460,7 @@ async function renderAnalytics(days = state.analyticsDays) {
     </div></div>
   </div>
   <div class="page-section-label">Customer Intelligence</div>
-  <div class="card"><div class="card-head"><div><h3>Top customer questions</h3><span class="subtle">Extracted from real conversation history</span></div><span class="status-badge active">${state.analyticsDays}d window</span></div>${questionRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th style="width:36px">#</th><th>Question</th><th>Frequency</th><th>Demand</th></tr></thead><tbody>${questionRows}</tbody></table></div>`:emptyState("No question data","Top questions appear after customers interact with this agent.")}</div>`);
+  <div class="card"><div class="card-head"><div><h3>${t('page.analytics.top_questions')}</h3><span class="subtle">Extracted from real conversation history</span></div><span class="status-badge active">${state.analyticsDays}d window</span></div>${questionRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th style="width:36px">#</th><th>${t('page.analytics.question')}</th><th>${t('page.analytics.frequency')}</th><th>Demand</th></tr></thead><tbody>${questionRows}</tbody></table></div>`:emptyState("No question data","Top questions appear after customers interact with this agent.")}</div>`);
   drawChart("analytics","#analytics-chart",state.analytics.daily_volume||[],"bar");
 }
 
@@ -616,8 +616,8 @@ async function renderMarketplace() {
 }
 
 async function renderKnowledge() {
-  loadingPage("Knowledge Seeder","Manage trusted source documents and URL ingestion queues.");
-  if (!state.selectedBotId) { setPage(pageHeader("Knowledge Seeder","Ground agents with company documents and trusted URLs.") + emptyState("No agent available","Create an agent before uploading knowledge.")); return; }
+  loadingPage(t('page.knowledge.title'), t('page.knowledge.subtitle'));
+  if (!state.selectedBotId) { setPage(pageHeader(t('page.knowledge.title'), t('page.knowledge.subtitle')) + emptyState(t('page.knowledge.no_agent_title'), t('page.knowledge.no_agent_desc'))); return; }
   const filters = state.knowledgeFilters || { status:"", category:"", agent_id:"", search:"" };
   try {
     const [docs, sourceResult, seedStatus] = await Promise.all([
@@ -651,7 +651,7 @@ async function renderKnowledge() {
   const seedAgents = ["travel_agent","ecommerce_agent","clinic_agent","school_agent","sales_agent","property_agent","faq_agent","customer_service_agent","botnesia_business"];
   const seedButtons = seedAgents.map((agent)=>`<button class="button" data-seed-agent="${agent}">${esc(agent.replace(/_/g,' '))}</button>`).join("");
   const agentStatusRows = (seedStatus.per_agent || []).slice(0, 20).map((row)=>`<tr><td><span class="table-title">${esc(String(row.agent_id||'unknown').replace(/_/g,' '))}</span></td><td>${formatNumber(row.total)}</td><td>${formatNumber(row.pending)}</td><td>${formatNumber(row.crawling)}</td><td>${formatNumber(row.indexed)}</td><td>${formatNumber(row.failed)}</td></tr>`).join("");
-  setPage(`${pageHeader("Knowledge Seeder","Import trusted URL seeds per agent, crawl in a throttled background queue, and monitor indexing status.",`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} Upload document<input type="file" data-document-upload accept=".pdf,.docx,.txt,.csv,.md,.markdown" hidden></label></div>`)}
+  setPage(`${pageHeader(t('page.knowledge.title'), t('page.knowledge.subtitle'),`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="select" data-knowledge-bot>${options}</select><label class="button button-primary">${icon('upload',14)} ${t('page.knowledge.upload_btn')}<input type="file" data-document-upload accept=".pdf,.docx,.txt,.csv,.md,.markdown" hidden></label></div>`)}
   <div class="grid grid-4" style="margin-bottom:16px">${metricCard("Total URLs",formatNumber(stats.total),"Queued for selected agent","knowledge")}${metricCard("Pending",formatNumber(stats.pending),"Waiting for crawler","observability")}${metricCard("Crawling",formatNumber(stats.crawling),"Current batch","refresh")}${metricCard("Failed",formatNumber(stats.failed),"Retry failed in batch","learning",stats.failed?'trend-down':'')}</div>
   <div class="page-section-label">Import tools</div>
   <div class="grid grid-2" style="margin-bottom:16px">
@@ -661,7 +661,7 @@ async function renderKnowledge() {
   <div class="page-section-label">URL per agent</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>URL per Agent</h3><span class="subtle">Marketplace knowledge isolation by agent_id</span></div></div>${agentStatusRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Total</th><th>Pending</th><th>Crawling</th><th>Indexed</th><th>Failed</th></tr></thead><tbody>${agentStatusRows}</tbody></table></div>`:emptyState("No agent URL queue","Seed marketplace URLs to see per-agent status.")}</div>
   <div class="page-section-label">Source tracking</div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Source Status Tracking</h3><span class="subtle">Tenant and agent isolated URL ingestion queue</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" data-source-search value="${esc(filters.search||'')}" placeholder="Search URL" style="min-width:180px"><select class="select" data-source-status>${statusOptions}</select><select class="select" data-source-agent>${agentOptions}</select><select class="select" data-source-category>${categoryOptions}</select><button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button></div></div>${sourceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>URL</th><th>Category</th><th>Status</th><th>Priority</th><th>Updated</th><th></th></tr></thead><tbody>${sourceRows}</tbody></table></div>`:emptyState("No seeded URLs","Import URLs manually or use the seed buttons to populate this agent.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Source Status Tracking</h3><span class="subtle">Tenant and agent isolated URL ingestion queue</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" data-source-search value="${esc(filters.search||'')}" placeholder="Search URL" style="min-width:180px"><select class="select" data-source-status>${statusOptions}</select><select class="select" data-source-agent>${agentOptions}</select><select class="select" data-source-category>${categoryOptions}</select><button class="button" data-action="refresh">${icon('refresh',14)} ${t('common.refresh')}</button></div></div>${sourceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('page.knowledge.col_url')}</th><th>${t('page.knowledge.col_category')}</th><th>${t('page.knowledge.col_status')}</th><th>${t('page.knowledge.col_priority')}</th><th>${t('page.knowledge.col_updated')}</th><th></th></tr></thead><tbody>${sourceRows}</tbody></table></div>`:emptyState(t('page.knowledge.empty_urls'),t('page.knowledge.empty_urls_desc'))}</div>
   <div class="page-section-label">Document library</div>
   <div class="card"><div class="card-head"><div><h3>Indexed Document Library</h3><span class="subtle">Latest processed documents and URL pages</span></div></div>${docRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Document</th><th>Chunks</th><th>Status</th><th></th></tr></thead><tbody>${docRows}</tbody></table></div>`:emptyState("No indexed documents","Crawler output appears here after a source is indexed.")}</div>`);
 }
@@ -1817,7 +1817,7 @@ async function renderAgentCenter() {
 }
 
 async function renderLearning() {
-  loadingPage("Self-Learning Center", "Insight terdistilasi dari sales/komplain/percakapan — hanya yang disetujui yang disuntik ke jawaban bot.");
+  loadingPage(t('route.self-learning.title'), t('route.self-learning.desc'));
   let dashboard, insightsResult;
   try {
     [dashboard, insightsResult] = await Promise.all([api.learningDashboard(), api.learningInsights({ limit: 50 })]);
@@ -1837,16 +1837,16 @@ async function renderLearning() {
     </div></td>
   </tr>`).join("");
 
-  setPage(`${pageHeader("Self-Learning Center", "AI mendeteksi pola yang terbukti berhasil dari percakapan, sales, dan resolusi komplain — review manusia wajib sebelum insight memengaruhi jawaban bot ke pelanggan.",
-    `<button class="button button-primary" data-action="learning-scan">${icon('refresh',14)} Jalankan Scan</button>`)}
+  setPage(`${pageHeader(t('route.self-learning.title'), t('route.self-learning.desc'),
+    `<button class="button button-primary" data-action="learning-scan">${icon('refresh',14)} ${t('common.refresh')} Scan</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Candidate", formatNumber(dashboard.by_status?.candidate||0), "Menunggu review", "learning", dashboard.by_status?.candidate?'default':'trend-up')}
-    ${metricCard("Approved", formatNumber(dashboard.by_status?.approved||0), "Aktif di chat", "learning", "trend-up")}
+    ${metricCard("Candidate", formatNumber(dashboard.by_status?.candidate||0), "Waiting review", "learning", dashboard.by_status?.candidate?'default':'trend-up')}
+    ${metricCard("Approved", formatNumber(dashboard.by_status?.approved||0), "Active in chat", "learning", "trend-up")}
     ${metricCard("Sales Pattern", formatNumber(dashboard.approved_by_category?.sales_pattern||0), "Approved", "learning")}
     ${metricCard("Successful Approach", formatNumber(dashboard.approved_by_category?.successful_approach||0), "Approved", "learning")}
   </div>
-  ${dashboard.by_status?.candidate ? `<div class="page-section-label" style="color:var(--amber)">Insight review queue — ${formatNumber(dashboard.by_status.candidate)} menunggu persetujuan</div>` : '<div class="page-section-label">Insight review queue</div>'}
-  <div class="card"><div class="card-head"><div><h3>Learning Insights</h3><span class="subtle">Hanya insight yang disetujui yang memengaruhi jawaban bot</span></div>${dashboard.by_status?.candidate ? `<span class="approval-count-badge">${dashboard.by_status.candidate}</span>` : ''}</div>${insightRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Kategori</th><th>Insight</th><th>Status</th><th></th></tr></thead><tbody>${insightRows}</tbody></table></div>` : emptyState("Belum ada insight", "Jalankan scan untuk mendeteksi pola dari percakapan, sales, dan komplain.")}</div>`);
+  ${dashboard.by_status?.candidate ? `<div class="page-section-label" style="color:var(--amber)">Insight review queue — ${formatNumber(dashboard.by_status.candidate)} waiting</div>` : `<div class="page-section-label">Insight review queue</div>`}
+  <div class="card"><div class="card-head"><div><h3>Learning Insights</h3><span class="subtle">Only approved insights affect bot answers</span></div>${dashboard.by_status?.candidate ? `<span class="approval-count-badge">${dashboard.by_status.candidate}</span>` : ''}</div>${insightRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Insight</th><th>Status</th><th></th></tr></thead><tbody>${insightRows}</tbody></table></div>` : emptyState("No insights yet", "Run scan to detect patterns from conversations, sales, and complaints.")}</div>`);
 }
 
 function parseFeatures(value) {
@@ -1857,7 +1857,7 @@ function parseFeatures(value) {
 function formatFileSize(bytes) { const n=Number(bytes||0); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; return `${(n/1048576).toFixed(1)} MB`; }
 
 async function renderTeam() {
-  loadingPage("Team & Tenants","Manage workspace identity, team members, roles, and permissions.");
+  loadingPage(t('page.team.title'), t('page.team.subtitle'));
   const [teamResult, rolesResult, meResult] = await Promise.all([settle("team",api.team()),settle("roles",api.roles()),settle("me",api.rbacMe())]);
   state.team = teamResult.ok ? teamResult.data.team || [] : state.team;
   state.roles = rolesResult.ok ? rolesResult.data.roles || [] : [];
@@ -1865,23 +1865,23 @@ async function renderTeam() {
   const rows = state.team.map((member) => `<tr>
     <td><div class="member-col"><span class="avatar" aria-hidden="true">${initials(member.full_name||member.email)}</span><div class="member-meta"><strong>${esc(member.full_name||'Unnamed user')}</strong><small>${esc(member.email)}</small></div></div></td>
     <td><div class="roles-wrap">${(member.roles||[]).map((role)=>`<span class="status-badge ready">${esc(role)}</span>`).join('')||'<span class="subtle">—</span>'}</div></td>
-    <td>${statusBadge(member.is_active?'active':'inactive',member.is_active?'Active':'Disabled')}</td>
+    <td>${statusBadge(member.is_active?'active':'inactive',member.is_active?t('common.active'):t('common.disabled'))}</td>
     <td class="subtle">${relativeTime(member.last_login_at)}</td>
     <td><button class="icon-button" data-team-user="${esc(member.id)}" data-action="manage-member" aria-label="Manage ${esc(member.full_name||member.email)}">${icon('more')}</button></td>
   </tr>`).join("");
   const myPerms = (state.rbac?.permissions||[]);
   const permBadges = myPerms.slice(0,12).map((item) => `<span class="status-badge ready">${esc(item)}</span>`).join('');
   const myRoles = (state.rbac?.roles||[]).join(', ');
-  setPage(`${pageHeader("Team & Tenants","Control who can manage agents, conversations, billing, and platform settings.",`<button class="button" data-action="export-team">${icon('export',13)} Export</button><button class="button button-primary" data-action="invite-member">${icon('plus',14)} Add member</button>`)}
+  setPage(`${pageHeader(t('page.team.title'), t('page.team.subtitle'),`<button class="button" data-action="export-team">${icon('export',13)} ${t('page.team.export_btn')}</button><button class="button button-primary" data-action="invite-member">${icon('plus',14)} ${t('page.team.add_member_btn')}</button>`)}
   <div class="grid grid-3" style="margin-bottom:16px">
-    ${metricCard("Workspace",state.org?.name||'—',state.org?.slug||'tenant',"dashboard")}
-    ${metricCard("Team members",formatNumber(state.team.length),`${state.team.filter((x)=>x.is_active).length} active`,"team")}
-    ${metricCard("Your roles",formatNumber(state.rbac?.roles?.length||0),myRoles||'No role assigned',"settings")}
+    ${metricCard(t('page.team.workspace_metric'),state.org?.name||'—',state.org?.slug||'tenant',"dashboard")}
+    ${metricCard(t('page.team.members_metric'),formatNumber(state.team.length),`${state.team.filter((x)=>x.is_active).length} ${t('common.active')}`,"team")}
+    ${metricCard(t('page.team.roles_metric'),formatNumber(state.rbac?.roles?.length||0),myRoles||t('page.team.no_role'),"settings")}
   </div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Workspace members</h3><span class="subtle">Tenant-isolated · RBAC enforced</span></div><span class="status-badge active">${formatNumber(state.team.length)} member${state.team.length !== 1?'s':''}</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Member</th><th>Roles</th><th>Status</th><th>Last login</th><th style="width:44px"></th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState("No team members","Add your first team member to start collaborating.")}</div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>${t('page.team.workspace_members')}</h3><span class="subtle">${t('page.team.isolated')}</span></div><span class="status-badge active">${formatNumber(state.team.length)} ${state.team.length !== 1?t('common.members'):t('common.member')}</span></div>${rows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('page.team.col_member')}</th><th>${t('page.team.col_roles')}</th><th>${t('page.team.col_status')}</th><th>${t('page.team.col_last_login')}</th><th style="width:44px"></th></tr></thead><tbody>${rows}</tbody></table></div>`:emptyState(t('page.team.empty_title'),t('page.team.empty_desc'))}</div>
   <div class="grid grid-2">
-    <div class="card"><div class="card-head"><h3>Tenant workspace</h3></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Tenant</th><th>Billing</th><th>Plan</th><th>Members</th></tr></thead><tbody><tr><td><span class="table-title">${esc(state.org?.name||'Workspace')}</span><div class="subtle mono" style="font-size:8px;margin-top:2px">${esc(state.org?.slug||'tenant')}</div></td><td>${statusBadge(state.org?.billing_status||'active',state.org?.billing_status||'active')}</td><td>${planBadge(state.org?.plan||'free')}</td><td>${formatNumber(state.team.length)}</td></tr></tbody></table></div></div>
-    <div class="card"><div class="card-head"><h3>Your permissions</h3><span class="subtle">${myPerms.length} permissions</span></div><div class="card-body"><div class="your-perms">${permBadges||'<span class="subtle">No permissions returned.</span>'}</div></div></div>
+    <div class="card"><div class="card-head"><h3>${t('page.team.tenant_workspace')}</h3></div><div class="table-wrap"><table class="data-table"><thead><tr><th>${t('page.team.col_tenant')}</th><th>${t('page.team.col_billing')}</th><th>${t('page.team.col_plan')}</th><th>${t('page.team.col_members')}</th></tr></thead><tbody><tr><td><span class="table-title">${esc(state.org?.name||'Workspace')}</span><div class="subtle mono" style="font-size:8px;margin-top:2px">${esc(state.org?.slug||'tenant')}</div></td><td>${statusBadge(state.org?.billing_status||'active',state.org?.billing_status||'active')}</td><td>${planBadge(state.org?.plan||'free')}</td><td>${formatNumber(state.team.length)}</td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-head"><h3>${t('page.team.your_perms')}</h3><span class="subtle">${myPerms.length} ${t('page.team.perms_count')}</span></div><div class="card-body"><div class="your-perms">${permBadges||`<span class="subtle">${t('page.team.no_perms')}</span>`}</div></div></div>
   </div>`);
 }
 
@@ -2195,7 +2195,7 @@ async function submitCreateApiKey() {
 }
 
 async function renderChannels() {
-  loadingPage("Channels", "One AI system for WhatsApp, Telegram, Instagram, Facebook Messenger, and Website Chat.");
+  loadingPage(t('page.channels.title'), t('page.channels.subtitle'));
   const [statusResult, analyticsResult, whatsappResult, metaResult] = await Promise.all([
     settle("status",api.channelStatus()),
     settle("analytics",api.channelAnalytics(30)),
@@ -2244,7 +2244,7 @@ async function renderChannels() {
   const a = state.channelAnalytics || {};
   const connectedCount = state.channels.filter((ch) => ch.status === 'connected').length;
   const usage = (a.channel_usage||[]).map((row) => `<tr><td><div class="channel-title" style="gap:8px">${channelDot(row.channel,initials(row.channel))}<span class="table-title">${esc(row.channel)}</span></div></td><td>${formatNumber(row.messages)}</td><td>${formatNumber(row.active_users)}</td></tr>`).join("");
-  setPage(`${pageHeader("Omni Channel Manager","Same Supervisor, Knowledge Base, and specialist agents across every channel.",`<button class="button" data-action="refresh-channel-health">${icon('refresh',14)} Health check</button><button class="button button-primary" data-action="connect-channel">${icon('plus',14)} Connect channel</button>`)}
+  setPage(`${pageHeader(t('page.channels.title'), t('page.channels.subtitle'),`<button class="button" data-action="refresh-channel-health">${icon('refresh',14)} Health check</button><button class="button button-primary" data-action="connect-channel">${icon('plus',14)} ${t('page.channels.connect_btn')}</button>`)}
   <div class="grid grid-4">${metricCard("Total Messages",formatNumber(a.total_messages),"Last 30 days","chat")}${metricCard("Active Users",formatNumber(a.active_users),"Unique channel users","team")}${metricCard("Avg Response",`${Number(a.response_time_ms||0).toFixed(0)}ms`,"Channel delivery time","analytics")}${metricCard("Connected",formatNumber(connectedCount),`of ${catalog.length} channels`,"channels",connectedCount>0?'trend-up':'')}</div>
   <div class="page-section-label">Channel status</div>
   <div class="grid channel-grid">${cards}</div>
