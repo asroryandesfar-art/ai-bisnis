@@ -1700,6 +1700,7 @@ async function renderAgentCenter() {
     settle("executionLog", api.executionLogList({ limit: 20 })),
     settle("caPending", api.computerAgentTasks({ status: "pending_approval", limit: 20 })),
     settle("cmPending", api.channelMessagingTasks({ status: "pending_approval", limit: 20 })),
+    settle("localAgent", api.localAgentStatus()),
   ]);
   const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
   const failed = results.filter((r) => !r.ok);
@@ -1709,6 +1710,7 @@ async function renderAgentCenter() {
   const logEntries = data.executionLog?.entries || [];
   const caPending = data.caPending?.tasks || [];
   const cmPending = data.cmPending?.tasks || [];
+  const localAgent = data.localAgent || {};
 
   const bySourceType = overview.execution_log?.by_source_type || {};
   const totalLogEntries = Object.values(bySourceType).reduce((sum, v) => sum + Number(v || 0), 0);
@@ -1797,6 +1799,27 @@ async function renderAgentCenter() {
       <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${run.running?'disabled':''}>${icon('send',14)} ${run.running?'Menjalankan...':'Run Task'}</button></div>
     </form>
     ${runResultPanel}
+  </div>
+  <div class="page-section-label">Local Agent</div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <div><h3>BotNesia Local Agent</h3><span class="subtle">AI yang bisa kerja langsung di komputer Anda — akses file, terminal, browser lokal</span></div>
+      <span class="status-badge ${localAgent.connected ? 'status-active' : 'status-inactive'}">${localAgent.connected ? '● Online' : '○ Offline'}</span>
+    </div>
+    <div class="card-body">
+      ${localAgent.connected
+        ? `<div style="display:grid;gap:6px;font-size:13px">
+            <div><strong>Host:</strong> ${esc(localAgent.meta?.hostname||'-')}</div>
+            <div><strong>Platform:</strong> ${esc(localAgent.meta?.platform||'-')}</div>
+            <div><strong>User:</strong> ${esc(localAgent.meta?.username||'-')}</div>
+            <button class="button button-sm" data-action="local-agent-disconnect" style="margin-top:8px;width:fit-content">Putus Koneksi</button>
+           </div>`
+        : `<div style="font-size:13px;color:var(--text-muted)">
+            <p style="margin:0 0 12px">Jalankan perintah berikut di terminal komputer Anda:</p>
+            <code style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:8px">pip install websockets<br>python botnesia_local_agent.py --token YOUR_JWT_TOKEN</code>
+            <p style="margin:4px 0 0;font-size:11px;color:var(--text-muted)">Token JWT tersedia di Settings → API Keys atau salin dari URL login Anda.</p>
+           </div>`}
+    </div>
   </div>
   ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}
   <div class="card ${caPendingCount ? 'approval-queue-card' : ''}" style="margin-bottom:16px"><div class="card-head"><div><h3>Computer Agent — Menunggu Approval</h3><span class="subtle">Aksi tulis belum dieksekusi sampai Approve</span></div>${caPendingCount ? `<span class="approval-count-badge">${caPendingCount}</span>` : ''}</div>
@@ -3373,6 +3396,7 @@ document.addEventListener("click", async (event) => {
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const caApprove=event.target.closest("[data-ca-approve]"); if(caApprove){ try{ await api.computerAgentApprove(caApprove.dataset.caApprove); toast("Aksi Computer Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const caReject=event.target.closest("[data-ca-reject]"); if(caReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.computerAgentReject(caReject.dataset.caReject, reason); toast("Task ditolak.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const cmApprove=event.target.closest("[data-cm-approve]"); if(cmApprove){ try{ const result=await api.channelMessagingApprove(cmApprove.dataset.cmApprove); const sendResult=parseFeatures(result.result); toast(result.status==="sent"?"Pesan berhasil dikirim.":"Approved, tapi pengiriman gagal: "+(sendResult.error||"unknown"),result.status==="sent"?"success":"error"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }

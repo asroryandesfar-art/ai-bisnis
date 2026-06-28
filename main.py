@@ -654,6 +654,11 @@ async def startup():
             await ensure_schema(pool)
             await ensure_optional_schema(pool)
             try:
+                from bn_platform.local_agent_router import ensure_schema as _la_schema
+                await _la_schema(pool)
+            except Exception:
+                pass
+            try:
                 await _migrate_integrations_file_to_db(pool)
             except Exception:
                 pass
@@ -6371,6 +6376,17 @@ try:
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    from bn_platform.local_agent_router import build_local_agent_router, ensure_schema as _la_ensure_schema
+    app.include_router(
+        build_local_agent_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            decode_token=lambda token: __import__("jose.jwt", fromlist=["decode"]).decode(
+                token, cfg.secret_key, algorithms=[cfg.jwt_algorithm]
+            ),
         ),
         prefix="/api",
     )

@@ -1239,7 +1239,10 @@ INSERT INTO permissions (key, category, description) VALUES
  ('sandbox.manage',   'sandbox',  'Membuat dan mengelola sandbox session terisolasi'),
  ('action_executor.read',    'action_executor', 'Melihat riwayat eksekusi goal agent (Action Executor)'),
  ('action_executor.execute', 'action_executor', 'Menjalankan goal multi-langkah via Action Executor pipeline'),
- ('permission_grants.manage', 'permission_grants', 'Mengelola grant izin aksi agent (permit/deny per-permission)')
+ ('permission_grants.manage', 'permission_grants', 'Mengelola grant izin aksi agent (permit/deny per-permission)'),
+ ('local_agent.manage',  'local_agent', 'Install, hubungkan, dan putus BotNesia Local Agent di komputer user'),
+ ('local_agent.execute', 'local_agent', 'Kirim perintah ke Local Agent (akses file, terminal, browser lokal)'),
+ ('local_agent.read',    'local_agent', 'Lihat riwayat perintah Local Agent')
 ON CONFLICT (key) DO NOTHING;
 
 -- 5 Role sistem baku (org_id NULL ⇒ template, di-clone otomatis ke setiap
@@ -1278,7 +1281,8 @@ WHERE r.org_id IS NULL AND r.key = 'manager'
                 'terminal.read', 'terminal.execute',
                 'sandbox.manage',
                 'action_executor.read', 'action_executor.execute',
-                'permission_grants.manage')
+                'permission_grants.manage',
+                'local_agent.manage', 'local_agent.execute', 'local_agent.read')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
