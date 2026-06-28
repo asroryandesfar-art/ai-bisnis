@@ -145,21 +145,24 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_free_trial BOOLEAN NOT NUL
 
 -- Credit ledger: setiap top-up dan debit dicatat di sini
 CREATE TABLE IF NOT EXISTS credit_ledger (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    kind        TEXT NOT NULL,               -- 'topup' | 'debit' | 'refund' | 'bonus'
-    amount_idr  BIGINT NOT NULL DEFAULT 0,   -- nilai rupiah top-up (hanya topup/bonus)
-    credits     BIGINT NOT NULL,             -- +N (topup/bonus) atau -N (debit), satuan kredit
-    description TEXT NOT NULL DEFAULT '',
-    invoice_id  UUID REFERENCES invoices(id) ON DELETE SET NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    kind          TEXT NOT NULL,               -- 'topup' | 'debit' | 'refund' | 'bonus'
+    amount_idr    BIGINT NOT NULL DEFAULT 0,   -- nilai rupiah top-up (hanya topup/bonus), untuk invoice
+    credits       BIGINT NOT NULL DEFAULT 0,   -- legacy field, tidak dipakai lagi di UI
+    conversations BIGINT NOT NULL DEFAULT 0,   -- +N percakapan (topup/bonus) atau -N (debit)
+    description   TEXT NOT NULL DEFAULT '',
+    invoice_id    UUID REFERENCES invoices(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Additive: tambah kolom conversations jika tabel sudah ada tanpa kolom ini
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS conversations BIGINT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_org ON credit_ledger(org_id, created_at DESC);
 
--- Cached balance view (updated by trigger on credit_ledger)
+-- Cached balance: stores addon conversation count (bukan Rupiah)
 CREATE TABLE IF NOT EXISTS credit_balances (
     org_id      UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
-    balance     BIGINT NOT NULL DEFAULT 0,
+    balance     BIGINT NOT NULL DEFAULT 0,   -- jumlah percakapan tambahan tersisa
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
