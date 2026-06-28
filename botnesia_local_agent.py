@@ -3,8 +3,7 @@
 BotNesia Local Agent — jalankan di komputer Anda agar AI BotNesia bisa
 mengakses file, terminal, dan browser lokal (seperti Claude Code).
 
-Instalasi:
-    pip install websockets
+Tidak perlu install manual — script ini auto-install dependency yang dibutuhkan.
 
 Penggunaan:
     python botnesia_local_agent.py --token <jwt-dari-dashboard>
@@ -28,6 +27,24 @@ import shutil
 import subprocess
 import sys
 import getpass
+
+# Auto-install websockets jika belum ada
+try:
+    import websockets  # noqa: F401
+except ImportError:
+    print("📦 Menginstall dependency 'websockets'...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "websockets",
+         "--break-system-packages", "--quiet"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        # Fallback: coba tanpa --break-system-packages (Windows/Mac/venv)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "websockets", "--quiet"],
+            check=True,
+        )
+    print("✅ websockets terinstall.\n")
 
 # ─── Konfigurasi ──────────────────────────────────────────────────────────────
 
