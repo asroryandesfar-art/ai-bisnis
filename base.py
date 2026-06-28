@@ -78,6 +78,7 @@ class BaseAgent:
         gemini_timeout: float = 30.0,
         gemini_max_retry: int = 3,
         openrouter_api_key: str | None = None,
+        deepseek_api_key: str | None = None,
     ):
         self.api_key = api_key or ""
         self.model   = model or ""
@@ -89,6 +90,7 @@ class BaseAgent:
         self.gemini_timeout = gemini_timeout
         self.gemini_max_retry = gemini_max_retry
         self.openrouter_api_key = openrouter_api_key or ""
+        self.deepseek_api_key = deepseek_api_key or ""
 
         # Lazy-initialized router (set on first _call_llm if gemini key is set)
         self._router = None
@@ -148,6 +150,11 @@ class BaseAgent:
             api_key=self.openrouter_api_key,
             site_url=self.app_url,
         )
+
+    def _get_deepseek_provider(self):
+        """Lazy-init DeepSeekProvider using this agent's config."""
+        from ai_providers.deepseek import DeepSeekProvider
+        return DeepSeekProvider(api_key=self.deepseek_api_key)
 
     async def _call_gemini(
         self,
@@ -216,7 +223,23 @@ class BaseAgent:
                 except Exception:
                     pass
 
-            # OpenRouter fallback after both Gemini attempts fail
+            # DeepSeek fallback after Gemini fails
+            if self.deepseek_api_key:
+                from ai_providers.deepseek import deepseek_model_for_task as _ds_task_m
+                from ai_providers.types import LLMRequest as _LLMReqDS
+                _ds_m = _ds_task_m(task_type or "chat") or "deepseek-chat"
+                _ds_req = _LLMReqDS(
+                    messages=messages, temperature=temperature,
+                    max_tokens=max_tokens, response_format=response_format,
+                )
+                try:
+                    _ds_resp = await self._get_deepseek_provider().complete(_ds_req, model=_ds_m)
+                    if _ds_resp.error is None:
+                        return _ds_resp.content
+                except Exception:
+                    pass
+
+            # OpenRouter fallback after Gemini and DeepSeek fail
             if self.openrouter_api_key:
                 from ai_providers.openrouter import task_model as _or_task_model
                 from ai_providers.types import LLMRequest as _LLMReq
@@ -236,11 +259,28 @@ class BaseAgent:
 
             if not self.api_key:
                 raise RuntimeError(
-                    "Gemini tidak dapat dihubungi dan GROQ_API_KEY / OPENROUTER_API_KEY tidak tersedia."
+                    "Semua AI provider gagal (Gemini, DeepSeek, OpenRouter). Set GROQ_API_KEY sebagai fallback."
                 )
 
-        elif not self.api_key and not self.openrouter_api_key:
-            raise RuntimeError("API key kosong. Set GEMINI_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY.")
+        elif not self.api_key and not self.openrouter_api_key and not self.deepseek_api_key:
+            raise RuntimeError("API key kosong. Set GEMINI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY.")
+
+        # ── DeepSeek as primary (no Gemini key) ──────────────────────────────
+        if not self.gemini_api_key and self.deepseek_api_key:
+            from ai_providers.deepseek import deepseek_model_for_task as _ds_task_model
+            from ai_providers.types import LLMRequest as _LLMReqDS2
+            _ds_provider = self._get_deepseek_provider()
+            _ds_m = _ds_task_model(task_type or "chat") or "deepseek-chat"
+            _ds_req2 = _LLMReqDS2(
+                messages=messages, temperature=temperature,
+                max_tokens=max_tokens, response_format=response_format,
+            )
+            try:
+                _ds_resp2 = await _ds_provider.complete(_ds_req2, model=_ds_m)
+                if _ds_resp2.error is None:
+                    return _ds_resp2.content
+            except Exception:
+                pass
 
         # ── OpenRouter as primary (no Gemini key) ────────────────────────────
         if not self.gemini_api_key and self.openrouter_api_key:

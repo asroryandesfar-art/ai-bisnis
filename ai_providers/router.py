@@ -74,10 +74,12 @@ class SmartModelRouter:
         gemini: AIProvider | None = None,
         groq: AIProvider | None = None,
         openrouter: AIProvider | None = None,
+        deepseek: AIProvider | None = None,
     ):
         self.gemini = gemini
         self.groq = groq
         self.openrouter = openrouter
+        self.deepseek = deepseek
 
     # ── Model selection ───────────────────────────────────────────────────────
 
@@ -103,6 +105,12 @@ class SmartModelRouter:
             return None
         from ai_providers.openrouter import task_model
         return task_model(task_type)
+
+    def _ds_model(self, task_type: str) -> str | None:
+        if not self.deepseek or not self.deepseek.is_available():
+            return None
+        from ai_providers.deepseek import deepseek_model_for_task
+        return deepseek_model_for_task(task_type)
 
     # ── Try helpers ───────────────────────────────────────────────────────────
 
@@ -134,6 +142,20 @@ class SmartModelRouter:
         _breaker.fail("openrouter")
         return None
 
+    async def _try_deepseek(self, req: LLMRequest, model: str) -> LLMResponse | None:
+        if not self.deepseek or not self.deepseek.is_available() or _breaker.is_open("deepseek"):
+            return None
+        try:
+            r = await self.deepseek.complete(req, model=model)
+            if r.error is None:
+                _breaker.ok("deepseek")
+                return r
+            logger.warning("deepseek err model=%s: %s", model, r.error)
+        except Exception as exc:
+            logger.warning("deepseek exc model=%s: %s", model, exc)
+        _breaker.fail("deepseek")
+        return None
+
     async def _try_groq(self, req: LLMRequest) -> LLMResponse | None:
         if not self.groq or not self.groq.is_available() or _breaker.is_open("groq"):
             return None
@@ -159,10 +181,11 @@ class SmartModelRouter:
     ) -> LLMResponse:
         """
         Route to best available provider:
-          pro/complex  → Gemini Pro  → OpenRouter(task-optimal) → Gemini Flash → Groq
-          standard     → Gemini Flash → OpenRouter(task-fast)   → Groq
+          pro/complex  → Gemini Pro → DeepSeek(task) → OpenRouter(task) → Gemini Flash → Groq
+          standard     → Gemini Flash → OpenRouter(task) → Groq
         """
         primary = self.select_model(tier, task_type)
+        ds_model = self._ds_model(task_type)
         or_model = self._or_model(task_type)
         flash = self._flash_model()
 
@@ -172,25 +195,31 @@ class SmartModelRouter:
             if r:
                 return r
 
-        # 2. OpenRouter — task-optimal model
+        # 2. DeepSeek direct API — best for coding/reasoning tasks, no markup
+        if ds_model:
+            r = await self._try_deepseek(request, ds_model)
+            if r:
+                return r
+
+        # 3. OpenRouter — task-optimal model (covers other models not in DeepSeek)
         if or_model:
             r = await self._try_openrouter(request, or_model)
             if r:
                 return r
 
-        # 3. Gemini Flash retry (only if Pro was the primary and failed)
+        # 4. Gemini Flash retry (only if Pro was the primary and failed)
         if flash and flash != primary:
             r = await self._try_gemini(request, flash)
             if r:
                 return r
 
-        # 4. Groq fallback
+        # 5. Groq fallback
         r = await self._try_groq(request)
         if r:
             return r
 
         raise RuntimeError(
-            "No AI provider available — Gemini, OpenRouter, and Groq all failed or unconfigured"
+            "No AI provider available — Gemini, DeepSeek, OpenRouter, and Groq all failed or unconfigured"
         )
 
     async def stream(
@@ -202,6 +231,7 @@ class SmartModelRouter:
     ):
         """Streaming with same provider priority as route()."""
         primary = self.select_model(tier, task_type)
+        ds_model = self._ds_model(task_type)
         or_model = self._or_model(task_type)
         flash = self._flash_model()
 
@@ -210,41 +240,47 @@ class SmartModelRouter:
             try:
                 async for chunk in self.gemini.stream(request, model=primary):
                     yield chunk
-                _breaker.ok("gemini")
-                return
+                _breaker.ok("gemini"); return
             except Exception as exc:
                 logger.warning("gemini stream err model=%s: %s", primary, exc)
                 _breaker.fail("gemini")
 
-        # 2. OpenRouter
+        # 2. DeepSeek direct
+        if ds_model and self.deepseek and self.deepseek.is_available() and not _breaker.is_open("deepseek"):
+            try:
+                async for chunk in self.deepseek.stream(request, model=ds_model):
+                    yield chunk
+                _breaker.ok("deepseek"); return
+            except Exception as exc:
+                logger.warning("deepseek stream err model=%s: %s", ds_model, exc)
+                _breaker.fail("deepseek")
+
+        # 3. OpenRouter
         if or_model and self.openrouter and self.openrouter.is_available() and not _breaker.is_open("openrouter"):
             try:
                 async for chunk in self.openrouter.stream(request, model=or_model):
                     yield chunk
-                _breaker.ok("openrouter")
-                return
+                _breaker.ok("openrouter"); return
             except Exception as exc:
                 logger.warning("openrouter stream err model=%s: %s", or_model, exc)
                 _breaker.fail("openrouter")
 
-        # 3. Gemini Flash retry
+        # 4. Gemini Flash retry
         if flash and flash != primary and self.gemini and self.gemini.is_available() and not _breaker.is_open("gemini"):
             try:
                 async for chunk in self.gemini.stream(request, model=flash):
                     yield chunk
-                _breaker.ok("gemini")
-                return
+                _breaker.ok("gemini"); return
             except Exception as exc:
                 logger.warning("gemini flash stream err: %s", exc)
                 _breaker.fail("gemini")
 
-        # 4. Groq
+        # 5. Groq
         if self.groq and self.groq.is_available() and not _breaker.is_open("groq"):
             try:
                 async for chunk in self.groq.stream(request):
                     yield chunk
-                _breaker.ok("groq")
-                return
+                _breaker.ok("groq"); return
             except Exception as exc:
                 logger.warning("groq stream err: %s", exc)
                 _breaker.fail("groq")
@@ -259,6 +295,11 @@ class SmartModelRouter:
                 "model": self.select_model("standard", "chat"),
                 "pro_model": self.select_model("pro", "reasoning"),
                 **_breaker.state("gemini"),
+            },
+            "deepseek": {
+                "available": bool(self.deepseek and self.deepseek.is_available()),
+                "model": self.deepseek.default_model if self.deepseek else None,
+                **_breaker.state("deepseek"),
             },
             "openrouter": {
                 "available": bool(self.openrouter and self.openrouter.is_available()),

@@ -9,6 +9,7 @@ class ProviderType(str, Enum):
     GEMINI = "gemini"
     GROQ = "groq"
     OPENROUTER = "openrouter"
+    DEEPSEEK = "deepseek"
 
 
 class TaskType(str, Enum):

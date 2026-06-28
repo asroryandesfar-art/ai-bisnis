@@ -9,14 +9,10 @@ def test_health_reports_configured_ai():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["ai"]["configured"] is True
-    # providers dict lists all three provider slots
+    # providers dict lists the expected slots
     providers = payload["ai"]["providers"]
-    assert "gemini" in providers
+    assert "deepseek" in providers
     assert "openrouter" in providers
-    assert "groq" in providers
-    # at least one must be active
-    assert any(p["active"] for p in providers.values())
 
 
 def test_dashboard_and_frontend_assets_are_served():

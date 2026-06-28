@@ -158,6 +158,8 @@ class Settings(BaseSettings):
     groq_whisper_model:   str = "whisper-large-v3-turbo"
     # OpenRouter — single key for GPT-4o, Claude, DeepSeek, Qwen, and 200+ models
     openrouter_api_key:   str = ""
+    # DeepSeek direct API — deepseek-chat (V3) and deepseek-reasoner (R1)
+    deepseek_api_key:     str = ""
 
     @property
     def effective_gemini_api_key(self) -> str:
@@ -325,10 +327,10 @@ def should_use_cloud(plan: str, billing_status: str) -> bool:
 
 def get_supervisor(use_cloud: bool) -> SupervisorAgent:
     global _supervisor_cloud
-    if not cfg.effective_gemini_api_key and not cfg.groq_api_key and not cfg.openrouter_api_key:
+    if not cfg.effective_gemini_api_key and not cfg.groq_api_key and not cfg.openrouter_api_key and not cfg.deepseek_api_key:
         raise RuntimeError(
             "Cloud AI belum dikonfigurasi. "
-            "Isi GEMINI_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY di .env lalu restart server."
+            "Isi GEMINI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY di .env lalu restart server."
         )
 
     if _supervisor_cloud is None:
@@ -343,6 +345,7 @@ def get_supervisor(use_cloud: bool) -> SupervisorAgent:
             gemini_timeout=cfg.gemini_timeout,
             gemini_max_retry=cfg.gemini_max_retry,
             openrouter_api_key=cfg.openrouter_api_key,
+            deepseek_api_key=cfg.deepseek_api_key,
         )
 
     return _supervisor_cloud
@@ -362,6 +365,7 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             gemini_timeout=cfg.gemini_timeout,
             gemini_max_retry=cfg.gemini_max_retry,
             openrouter_api_key=cfg.openrouter_api_key,
+            deepseek_api_key=cfg.deepseek_api_key,
         )
     return _knowledge_builder_agent
 
@@ -5947,6 +5951,10 @@ async def health():
                     "active": bool(cfg.effective_gemini_api_key),
                     "model": cfg.gemini_model,
                     "pro_model": cfg.gemini_pro_model,
+                },
+                "deepseek": {
+                    "active": bool(cfg.deepseek_api_key),
+                    "models": ["deepseek-chat", "deepseek-reasoner"],
                 },
                 "openrouter": {
                     "active": bool(cfg.openrouter_api_key),
