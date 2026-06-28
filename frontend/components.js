@@ -56,51 +56,148 @@ function mdInline(text) {
   return html;
 }
 
-// Render a light subset of Markdown (paragraphs, lists, headings, code, bold/italic, links)
-// for assistant chat replies, so AI answers look as structured as Claude/ChatGPT output.
+const _isTblSep = (l) => /^\|[\s|:=-]{3,}\|/.test(l.trim());
+const _isTblRow = (l) => /^\|.+\|/.test(l.trim());
+
+function _flushTable(rows, blocks) {
+  if (!rows.length) return;
+  if (rows.length === 1 && !_isTblSep(rows[0])) {
+    blocks.push(`<p>${mdInline(rows[0].replace(/^\||\|$/g,'').replace(/\|/g,' · '))}</p>`);
+    return;
+  }
+  const parseRow = (r) => r.trim().replace(/^\||\|$/g,'').split('|').map(c => c.trim());
+  const sepIdx = rows.findIndex(_isTblSep);
+  let html = '<div class="md-table-wrap"><table class="md-table">';
+  if (sepIdx > 0) {
+    const hCells = parseRow(rows[0]);
+    html += `<thead><tr>${hCells.map(c=>`<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>`;
+    for (let r = 0; r < rows.length; r++) {
+      if (r === 0 || _isTblSep(rows[r])) continue;
+      html += `<tr>${parseRow(rows[r]).map(c=>`<td>${mdInline(c)}</td>`).join('')}</tr>`;
+    }
+  } else {
+    html += '<tbody>';
+    for (const row of rows) {
+      if (_isTblSep(row)) continue;
+      html += `<tr>${parseRow(row).map(c=>`<td>${mdInline(c)}</td>`).join('')}</tr>`;
+    }
+  }
+  html += '</tbody></table></div>';
+  blocks.push(html);
+}
+
 export function renderMarkdown(text) {
   const lines = String(text ?? "").replace(/\r\n/g, '\n').split('\n');
   const blocks = [];
   let list = null;
-  const flushList = () => {
-    if (list) blocks.push(`<${list.tag}>${list.items.map((item) => `<li>${mdInline(item)}</li>`).join('')}</${list.tag}>`);
+  let tblRows = [];
+  let olNext = 1; // tracks next ol number across ↓-interrupted lists
+
+  const flushList = (keepOlCount = false) => {
+    if (!list) return;
+    const startAttr = list.tag === 'ol' && list.start > 1 ? ` start="${list.start}"` : '';
+    blocks.push(`<${list.tag}${startAttr}>${list.items.map(item=>`<li>${mdInline(item)}</li>`).join('')}</${list.tag}>`);
+    if (list.tag === 'ol' && keepOlCount) { olNext = list.start + list.items.length; }
+    else if (!keepOlCount) { olNext = 1; }
     list = null;
   };
+  const flushTable = () => { _flushTable(tblRows, blocks); tblRows = []; };
+
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+
+    // ── Code block ────────────────────────────────────────────────────────
     if (/^\s*```/.test(line)) {
-      flushList();
-      const code = [];
-      i++;
+      flushList(); flushTable();
+      const lang = line.replace(/^\s*```/, '').trim();
+      const code = []; i++;
       while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); i++; }
       i++;
-      blocks.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      const la = lang ? ` class="language-${esc(lang)}"` : '';
+      blocks.push(`<pre><code${la}>${esc(code.join('\n'))}</code></pre>`);
       continue;
     }
-    const heading = line.match(/^#{1,6}\s+(.*)/);
-    if (heading) { flushList(); blocks.push(`<p><strong>${mdInline(heading[1])}</strong></p>`); i++; continue; }
+
+    // ── Horizontal rule ───────────────────────────────────────────────────
+    if (/^[ \t]*(\*\*\*+|---+|___+)[ \t]*$/.test(line)) {
+      flushList(); flushTable(); olNext = 1;
+      blocks.push('<hr class="md-hr">');
+      i++; continue;
+    }
+
+    // ── Headings ──────────────────────────────────────────────────────────
+    const hm = line.match(/^(#{1,6})\s+(.*)/);
+    if (hm) {
+      flushList(); flushTable(); olNext = 1;
+      const lvl = Math.min(hm[1].length + 2, 6);
+      blocks.push(`<h${lvl} class="md-h${lvl}">${mdInline(hm[2])}</h${lvl}>`);
+      i++; continue;
+    }
+
+    // ── Blockquote ────────────────────────────────────────────────────────
+    if (/^\s*>/.test(line)) {
+      flushList(); flushTable(); olNext = 1;
+      const qLines = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        qLines.push(lines[i].replace(/^\s*>\s?/, '')); i++;
+      }
+      blocks.push(`<blockquote class="md-blockquote">${qLines.map(l=>`<p>${mdInline(l)}</p>`).join('')}</blockquote>`);
+      continue;
+    }
+
+    // ── Table ─────────────────────────────────────────────────────────────
+    if (_isTblRow(line) || _isTblSep(line)) {
+      flushList();
+      tblRows.push(line); i++; continue;
+    } else if (tblRows.length) { flushTable(); }
+
+    // ── Workflow arrow (↓ alone on a line) ────────────────────────────────
+    if (/^\s*↓\s*$/.test(line)) {
+      flushList(true); // keep olNext so next ol continues numbering
+      blocks.push('<div class="md-arrow">↓</div>');
+      i++; continue;
+    }
+
+    // ── Bullet with • character ───────────────────────────────────────────
+    const bulletDot = line.match(/^\s*[•·]\s+(.*)/);
+    if (bulletDot) {
+      if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
+      list.items.push(bulletDot[1]); i++; continue;
+    }
+
+    // ── Unordered list (- or *) ───────────────────────────────────────────
     const ul = line.match(/^\s*[-*]\s+(.*)/);
     if (ul) {
       if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
       list.items.push(ul[1]); i++; continue;
     }
+
+    // ── Ordered list ──────────────────────────────────────────────────────
     const ol = line.match(/^\s*\d+[.)]\s+(.*)/);
     if (ol) {
-      if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; }
+      if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [], start: olNext }; }
       list.items.push(ol[1]); i++; continue;
     }
+
+    // ── Blank line ────────────────────────────────────────────────────────
     if (line.trim() === '') { flushList(); i++; continue; }
+
+    // ── Paragraph ─────────────────────────────────────────────────────────
     flushList();
-    const para = [line];
-    i++;
-    while (i < lines.length && lines[i].trim() !== '' && !/^\s*```/.test(lines[i]) && !/^#{1,6}\s+/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+[.)]\s+/.test(lines[i])) {
-      para.push(lines[i]); i++;
-    }
+    const para = [line]; i++;
+    while (
+      i < lines.length && lines[i].trim() !== '' &&
+      !/^\s*```/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) &&
+      !/^\s*[-*•·]\s/.test(lines[i]) && !/^\s*\d+[.)]\s/.test(lines[i]) &&
+      !_isTblRow(lines[i]) && !/^\s*>/.test(lines[i]) &&
+      !/^[ \t]*(\*\*\*+|---+|___+)[ \t]*$/.test(lines[i]) &&
+      !/^\s*↓\s*$/.test(lines[i])
+    ) { para.push(lines[i]); i++; }
     blocks.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
   }
-  flushList();
-  return blocks.join('');
+  flushList(); flushTable();
+  return blocks.join('\n');
 }
 
 export function initials(value = "BN") {
