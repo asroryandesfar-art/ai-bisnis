@@ -3513,7 +3513,8 @@ async def list_bots(
 ):
     rows = await pool.fetch(
         """SELECT id, name, status, primary_color, greeting, language,
-                  system_prompt, temperature, reasoning_mode, total_convs, total_msgs, created_at
+                  system_prompt, temperature, reasoning_mode, computer_agent_enabled,
+                  total_convs, total_msgs, created_at
            FROM bots WHERE org_id=$1 ORDER BY created_at DESC""",
         user["org_id"],
     )
