@@ -1885,6 +1885,27 @@ async function renderTeam() {
   </div>`);
 }
 
+// Translate feature strings from DB (always stored in Indonesian) to active lang
+function translateFeature(text) {
+  if (getLang() !== "en") return text;
+  return String(text)
+    .replace(/percakapan\/bulan/gi, "conversations/month")
+    .replace(/Knowledge Base dasar/gi, "Basic Knowledge Base")
+    .replace(/Knowledge Base lebih besar/gi, "Larger Knowledge Base")
+    .replace(/Analytics dasar/gi, "Basic Analytics")
+    .replace(/Analytics lengkap/gi, "Full Analytics")
+    .replace(/Branding BotNesia/gi, "BotNesia Branding")
+    .replace(/SLA Perusahaan/gi, "Enterprise SLA")
+    .replace(/Dukungan Prioritas/gi, "Priority Support")
+    .replace(/Manajemen Tim/gi, "Team Management")
+    .replace(/Akses API/gi, "API Access")
+    .replace(/Domain Kustom/gi, "Custom Domain")
+    .replace(/Dukungan Dedikasi/gi, "Dedicated Support")
+    .replace(/Integrasi Kustom/gi, "Custom Integration")
+    .replace(/Keamanan Lanjutan/gi, "Advanced Security")
+    .replace(/Log Audit/gi, "Audit Log");
+}
+
 async function renderBilling() {
   loadingPage(t('billing.title'), t('billing.subtitle'));
   const [plansResult, subResult, usageResult, invoicesResult, creditsResult] = await Promise.all([
@@ -1914,11 +1935,15 @@ async function renderBilling() {
     const featureConfig = parseFeatures(plan.features);
     const highlights = Array.isArray(featureConfig.highlights) ? featureConfig.highlights : null;
     const rawFeatures = highlights || (Array.isArray(featureConfig) ? featureConfig : Object.keys(featureConfig).filter((k) => featureConfig[k]));
+    const fallbackConvs = plan.max_conversations_per_month === -1 ? t('unlimited') : formatNumber(plan.max_conversations_per_month);
     const features = rawFeatures.length ? rawFeatures : [
-      `${plan.max_agents === -1 ? 'Unlimited' : plan.max_agents} AI agents`,
-      `${plan.max_conversations_per_month === -1 ? 'Unlimited' : formatNumber(plan.max_conversations_per_month)} percakapan/bulan`,
+      `${plan.max_agents === -1 ? t('unlimited') : plan.max_agents} ${t('billing.feat.agents')}`,
+      `${fallbackConvs} ${t('billing.feat.convs_per_month')}`,
     ];
-    const description = plan.description || featureConfig.description || 'Paket BotNesia';
+    // Plan description: prefer translated key, fallback to DB value
+    const description = t(`billing.plan_desc.${plan.key}`) !== `billing.plan_desc.${plan.key}`
+      ? t(`billing.plan_desc.${plan.key}`)
+      : (featureConfig.description || plan.description || '');
     const isCustom = !!featureConfig.custom_pricing;
     const isCurrent = plan.key === currentKey;
     const isPopular = plan.key === 'pro';
@@ -1927,42 +1952,43 @@ async function renderBilling() {
     // eyebrow badge
     let eyebrowHtml = '';
     if (isCurrent && isTrial) {
-      eyebrowHtml = `<div class="billing-plan-eyebrow is-trial">TRIAL AKTIF${trialEnds ? ' · Berakhir ' + formatDate(trialEnds) : ''}</div>`;
+      const trialLabel = trialEnds ? ` · ${t('billing.trial_ends')} ${formatDate(trialEnds)}` : '';
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-trial">${t('billing.trial_active_label')}${trialLabel}</div>`;
     } else if (isCurrent) {
-      eyebrowHtml = `<div class="billing-plan-eyebrow is-current">PAKET AKTIF</div>`;
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-current">${t('billing.active_plan_label')}</div>`;
     } else if (isPopular) {
-      eyebrowHtml = `<div class="billing-plan-eyebrow is-popular">⭐ PALING POPULER</div>`;
+      eyebrowHtml = `<div class="billing-plan-eyebrow is-popular">⭐ ${t('billing.popular')}</div>`;
     } else {
       eyebrowHtml = `<div class="billing-plan-eyebrow" style="visibility:hidden">—</div>`;
     }
 
-    // free trial badge
+    // free trial badge — only for eligible non-current plans
     const trialBadge = hasTrial && !isCurrent
-      ? `<div class="billing-trial-badge">🎁 Gratis 1 Bulan</div>`
+      ? `<div class="billing-trial-badge">${t('billing.trial_badge')}</div>`
       : '';
 
     const priceHtml = isCustom
-      ? `<div class="billing-plan-price"><strong>Custom</strong><span>Hubungi Sales</span></div>`
-      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>/bulan</span></div>`;
+      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price_label')}</strong><span>${t('billing.contact_sales_label')}</span></div>`
+      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('billing.per_month_short')}</span></div>`;
 
     const featureListHtml = features.slice(0, wide ? 6 : 8).map(feat =>
-      `<li><span class="billing-feature-check">✓</span>${esc(String(feat).replace(/_/g, ' '))}</li>`
+      `<li><span class="billing-feature-check">✓</span>${esc(translateFeature(String(feat).replace(/_/g, ' ')))}</li>`
     ).join('');
 
     let btnLabel, btnAction;
     if (isCurrent) {
-      btnLabel = 'Paket Aktif'; btnAction = '';
+      btnLabel = t('billing.btn_current'); btnAction = '';
     } else if (isCustom) {
-      btnLabel = 'Hubungi Sales'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+      btnLabel = t('billing.btn_contact_sales'); btnAction = `data-checkout-plan="${esc(plan.key)}"`;
     } else if (hasTrial) {
-      btnLabel = 'Coba Gratis 1 Bulan'; btnAction = `data-checkout-trial="${esc(plan.key)}"`;
+      btnLabel = t('billing.btn_start_trial'); btnAction = `data-checkout-trial="${esc(plan.key)}"`;
     } else if (plan.key === 'free') {
-      btnLabel = 'Mulai Gratis'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+      btnLabel = t('billing.btn_start_free'); btnAction = `data-checkout-plan="${esc(plan.key)}"`;
     } else {
-      btnLabel = 'Pilih Paket'; btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+      btnLabel = t('billing.btn_choose'); btnAction = `data-checkout-plan="${esc(plan.key)}"`;
     }
 
-    const btnClass = isCurrent ? 'button' : (isPopular && !isCurrent ? 'button button-primary' : 'button button-primary');
+    const btnClass = isCurrent ? 'button' : 'button button-primary';
     const wideStyle = wide ? 'grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr 1fr auto;align-items:center;gap:24px' : '';
     const wideFeat = wide ? `<ul class="billing-feature-list" style="columns:2;gap:0 24px;margin:0">${featureListHtml}</ul>` : `<ul class="billing-feature-list">${featureListHtml}</ul>`;
 
@@ -1979,16 +2005,14 @@ async function renderBilling() {
       ${wideFeat}
       <div style="min-width:160px">
         <button class="${btnClass}" style="width:100%;margin-bottom:${hasTrial && !isCurrent && !isCustom ? '6px' : '0'}" ${isCurrent ? 'disabled' : ''} ${btnAction}>${btnLabel}</button>
-        ${hasTrial && !isCurrent ? `<button class="button" style="width:100%;font-size:11px" data-checkout-plan="${esc(plan.key)}">Langsung Berlangganan</button>` : ''}
+        ${hasTrial && !isCurrent ? `<button class="button" style="width:100%;font-size:11px" data-checkout-plan="${esc(plan.key)}">${t('billing.btn_subscribe')}</button>` : ''}
       </div>
     </article>`;
   }
 
   const mainPlanCards = mainPlans.map(p => buildPlanCard(p)).join('');
   const enterpriseCard = enterprisePlan ? buildPlanCard(enterprisePlan, true) : '';
-  const pricingNote = `<p style="font-size:11px;color:#888;text-align:center;margin:4px 0 20px">
-    Harga bulanan tetap · Kredit tambahan tersedia saat kuota habis · Free trial 1 bulan hanya berlaku sekali untuk paket berbayar
-  </p>`;
+  const pricingNote = `<p style="font-size:11px;color:#888;text-align:center;margin:4px 0 20px">${t('billing.pricing_note')}</p>`;
 
   // ── Credit Balance section ──────────────────────────────────────────────
   const creditBalance = Number(credits.balance || 0);
@@ -2012,27 +2036,27 @@ async function renderBilling() {
   const creditSection = `
   <div class="grid grid-2" style="margin-bottom:20px">
     <div class="card" style="border:2px solid #e8f5e9">
-      <div class="card-head"><h3>💰 Kredit Tersisa</h3></div>
+      <div class="card-head"><h3>${t('billing.credits_balance')}</h3></div>
       <div style="padding:0 20px 20px">
         <div style="font-size:32px;font-weight:700;color:#2e7d32;margin-bottom:4px">${idr(creditBalance)}</div>
-        <p style="font-size:12px;color:#666;margin:0 0 16px">Kredit dipakai otomatis saat kuota paket habis. 1 kredit = Rp1 pemakaian AI/percakapan.</p>
-        <p style="font-size:11px;color:#888;margin:0">Kuota paket habis? Tambah kredit tanpa upgrade paket.</p>
+        <p style="font-size:12px;color:#666;margin:0 0 16px">${t('billing.credits_desc')}</p>
+        <p style="font-size:11px;color:#888;margin:0">${t('billing.credits_hint')}</p>
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><h3>⚡ Beli Kredit Tambahan</h3></div>
+      <div class="card-head"><h3>${t('billing.credits_buy')}</h3></div>
       <div style="padding:0 20px 20px">
-        <p style="font-size:12px;color:#555;margin:0 0 12px">Pilih nominal top up kredit:</p>
+        <p style="font-size:12px;color:#555;margin:0 0 12px">${t('billing.credits_choose')}</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">${topupButtons}</div>
-        <p style="font-size:11px;color:#aaa;margin:0">Kredit tidak ada masa kadaluarsa. Berlaku untuk semua paket.</p>
+        <p style="font-size:11px;color:#aaa;margin:0">${t('billing.credits_note')}</p>
       </div>
     </div>
   </div>
   <div class="card" style="margin-bottom:20px">
-    <div class="card-head"><h3>📋 Riwayat Top Up Kredit</h3></div>
+    <div class="card-head"><h3>${t('billing.credits_history')}</h3></div>
     ${creditHistoryRows
-      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Tipe</th><th>Keterangan</th><th>Kredit</th><th>Nominal</th><th>Tanggal</th></tr></thead><tbody>${creditHistoryRows}</tbody></table></div>`
-      : `<div style="padding:20px">${emptyState('Belum ada top up','Kredit tambahan akan muncul di sini setelah top up pertama Anda.',`<button class="button button-primary" data-topup="50000">+ Beli Kredit Rp50.000</button>`,'billing')}</div>`
+      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${t('billing.credits_col_type')}</th><th>${t('billing.credits_col_desc')}</th><th>${t('billing.credits_col_credits')}</th><th>${t('billing.credits_col_amount')}</th><th>${t('billing.credits_col_date')}</th></tr></thead><tbody>${creditHistoryRows}</tbody></table></div>`
+      : `<div style="padding:20px">${emptyState(t('billing.credits_empty'), t('billing.credits_empty_sub'), `<button class="button button-primary" data-topup="50000">${t('billing.credits_empty_btn')}</button>`, 'billing')}</div>`
     }
   </div>`;
 
@@ -2048,7 +2072,7 @@ async function renderBilling() {
     return `<div class="billing-usage-item ${atLimit ? 'at-limit' : nearLimit ? 'near-limit' : ''}">
       <div class="billing-usage-head"><span>${esc(key.replace(/_/g, ' '))}</span><b>${formatNumber(used)} / ${isUnlimited ? '∞' : formatNumber(limit)}</b></div>
       <div class="billing-usage-bar"><span style="width:${pct}%"></span></div>
-      ${atLimit ? `<div style="font-size:11px;color:#c62828;margin-top:4px">Kuota habis — <button class="button" style="font-size:11px;padding:2px 8px" data-topup="50000">Beli Kredit</button></div>` : ''}
+      ${atLimit ? `<div style="font-size:11px;color:#c62828;margin-top:4px">${t('billing.quota_full')} <button class="button" style="font-size:11px;padding:2px 8px" data-topup="50000">${t('billing.buy_credits_btn')}</button></div>` : ''}
     </div>`;
   }).join('') : emptyState(t('billing.usage_empty'), t('billing.usage_empty_sub'), '', 'analytics');
 
@@ -2059,13 +2083,13 @@ async function renderBilling() {
 
   const trialBanner = isTrial && trialEnds
     ? `<div style="margin-bottom:16px;padding:12px 16px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;font-size:13px">
-         🎁 <strong>Free Trial Aktif</strong> — Paket ${currentKey.charAt(0).toUpperCase()+currentKey.slice(1)} gratis hingga <strong>${formatDate(trialEnds)}</strong>. Setelah masa trial berakhir, billing berjalan sesuai harga paket. <a href="#" style="color:#2e7d32;font-weight:600" data-checkout-plan="${currentKey}">Langsung Aktifkan →</a>
+         🎁 <strong>${t('billing.trial_banner_prefix')}${currentKey.charAt(0).toUpperCase()+currentKey.slice(1)}</strong> ${t('billing.trial_banner_suffix')} <strong>${formatDate(trialEnds)}</strong>. ${t('billing.trial_banner_note')} <a href="#" style="color:#2e7d32;font-weight:600" data-checkout-plan="${currentKey}">${t('billing.trial_banner_activate')}</a>
        </div>`
     : '';
 
   setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${isTrial ? 'pending' : currentStatus === 'active' ? 'active' : 'pending'}">${esc(isTrial ? 'trial' : currentStatus)}</span>`)}
   ${trialBanner}
-  <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">Paket Langganan</div>
+  <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">${t('billing.plan_section')}</div>
   <div class="billing-plans-grid" style="grid-template-columns:repeat(4,1fr)">${mainPlanCards}</div>
   ${enterpriseCard ? `<div style="margin-top:8px">${enterpriseCard}</div>` : ''}
   ${pricingNote}
