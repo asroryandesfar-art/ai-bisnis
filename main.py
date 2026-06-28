@@ -156,6 +156,8 @@ class Settings(BaseSettings):
     groq_cheap_model:     str = "llama-3.1-8b-instant"
     groq_base_url:        str = "https://api.groq.com/openai/v1"
     groq_whisper_model:   str = "whisper-large-v3-turbo"
+    # OpenRouter — single key for GPT-4o, Claude, DeepSeek, Qwen, and 200+ models
+    openrouter_api_key:   str = ""
 
     @property
     def effective_gemini_api_key(self) -> str:
@@ -323,10 +325,10 @@ def should_use_cloud(plan: str, billing_status: str) -> bool:
 
 def get_supervisor(use_cloud: bool) -> SupervisorAgent:
     global _supervisor_cloud
-    if not cfg.effective_gemini_api_key and not cfg.groq_api_key:
+    if not cfg.effective_gemini_api_key and not cfg.groq_api_key and not cfg.openrouter_api_key:
         raise RuntimeError(
             "Cloud AI belum dikonfigurasi. "
-            "Isi GEMINI_API_KEY (atau GOOGLE_API_KEY) atau GROQ_API_KEY di .env lalu restart server."
+            "Isi GEMINI_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY di .env lalu restart server."
         )
 
     if _supervisor_cloud is None:
@@ -340,6 +342,7 @@ def get_supervisor(use_cloud: bool) -> SupervisorAgent:
             gemini_pro_model=cfg.gemini_pro_model,
             gemini_timeout=cfg.gemini_timeout,
             gemini_max_retry=cfg.gemini_max_retry,
+            openrouter_api_key=cfg.openrouter_api_key,
         )
 
     return _supervisor_cloud
@@ -358,6 +361,7 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             gemini_pro_model=cfg.gemini_pro_model,
             gemini_timeout=cfg.gemini_timeout,
             gemini_max_retry=cfg.gemini_max_retry,
+            openrouter_api_key=cfg.openrouter_api_key,
         )
     return _knowledge_builder_agent
 
@@ -5937,12 +5941,25 @@ async def health():
         "db":      db_ok,
         "schema":  schema_ok if db_ok else False,
         "ai": {
-            "configured": bool(cfg.effective_gemini_api_key or cfg.groq_api_key),
-            "primary_provider": "gemini" if cfg.effective_gemini_api_key else ("groq" if cfg.groq_api_key else None),
-            "primary_model": cfg.gemini_model if cfg.effective_gemini_api_key else (cfg.groq_model if cfg.groq_api_key else None),
-            "pro_model": cfg.gemini_pro_model if cfg.effective_gemini_api_key else None,
-            "fallback_provider": "groq" if (cfg.effective_gemini_api_key and cfg.groq_api_key) else None,
-            "fallback_model": cfg.groq_model if (cfg.effective_gemini_api_key and cfg.groq_api_key) else None,
+            "configured": bool(cfg.effective_gemini_api_key or cfg.groq_api_key or cfg.openrouter_api_key),
+            "providers": {
+                "gemini": {
+                    "active": bool(cfg.effective_gemini_api_key),
+                    "model": cfg.gemini_model,
+                    "pro_model": cfg.gemini_pro_model,
+                },
+                "openrouter": {
+                    "active": bool(cfg.openrouter_api_key),
+                    "note": "GPT-4o, Claude 3.5, DeepSeek, Qwen, and 200+ models",
+                },
+                "groq": {
+                    "active": bool(cfg.groq_api_key),
+                    "model": cfg.groq_model,
+                },
+            },
+            "routing": "gemini→openrouter→groq" if cfg.effective_gemini_api_key else (
+                "openrouter→groq" if cfg.openrouter_api_key else "groq"
+            ),
         },
         "model": f"gemini:{cfg.gemini_model}" if cfg.effective_gemini_api_key else f"groq:{cfg.groq_model}",
         "version": "1.0.0",

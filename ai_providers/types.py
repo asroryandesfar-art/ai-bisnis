@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator
 class ProviderType(str, Enum):
     GEMINI = "gemini"
     GROQ = "groq"
+    OPENROUTER = "openrouter"
 
 
 class TaskType(str, Enum):

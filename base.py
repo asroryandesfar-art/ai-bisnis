@@ -77,6 +77,7 @@ class BaseAgent:
         gemini_pro_model: str | None = None,
         gemini_timeout: float = 30.0,
         gemini_max_retry: int = 3,
+        openrouter_api_key: str | None = None,
     ):
         self.api_key = api_key or ""
         self.model   = model or ""
@@ -87,6 +88,7 @@ class BaseAgent:
         self.gemini_pro_model = gemini_pro_model or "gemini-2.5-pro"
         self.gemini_timeout = gemini_timeout
         self.gemini_max_retry = gemini_max_retry
+        self.openrouter_api_key = openrouter_api_key or ""
 
         # Lazy-initialized router (set on first _call_llm if gemini key is set)
         self._router = None
@@ -137,6 +139,14 @@ class BaseAgent:
             pro_model=self.gemini_pro_model,
             timeout=self.gemini_timeout,
             max_retries=self.gemini_max_retry,
+        )
+
+    def _get_openrouter_provider(self):
+        """Lazy-init OpenRouterProvider using this agent's config."""
+        from ai_providers.openrouter import OpenRouterProvider
+        return OpenRouterProvider(
+            api_key=self.openrouter_api_key,
+            site_url=self.app_url,
         )
 
     async def _call_gemini(
@@ -206,14 +216,53 @@ class BaseAgent:
                 except Exception:
                     pass
 
-            # Groq fallback after both Gemini attempts fail
+            # OpenRouter fallback after both Gemini attempts fail
+            if self.openrouter_api_key:
+                from ai_providers.openrouter import task_model as _or_task_model
+                from ai_providers.types import LLMRequest as _LLMReq
+                _or_provider = self._get_openrouter_provider()
+                _or_req = _LLMReq(
+                    messages=messages, temperature=temperature,
+                    max_tokens=max_tokens, response_format=response_format,
+                )
+                try:
+                    _or_resp = await _or_provider.complete(
+                        _or_req, model=_or_task_model(task_type or "chat")
+                    )
+                    if _or_resp.error is None:
+                        return _or_resp.content
+                except Exception:
+                    pass
+
             if not self.api_key:
                 raise RuntimeError(
-                    "Gemini tidak dapat dihubungi dan GROQ_API_KEY tidak tersedia."
+                    "Gemini tidak dapat dihubungi dan GROQ_API_KEY / OPENROUTER_API_KEY tidak tersedia."
                 )
 
-        elif not self.api_key:
-            raise RuntimeError("API key kosong. Set GEMINI_API_KEY atau GROQ_API_KEY.")
+        elif not self.api_key and not self.openrouter_api_key:
+            raise RuntimeError("API key kosong. Set GEMINI_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY.")
+
+        # ── OpenRouter as primary (no Gemini key) ────────────────────────────
+        if not self.gemini_api_key and self.openrouter_api_key:
+            from ai_providers.openrouter import task_model as _or_task_model
+            from ai_providers.types import LLMRequest as _LLMReqOR
+            _or_provider = self._get_openrouter_provider()
+            _or_req = _LLMReqOR(
+                messages=messages, temperature=temperature,
+                max_tokens=max_tokens, response_format=response_format,
+            )
+            try:
+                _or_resp = await _or_provider.complete(
+                    _or_req, model=_or_task_model(task_type or "chat")
+                )
+                if _or_resp.error is None:
+                    return _or_resp.content
+            except Exception:
+                pass
+            if not self.api_key:
+                raise RuntimeError(
+                    "OpenRouter tidak dapat dihubungi dan GROQ_API_KEY tidak tersedia."
+                )
 
         # ── Groq path ────────────────────────────────────────────────────────
         base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
