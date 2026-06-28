@@ -338,6 +338,8 @@ class SupervisorAgent:
         gemini_pro_model: str | None = None,
         gemini_timeout: float = 30.0,
         gemini_max_retry: int = 3,
+        openrouter_api_key: str | None = None,
+        deepseek_api_key: str | None = None,
     ):
         # Cloud-only: api_key dipakai untuk LLM dan memori.
         provider_kwargs = {
@@ -352,6 +354,8 @@ class SupervisorAgent:
             "gemini_pro_model": gemini_pro_model or "gemini-2.5-pro",
             "gemini_timeout": gemini_timeout,
             "gemini_max_retry": gemini_max_retry,
+            "openrouter_api_key": openrouter_api_key or "",
+            "deepseek_api_key": deepseek_api_key or "",
         }
         strong_model = model or "meta-llama/llama-4-scout-17b-16e-instruct"
         # Agen internal pipeline pakai model ringan untuk hemat RPD quota Groq.

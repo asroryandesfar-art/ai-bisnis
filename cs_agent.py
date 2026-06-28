@@ -244,7 +244,7 @@ One concise, actionable conclusion.
         selected_language = self._selected_language(context)
 
         # Mode cloud: pakai LLM supaya bisa jawab pertanyaan bebas.
-        if self.api_key or self.gemini_api_key:
+        if self.api_key or self.gemini_api_key or self.deepseek_api_key or self.openrouter_api_key:
             history = context.get("messages", [])
 
             system_parts = [self._system_prompt_for(selected_language).strip()]
@@ -324,7 +324,7 @@ One concise, actionable conclusion.
                 if retried:
                     output["_retried"] = True
         else:
-            raise RuntimeError("Cloud AI belum aktif. Isi GROQ_API_KEY lalu restart server.")
+            raise RuntimeError("Cloud AI belum aktif. Isi DEEPSEEK_API_KEY, GEMINI_API_KEY, atau OPENROUTER_API_KEY lalu restart server.")
 
         return AgentResult(
             agent   = self.name,
