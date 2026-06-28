@@ -35,6 +35,9 @@ DEFAULT_MODEL_PRICING = {
     # OpenRouter — DeepSeek via OpenRouter
     "deepseek/deepseek-chat":                      {"input": Decimal("0.27"),   "output": Decimal("1.10")},
     "deepseek/deepseek-r1":                        {"input": Decimal("0.55"),   "output": Decimal("2.19")},
+    # DeepSeek direct API (api.deepseek.com)
+    "deepseek-chat":                               {"input": Decimal("0.27"),   "output": Decimal("1.10")},
+    "deepseek-reasoner":                           {"input": Decimal("0.55"),   "output": Decimal("2.19")},
     # OpenRouter — Qwen via OpenRouter
     "qwen/qwen-2.5-72b-instruct":                  {"input": Decimal("0.35"),   "output": Decimal("0.40")},
     "qwen/qwen-2.5-coder-32b-instruct":            {"input": Decimal("0.06"),   "output": Decimal("0.06")},
