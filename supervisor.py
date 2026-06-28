@@ -486,7 +486,7 @@ class SupervisorAgent:
         _deep_reasoning_needed = heuristic_complexity(context.get("user_message", "")) != "simple"
         style_guidance = reasoning_brief.get("style_guidance")
         if style_guidance:
-            existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+            existing_kb = str(ctx.get("knowledge_base_context") or "").strip()
             ctx = {
                 **ctx,
                 "knowledge_base_context": "\n\n".join(
@@ -531,7 +531,7 @@ class SupervisorAgent:
                     web_search_results = search_result.get("results") or []
 
         if extra_context_parts:
-            existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+            existing_kb = str(ctx.get("knowledge_base_context") or "").strip()
             ctx = {
                 **ctx,
                 "knowledge_base_context": "\n\n".join(
@@ -590,7 +590,7 @@ class SupervisorAgent:
                 + ", ".join(str(x) for x in kg_out["product_mentions"])
             )
         if guidance:
-            existing_kb = (ctx.get("knowledge_base_context") or "").strip()
+            existing_kb = str(ctx.get("knowledge_base_context") or "").strip()
             ctx = {
                 **ctx,
                 "knowledge_base_context": "\n\n".join(
