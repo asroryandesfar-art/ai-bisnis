@@ -144,7 +144,7 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
 
     async def run(self, context: dict) -> AgentResult:
         user_msg   = context.get("user_message", "")
-        kb_context = context.get("knowledge_base_context", "")
+        kb_context = str(context.get("knowledge_base_context") or "")
         selected_language = self._selected_language(context)
 
         # Mode cloud: pakai LLM supaya bisa jawab pertanyaan bebas.
@@ -297,7 +297,7 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
                   "reasoning_summary"}
         """
         user_message = context.get("user_message", "")
-        kb_context = context.get("knowledge_base_context", "")
+        kb_context = str(context.get("knowledge_base_context") or "")
         selected_language = self._selected_language(context)
         plan = context.get("_plan") or {}
         socratic_brief = str(context.get("_socratic_brief") or "").strip()
@@ -310,8 +310,8 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
         for lens, out in (specialist_results or {}).items():
             if not out or out.get("skipped"):
                 continue
-            analysis = (out.get("analysis") or "").strip()
-            conclusion = (out.get("conclusion") or "").strip()
+            analysis = str(out.get("analysis") or "").strip()
+            conclusion = str(out.get("conclusion") or "").strip()
             if not analysis and not conclusion:
                 continue
             conf = out.get("confidence")
@@ -323,10 +323,10 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
                     f"Analysis: {analysis}\n"
                     f"Conclusion: {conclusion}"
                 )
-                limitations = (out.get("limitations") or "").strip()
+                limitations = str(out.get("limitations") or "").strip()
                 if limitations:
                     block += f"\nLimitations: {limitations}"
-                next_action = (out.get("suggested_next_action") or "").strip()
+                next_action = str(out.get("suggested_next_action") or "").strip()
                 if next_action:
                     block += f"\nNext action: {next_action}"
             else:
@@ -335,10 +335,10 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
                     f"Analisis: {analysis}\n"
                     f"Kesimpulan: {conclusion}"
                 )
-                limitations = (out.get("limitations") or "").strip()
+                limitations = str(out.get("limitations") or "").strip()
                 if limitations:
                     block += f"\nKeterbatasan: {limitations}"
-                next_action = (out.get("suggested_next_action") or "").strip()
+                next_action = str(out.get("suggested_next_action") or "").strip()
                 if next_action:
                     block += f"\nSaran tindak lanjut: {next_action}"
             specialist_blocks.append(block)
@@ -412,7 +412,7 @@ CRITICAL: ALWAYS respond 100% in English. Every single word must be in English. 
             default={},
         )
 
-        answer = (result.get("answer") or "").strip()
+        answer = str(result.get("answer") or "").strip()
         if not answer:
             answer = (
                 self._service_unavailable_response(selected_language)
