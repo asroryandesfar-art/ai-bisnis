@@ -535,7 +535,7 @@ kumulatif (jangan hanya meringkas turn ini saja)."""
         stored_count = len(facts_to_store)
 
         # Simpan ringkasan kumulatif percakapan untuk follow-up berikutnya
-        new_summary = (output.get("summary") or "").strip()
+        new_summary = str(output.get("summary") or "").strip()
         if new_summary and conv_id:
             await self.store.set_conversation_summary(conv_id, new_summary, pool=pool)
 

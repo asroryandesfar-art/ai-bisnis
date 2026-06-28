@@ -143,12 +143,12 @@ Balas HANYA JSON."""
         steps = result.get("steps") or []
         cleaned = []
         for step in steps[:MAX_STEPS]:
-            action = (step.get("action") or "").strip()
+            action = str(step.get("action") or "").strip()
             if action not in ALL_ACTIONS:
                 continue
             cleaned.append({
                 "action": action,
-                "target": (step.get("target") or "").strip(),
+                "target": str(step.get("target") or "").strip(),
                 "value": step.get("value"),
             })
         return cleaned
