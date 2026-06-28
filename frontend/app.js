@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-3";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-4";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,7 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-3";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-4";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
@@ -1829,12 +1829,23 @@ async function renderAgentCenter() {
              </div>
              <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:200px;white-space:pre-wrap"></pre>
            </div>`
-        : (()=>{ const _t = localStorage.getItem("bn_token")||""; const _cmd = `python3 botnesia_local_agent.py --token ${_t}`; return `<div style="font-size:13px;color:var(--text-muted)">
-            <p style="margin:0 0 8px">Jalankan perintah berikut di terminal komputer Anda:</p>
-            <code id="la-cmd" style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:11px;margin-bottom:8px;word-break:break-all">${esc(_cmd)}</code>
-            <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_cmd)}).then(()=>toast('Perintah disalin!','success'))">Salin Perintah</button>
-            <p style="margin:8px 0 0;font-size:11px;color:var(--text-muted)">Script otomatis install dependency dan terhubung ke server BotNesia.</p>
-           </div>`;})()}
+        : (()=>{
+            const _t = localStorage.getItem("bn_token")||"";
+            const _dl = `${location.origin}/download/botnesia-local-agent.py`;
+            const _cmd1 = `wget -O botnesia_local_agent.py "${_dl}"`;
+            const _cmd2 = `python3 botnesia_local_agent.py --token ${_t}`;
+            return `<div style="font-size:13px">
+              <p style="margin:0 0 8px;font-weight:600">Langkah 1 — Download script (sekali saja):</p>
+              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:14px;word-break:break-all">${esc(_cmd1)}</code>
+              <p style="margin:0 0 8px;font-weight:600">Langkah 2 — Jalankan agent:</p>
+              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:14px;word-break:break-all">${esc(_cmd2)}</code>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a href="${esc(_dl)}" download="botnesia_local_agent.py" class="button button-sm">⬇ Download Script</a>
+                <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_cmd1+'\n'+_cmd2)}).then(()=>toast('Perintah disalin!','success'))">Salin Semua Perintah</button>
+              </div>
+              <p style="margin:10px 0 0;font-size:11px;color:var(--text-muted)">Script otomatis install dependency. Token di atas adalah milik akun Anda — jangan bagikan.</p>
+             </div>`;
+          })()}
     </div>
   </div>
   ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}

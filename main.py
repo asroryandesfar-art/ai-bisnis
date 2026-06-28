@@ -478,6 +478,20 @@ async def public_asset(asset_path: str):
 
 OFFICIAL_LOGO_PATH = _PUBLIC_DIR / "assets" / "brand" / "botnesia-clean-logo.png"
 
+@app.get("/download/botnesia-local-agent.py", include_in_schema=False)
+async def download_local_agent():
+    """Download botnesia_local_agent.py — tersedia untuk semua tenant tanpa auth."""
+    script_path = Path(__file__).parent / "botnesia_local_agent.py"
+    if not script_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Script tidak ditemukan")
+    return FileResponse(
+        script_path,
+        media_type="text/x-python",
+        filename="botnesia_local_agent.py",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon_ico():
     if not OFFICIAL_LOGO_PATH.exists():
