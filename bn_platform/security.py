@@ -430,7 +430,7 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
     router = APIRouter(prefix="/security", tags=["security"])
     cfg = get_agent_config() if get_agent_config else {}
     agent = sec_agent.SecurityAgent(api_key=cfg.get("api_key"), model=cfg.get("model"),
-                                     base_url=cfg.get("base_url"), app_url=cfg.get("app_url", "https://botnesia.id"))
+                                     base_url=cfg.get("base_url"), deepseek_api_key=cfg.get("deepseek_api_key", ""), openrouter_api_key=cfg.get("openrouter_api_key", ""), app_url=cfg.get("app_url", "https://botnesia.id"))
 
     @router.get("/audit-logs")
     async def get_audit_logs(

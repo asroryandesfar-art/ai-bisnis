@@ -75,7 +75,7 @@ def build_marketing_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
     router = APIRouter(prefix="/marketing", tags=["marketing"])
     cfg = get_agent_config()
     agent = ma.MarketingAgent(api_key=cfg.get("api_key"), model=cfg.get("model"),
-                               base_url=cfg.get("base_url"), app_url=cfg.get("app_url", "https://botnesia.id"))
+                               base_url=cfg.get("base_url"), deepseek_api_key=cfg.get("deepseek_api_key", ""), openrouter_api_key=cfg.get("openrouter_api_key", ""), app_url=cfg.get("app_url", "https://botnesia.id"))
 
     # ── Dashboard ───────────────────────────────────────────────
 
