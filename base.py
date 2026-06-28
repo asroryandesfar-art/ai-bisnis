@@ -16,9 +16,11 @@ from agent_observability import add_token_usage, observe_agent
 from cost_intelligence import routed_model
 
 
-def parse_json_response(raw: str, default: dict | None = None) -> dict:
+def parse_json_response(raw, default: dict | None = None) -> dict:
     """Parse LLM JSON output dengan fallback markdown code-fence. Tidak pernah raise."""
-    text = (raw or "").strip()
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw or "").strip()
     if "```" in text:
         parts = text.split("```")
         if len(parts) >= 2:
