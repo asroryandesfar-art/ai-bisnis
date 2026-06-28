@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-2";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,7 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-1";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-2";
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
@@ -1814,11 +1814,12 @@ async function renderAgentCenter() {
             <div><strong>User:</strong> ${esc(localAgent.meta?.username||'-')}</div>
             <button class="button button-sm" data-action="local-agent-disconnect" style="margin-top:8px;width:fit-content">Putus Koneksi</button>
            </div>`
-        : `<div style="font-size:13px;color:var(--text-muted)">
-            <p style="margin:0 0 12px">Jalankan perintah berikut di terminal komputer Anda:</p>
-            <code style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:8px">python3 botnesia_local_agent.py --token YOUR_JWT_TOKEN</code>
-            <p style="margin:4px 0 0;font-size:11px;color:var(--text-muted)">Token JWT tersedia di Settings → API Keys atau salin dari URL login Anda.</p>
-           </div>`}
+        : (()=>{ const _t = localStorage.getItem("bn_token")||""; const _cmd = `python3 botnesia_local_agent.py --token ${_t}`; return `<div style="font-size:13px;color:var(--text-muted)">
+            <p style="margin:0 0 8px">Jalankan perintah berikut di terminal komputer Anda:</p>
+            <code id="la-cmd" style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:11px;margin-bottom:8px;word-break:break-all">${esc(_cmd)}</code>
+            <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_cmd)}).then(()=>toast('Perintah disalin!','success'))">Salin Perintah</button>
+            <p style="margin:8px 0 0;font-size:11px;color:var(--text-muted)">Script otomatis install dependency dan terhubung ke server BotNesia.</p>
+           </div>`;})()}
     </div>
   </div>
   ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}
