@@ -382,12 +382,25 @@ class BaseAgent:
         """
         import tool_executor
 
-        if not self.api_key:
-            raise RuntimeError("API key kosong. Set GROQ_API_KEY untuk mode cloud.")
+        # Pilih provider yang tersedia: Groq → DeepSeek → OpenRouter
+        if self.api_key:
+            _tool_api_key = self.api_key
+            _tool_base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
+            _tool_model = routed_model(self.model or "meta-llama/llama-4-scout-17b-16e-instruct")
+        elif self.deepseek_api_key:
+            _tool_api_key = self.deepseek_api_key
+            _tool_base_url = "https://api.deepseek.com/v1"
+            _tool_model = "deepseek-chat"
+        elif self.openrouter_api_key:
+            _tool_api_key = self.openrouter_api_key
+            _tool_base_url = "https://openrouter.ai/api/v1"
+            _tool_model = "deepseek/deepseek-chat"
+        else:
+            raise RuntimeError("API key kosong. Set GROQ_API_KEY, DEEPSEEK_API_KEY, atau OPENROUTER_API_KEY.")
 
-        base_url = (self.base_url or "https://api.groq.com/openai/v1").rstrip("/")
-        model = routed_model(self.model or "meta-llama/llama-4-scout-17b-16e-instruct")
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        base_url = _tool_base_url
+        model = _tool_model
+        headers = {"Authorization": f"Bearer {_tool_api_key}", "Content-Type": "application/json"}
 
         conversation = list(messages)
         executed_calls: list[dict] = []

@@ -27,7 +27,7 @@ def build_self_learning_router(*, get_pool: GetPool, get_current_user: GetCurren
     router = APIRouter(prefix="/learning", tags=["learning"])
     cfg = get_agent_config()
     agent = sl.SelfLearningAgent(api_key=cfg.get("api_key"), model=cfg.get("model"),
-                                  base_url=cfg.get("base_url"), app_url=cfg.get("app_url", "https://botnesia.id"))
+                                  base_url=cfg.get("base_url"), deepseek_api_key=cfg.get("deepseek_api_key", ""), openrouter_api_key=cfg.get("openrouter_api_key", ""), app_url=cfg.get("app_url", "https://botnesia.id"))
 
     @router.get("/dashboard")
     async def dashboard(

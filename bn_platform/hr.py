@@ -88,7 +88,7 @@ def build_hr_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
     router = APIRouter(prefix="/hr", tags=["hr"])
     cfg = get_agent_config()
     agent = hr.HRAgent(api_key=cfg.get("api_key"), model=cfg.get("model"),
-                        base_url=cfg.get("base_url"), app_url=cfg.get("app_url", "https://botnesia.id"))
+                        base_url=cfg.get("base_url"), deepseek_api_key=cfg.get("deepseek_api_key", ""), openrouter_api_key=cfg.get("openrouter_api_key", ""), app_url=cfg.get("app_url", "https://botnesia.id"))
 
     async def _get_employee(pool: asyncpg.Pool, employee_id: str, org_id: str) -> dict:
         row = await pool.fetchrow("SELECT * FROM hr_employees WHERE id=$1 AND org_id=$2", employee_id, org_id)
