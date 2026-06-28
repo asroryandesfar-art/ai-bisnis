@@ -192,11 +192,19 @@ class BaseAgent:
                 resp = await provider.complete(req, model=model)
                 if resp.error is None:
                     return resp.content
-                # Gemini returned an error — fall through to Groq
             except Exception:
                 pass
 
-            # Groq fallback after Gemini failure
+            # Retry with Flash model if Pro was used and failed
+            if use_pro and self.gemini_model and self.gemini_model != model:
+                try:
+                    resp = await provider.complete(req, model=self.gemini_model)
+                    if resp.error is None:
+                        return resp.content
+                except Exception:
+                    pass
+
+            # Groq fallback after both Gemini attempts fail
             if not self.api_key:
                 raise RuntimeError(
                     "Gemini tidak dapat dihubungi dan GROQ_API_KEY tidak tersedia."
