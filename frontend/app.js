@@ -3014,6 +3014,7 @@ async function submitCreateAgent() {
 
 async function submitAgentDetail(form) {
   const id=form.dataset.agentId; const data=Object.fromEntries(new FormData(form));
+  if('computer_agent_enabled' in data) data.computer_agent_enabled = data.computer_agent_enabled === 'true';
   const button=form.querySelector('button[type="submit"]'); button.disabled=true; button.textContent="Saving...";
   try { await api.updateBot(id,data); bustCache("bots"); state.bots=await api.bots(); closeDrawer(); renderChrome(); toast("Agent configuration saved.","success"); await route(); }
   catch(error){ toast(error.message,"error"); button.disabled=false; button.textContent="Save changes"; }
