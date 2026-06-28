@@ -1816,7 +1816,7 @@ async function renderAgentCenter() {
            </div>`
         : `<div style="font-size:13px;color:var(--text-muted)">
             <p style="margin:0 0 12px">Jalankan perintah berikut di terminal komputer Anda:</p>
-            <code style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:8px">python botnesia_local_agent.py --token YOUR_JWT_TOKEN</code>
+            <code style="display:block;background:var(--surface-2);padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:8px">python3 botnesia_local_agent.py --token YOUR_JWT_TOKEN</code>
             <p style="margin:4px 0 0;font-size:11px;color:var(--text-muted)">Token JWT tersedia di Settings → API Keys atau salin dari URL login Anda.</p>
            </div>`}
     </div>
