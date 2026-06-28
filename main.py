@@ -4902,6 +4902,8 @@ async def chat(
                 ca_agent = computer_agent.ComputerAgent(
                     api_key=cfg.groq_api_key, model=cfg.groq_cheap_model or cfg.groq_model,
                     base_url=(cfg.groq_base_url or "").strip() or None,
+                    deepseek_api_key=cfg.deepseek_api_key,
+                    openrouter_api_key=cfg.openrouter_api_key,
                 )
                 ca_steps = await ca_agent.plan_actions(body.message)
                 if computer_agent.is_write_plan(ca_steps):
