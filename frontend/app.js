@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-7";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260701-local-agent-8";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,7 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-7";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
   const container = document.getElementById("la-fields");
@@ -1823,44 +1823,43 @@ async function renderAgentCenter() {
     </div>
     <div class="card-body">
       ${localAgent.connected
-        ? `<div style="display:grid;gap:6px;font-size:13px;margin-bottom:16px">
-            <div><strong>Host:</strong> ${esc(localAgent.meta?.hostname||'-')}</div>
-            <div><strong>Platform:</strong> ${esc(localAgent.meta?.platform||'-')}</div>
-            <div><strong>User:</strong> ${esc(localAgent.meta?.username||'-')}</div>
-            <button class="button button-sm" data-action="local-agent-disconnect" style="margin-top:8px;width:fit-content">Putus Koneksi</button>
-           </div>
-           <div style="border-top:1px solid var(--border);padding-top:14px">
-             <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
-             <div style="display:grid;gap:8px;margin-bottom:10px">
-               <select id="la-tool" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
-                 <option value="get_info">get_info — info sistem</option>
-                 <option value="list_dir">list_dir — lihat isi folder</option>
-                 <option value="read_file">read_file — baca isi file</option>
-                 <option value="run_command">run_command — jalankan perintah</option>
-                 <option value="find_files">find_files — cari file</option>
-               </select>
-               <div id="la-fields" style="display:grid;gap:6px"></div>
-               <button class="button button-primary" data-action="local-agent-test">Kirim</button>
-             </div>
-             <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:240px;white-space:pre-wrap"></pre>
+        ? `<div style="display:flex;gap:16px;align-items:center;font-size:13px;margin-bottom:14px;flex-wrap:wrap">
+            <span><strong>Host:</strong> ${esc(localAgent.meta?.hostname||'-')}</span>
+            <span><strong>Platform:</strong> ${esc(localAgent.meta?.platform||'-')}</span>
+            <span><strong>User:</strong> ${esc(localAgent.meta?.username||'-')}</span>
+            <button class="button button-sm" data-action="local-agent-disconnect">Putus Koneksi</button>
            </div>`
         : (()=>{
             const _t = localStorage.getItem("bn_token")||"";
             const _dl = `${location.origin}/download/botnesia-local-agent.py`;
             const _cmd1 = `wget -O botnesia_local_agent.py "${_dl}"`;
             const _cmd2 = `python3 botnesia_local_agent.py --token ${_t}`;
-            return `<div style="font-size:13px">
-              <p style="margin:0 0 8px;font-weight:600">Langkah 1 — Download script (sekali saja):</p>
-              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:14px;word-break:break-all">${esc(_cmd1)}</code>
-              <p style="margin:0 0 8px;font-weight:600">Langkah 2 — Jalankan agent:</p>
-              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:14px;word-break:break-all">${esc(_cmd2)}</code>
+            return `<div style="font-size:13px;margin-bottom:14px">
+              <p style="margin:0 0 6px;font-weight:600">Langkah 1 — Download script:</p>
+              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_cmd1)}</code>
+              <p style="margin:0 0 6px;font-weight:600">Langkah 2 — Jalankan agent:</p>
+              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_cmd2)}</code>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <a href="${esc(_dl)}" download="botnesia_local_agent.py" class="button button-sm">⬇ Download Script</a>
                 <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_cmd1+'\n'+_cmd2)}).then(()=>toast('Perintah disalin!','success'))">Salin Semua Perintah</button>
               </div>
-              <p style="margin:10px 0 0;font-size:11px;color:var(--text-muted)">Script otomatis install dependency. Token di atas adalah milik akun Anda — jangan bagikan.</p>
              </div>`;
           })()}
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
+        <div style="display:grid;gap:8px;margin-bottom:10px">
+          <select id="la-tool" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
+            <option value="get_info">get_info — info sistem</option>
+            <option value="list_dir">list_dir — lihat isi folder</option>
+            <option value="read_file">read_file — baca isi file</option>
+            <option value="run_command">run_command — jalankan perintah shell</option>
+            <option value="find_files">find_files — cari file</option>
+          </select>
+          <div id="la-fields" style="display:grid;gap:6px"></div>
+          <button class="button button-primary" data-action="local-agent-test" ${localAgent.connected?'':'disabled title="Agent belum terhubung"'}>Kirim</button>
+        </div>
+        <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:240px;white-space:pre-wrap"></pre>
+      </div>
     </div>
   </div>
   ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}
