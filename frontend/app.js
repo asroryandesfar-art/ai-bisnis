@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-5";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-6";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,7 +6,19 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-5";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-6";
+
+window.laToolChange = function(tool) {
+  const defaults = {
+    get_info: "",
+    list_dir: '{"path":"~/"}',
+    read_file: '{"path":"~/contoh.txt"}',
+    run_command: '{"command":"ls -la ~/"}',
+    find_files: '{"pattern":"*.py","dir":"~/"}',
+  };
+  const el = document.getElementById("la-args");
+  if (el) el.value = defaults[tool] || "";
+};
 
 const state = {
   route: "dashboard", health: null, org: null, user: null, bots: [], overview: null, founder: null, founderAccess: false,
@@ -1817,7 +1829,7 @@ async function renderAgentCenter() {
            <div style="border-top:1px solid var(--border);padding-top:14px">
              <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-               <select id="la-tool" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="const d={get_info:'',list_dir:'{"path":"~/"}',read_file:'{"path":"~/contoh.txt"}',run_command:'{"command":"ls -la ~/"}',find_files:'{"pattern":"*.py","dir":"~/"}'};document.getElementById('la-args').value=d[this.value]||''">
+               <select id="la-tool" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
                  <option value="get_info">get_info — info sistem</option>
                  <option value="list_dir">list_dir — isi folder</option>
                  <option value="read_file">read_file — baca file</option>
