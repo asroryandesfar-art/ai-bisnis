@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-6";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260628-local-agent-7";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -6,18 +6,21 @@ import {
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260627-enterprise-ux-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
-import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-6";
+import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260628-local-agent-7";
 
 window.laToolChange = function(tool) {
-  const defaults = {
-    get_info: "",
-    list_dir: '{"path":"~/"}',
-    read_file: '{"path":"~/contoh.txt"}',
-    run_command: '{"command":"ls -la ~/"}',
-    find_files: '{"pattern":"*.py","dir":"~/"}',
+  const container = document.getElementById("la-fields");
+  if (!container) return;
+  const inp = (id, label, val, ph) =>
+    `<label style="font-size:12px;color:var(--text-muted);display:grid;gap:3px">${label}<input id="${id}" value="${val}" placeholder="${ph}" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px"></label>`;
+  const fields = {
+    get_info:    "",
+    list_dir:    inp("la-path","Path folder","~/","~/Documents"),
+    read_file:   inp("la-path","Path file","","~/contoh.txt"),
+    run_command: inp("la-cmd","Perintah shell","","ls -la ~/"),
+    find_files:  inp("la-pat","Pattern nama file","*.py","*.txt") + inp("la-dir","Folder pencarian","~/","~/Documents"),
   };
-  const el = document.getElementById("la-args");
-  if (el) el.value = defaults[tool] || "";
+  container.innerHTML = fields[tool] || "";
 };
 
 const state = {
@@ -1828,18 +1831,18 @@ async function renderAgentCenter() {
            </div>
            <div style="border-top:1px solid var(--border);padding-top:14px">
              <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
-             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-               <select id="la-tool" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
+             <div style="display:grid;gap:8px;margin-bottom:10px">
+               <select id="la-tool" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
                  <option value="get_info">get_info — info sistem</option>
-                 <option value="list_dir">list_dir — isi folder</option>
-                 <option value="read_file">read_file — baca file</option>
+                 <option value="list_dir">list_dir — lihat isi folder</option>
+                 <option value="read_file">read_file — baca isi file</option>
                  <option value="run_command">run_command — jalankan perintah</option>
                  <option value="find_files">find_files — cari file</option>
                </select>
-               <input id="la-args" type="text" placeholder="(kosong = {})" style="flex:1;min-width:200px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px">
-               <button class="button button-sm button-primary" data-action="local-agent-test">Kirim</button>
+               <div id="la-fields" style="display:grid;gap:6px"></div>
+               <button class="button button-primary" data-action="local-agent-test">Kirim</button>
              </div>
-             <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:200px;white-space:pre-wrap"></pre>
+             <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:240px;white-space:pre-wrap"></pre>
            </div>`
         : (()=>{
             const _t = localStorage.getItem("bn_token")||"";
@@ -1876,6 +1879,7 @@ async function renderAgentCenter() {
     ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
   </div>
   ${failedNote}`);
+  if (localAgent.connected) setTimeout(() => window.laToolChange("get_info"), 0);
 }
 
 async function renderLearning() {
@@ -3437,17 +3441,17 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-test"){
-    const toolEl = document.getElementById("la-tool");
-    const argsEl = document.getElementById("la-args");
-    const pre    = document.getElementById("la-result");
-    const tool   = toolEl?.value || "get_info";
-    const argsRaw = (argsEl?.value || "").trim();
-    let args = {};
-    if(argsRaw){
-      try { args = JSON.parse(argsRaw); }
-      catch { toast('Args harus JSON. Contoh: {"path":"~/"}', "error"); return; }
-    }
-    if(pre){ pre.style.display="block"; pre.textContent="⏳ Mengirim perintah..."; }
+    const tool = document.getElementById("la-tool")?.value || "get_info";
+    const pre  = document.getElementById("la-result");
+    const g = id => (document.getElementById(id)?.value || "").trim();
+    const args = {
+      get_info:    {},
+      list_dir:    { path: g("la-path") || "~/" },
+      read_file:   { path: g("la-path") },
+      run_command: { command: g("la-cmd") },
+      find_files:  { pattern: g("la-pat") || "*", dir: g("la-dir") || "~/" },
+    }[tool] || {};
+    if(pre){ pre.style.display="block"; pre.textContent="⏳ Mengirim..."; }
     try{
       const r = await api.localAgentExecute({tool, args, timeout:30});
       if(pre) pre.textContent = JSON.stringify(r, null, 2);
