@@ -636,6 +636,26 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         )
         return {"invoices": [dict(r) for r in rows]}
 
+    @router.get("/invoices/by-number/{invoice_number}")
+    async def get_invoice_by_number(
+        invoice_number: str,
+        user: Annotated[dict, Depends(require_permission("billing.read"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        """Status invoice untuk halaman redirect pembayaran (Midtrans/Xendit finish-URL).
+        Sumber kebenaran tetap kolom `status` di DB, yang HANYA diubah oleh webhook
+        provider (`midtrans_webhook`/`xendit_webhook`) — endpoint ini cuma membaca,
+        tidak pernah menerima/mempercayai status dari query param redirect."""
+        row = await pool.fetchrow(
+            """SELECT id, invoice_number, status, amount_idr, currency, description,
+                      provider, paid_at, created_at
+               FROM invoices WHERE invoice_number=$1 AND org_id=$2""",
+            invoice_number, user["org_id"],
+        )
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice tidak ditemukan")
+        return {"invoice": dict(row)}
+
     @router.get("/payments")
     async def list_payments(
         user: Annotated[dict, Depends(require_permission("billing.read"))],

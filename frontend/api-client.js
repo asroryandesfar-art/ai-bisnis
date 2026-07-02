@@ -181,6 +181,7 @@ export const api = {
     method: "POST", body: { plan_key: planKey, billing_cycle: billingCycle, provider, use_free_trial: useFreeTrial },
   }),
   invoices: () => request("/api/billing/invoices"),
+  invoiceByNumber: (invoiceNumber) => request(`/api/billing/invoices/by-number/${encodeURIComponent(invoiceNumber)}`),
   credits: () => request("/api/billing/credits"),
   topupCredits: (amountIdr, provider = "midtrans") => request("/api/billing/credits/topup", {
     method: "POST", body: { amount_idr: amountIdr, provider },
@@ -331,6 +332,7 @@ export const api = {
   localAgentExecute: (body) => request(`/api/local-agent/execute`, { method: "POST", body }),
   localAgentHistory: (params = {}) => request(`/api/local-agent/history${encodeQuery(params)}`),
   localAgentDisconnect: () => request(`/api/local-agent/disconnect`, { method: "POST" }),
+  computerAgentRunLocal: (goal, timeout = 30) => request(`/api/computer-agent/run-local`, { method: "POST", body: { goal, timeout } }),
   channelMessagingTasks: (params = {}) => request(`/api/channel-messaging/tasks${encodeQuery(params)}`),
   channelMessagingApprove: (id) => request(`/api/channel-messaging/tasks/${id}/approve`, { method: "POST" }),
   channelMessagingReject: (id, reason) => request(`/api/channel-messaging/tasks/${id}/reject`, { method: "POST", body: { reason } }),

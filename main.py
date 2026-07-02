@@ -416,6 +416,23 @@ async def casper_agentic_page():
     """Redirect to the Casper Agentic Workflow dashboard tab (Buildathon 2026)."""
     return RedirectResponse(url="/dashboard#casper-agentic-workflow", status_code=302)
 
+# ── Midtrans Snap Finish/Unfinish/Error redirect target ─────────
+# Midtrans redirects the browser (full page nav, not SPA) here after checkout,
+# with `order_id`/`status_code`/`transaction_status` as query params. These
+# params are DISPLAY-ONLY hints for the frontend -- the real payment status is
+# only ever written by `midtrans_webhook` in bn_platform/billing.py. We just
+# forward the query string onto the SPA's hash route and let renderBilling()
+# re-verify the true status via GET /api/billing/invoices/by-number/{...}.
+@app.get("/dashboard/billing", include_in_schema=False)
+async def dashboard_billing_redirect(request: Request):
+    qs = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"/dashboard{qs}#billing", status_code=302)
+
+@app.get("/dashboard/billing/{result_page}", include_in_schema=False)
+async def dashboard_billing_result_redirect(result_page: str, request: Request):
+    qs = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"/dashboard{qs}#billing", status_code=302)
+
 @app.get("/demo", include_in_schema=False)
 async def public_demo_page():
     if not _PUBLIC_DEMO_PATH.exists():
@@ -5965,7 +5982,9 @@ async def health():
         except Exception:
             pass
     return {
-        "status":  "ok" if db_ok and schema_ok and bool(cfg.groq_api_key) else "degraded",
+        "status":  "ok" if db_ok and schema_ok and bool(
+            cfg.groq_api_key or cfg.deepseek_api_key or cfg.openrouter_api_key or cfg.effective_gemini_api_key
+        ) else "degraded",
         "db":      db_ok,
         "schema":  schema_ok if db_ok else False,
         "ai": {
@@ -6394,6 +6413,44 @@ try:
         prefix="/api",
     )
     from bn_platform.local_agent_router import build_local_agent_router, ensure_schema as _la_ensure_schema
+
+    async def _computer_agent_llm(prompt: str) -> str:
+        """Minimal LLM caller untuk Computer Agent planner — pakai provider yang tersedia."""
+        import httpx as _httpx
+        if cfg.deepseek_api_key:
+            async with _httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers={"Authorization": f"Bearer {cfg.deepseek_api_key}"},
+                    json={"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}],
+                          "temperature": 0, "max_tokens": 800},
+                )
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+        if cfg.openrouter_api_key:
+            async with _httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {cfg.openrouter_api_key}"},
+                    json={"model": "deepseek/deepseek-chat-v3-0324:free",
+                          "messages": [{"role": "user", "content": prompt}],
+                          "temperature": 0, "max_tokens": 800},
+                )
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+        if cfg.groq_api_key:
+            async with _httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {cfg.groq_api_key}"},
+                    json={"model": "llama-3.3-70b-versatile",
+                          "messages": [{"role": "user", "content": prompt}],
+                          "temperature": 0, "max_tokens": 800},
+                )
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+        raise RuntimeError("Tidak ada AI provider yang dikonfigurasi")
+
     app.include_router(
         build_local_agent_router(
             get_pool=get_pool, get_current_user=get_current_user,
@@ -6401,6 +6458,7 @@ try:
             decode_token=lambda token: __import__("jose.jwt", fromlist=["decode"]).decode(
                 token, cfg.secret_key, algorithms=[cfg.jwt_algorithm]
             ),
+            call_llm=_computer_agent_llm,
         ),
         prefix="/api",
     )

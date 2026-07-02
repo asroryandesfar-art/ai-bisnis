@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260701-local-agent-8";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260702-billing-redirect-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -13,14 +13,40 @@ window.laToolChange = function(tool) {
   if (!container) return;
   const inp = (id, label, val, ph) =>
     `<label style="font-size:12px;color:var(--text-muted);display:grid;gap:3px">${label}<input id="${id}" value="${val}" placeholder="${ph}" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px"></label>`;
+  const hint = (msg) =>
+    `<p style="font-size:11px;color:var(--text-muted);margin:0;line-height:1.5">${msg}</p>`;
   const fields = {
     get_info:    "",
-    list_dir:    inp("la-path","Path folder","~/","~/Documents"),
-    read_file:   inp("la-path","Path file","","~/contoh.txt"),
-    run_command: inp("la-cmd","Perintah shell","","ls -la ~/"),
-    find_files:  inp("la-pat","Pattern nama file","*.py","*.txt") + inp("la-dir","Folder pencarian","~/","~/Documents"),
+    list_dir:
+      inp("la-path","Path folder yang ingin dibuka","~/","/home/asrory/Downloads") +
+      hint("Isi dengan alamat folder asli, bukan pertanyaan. Kalau ingin bertanya ke AI, gunakan kotak <strong>Tanya Agent</strong> di bagian atas.<br>Contoh: <code>/home/asrory</code> &nbsp;·&nbsp; <code>/home/asrory/Downloads</code> &nbsp;·&nbsp; <code>/home/asrory/Documents</code>"),
+    read_file:
+      inp("la-path","Path file yang ingin dibaca","","~/contoh.txt") +
+      hint("Contoh: <code>/home/asrory/.bashrc</code> &nbsp;·&nbsp; <code>~/Documents/catatan.txt</code>"),
+    run_command:
+      inp("la-cmd","Perintah shell","","ls -la ~/") +
+      hint("Perintah yang aman dijalankan langsung. Perintah berisiko akan meminta approval terlebih dulu."),
+    find_files:
+      inp("la-pat","Pattern nama file","*.py","*.txt") +
+      inp("la-dir","Folder pencarian","~/","~/Documents") +
+      hint("Contoh pattern: <code>*.py</code> &nbsp;·&nbsp; <code>*.txt</code> &nbsp;·&nbsp; <code>*.log</code>"),
   };
   container.innerHTML = fields[tool] || "";
+};
+
+window.onAgentSelectChange = function(agent) {
+  const hint = document.getElementById("agent-hint");
+  const goalInput = document.getElementById("agent-goal");
+  if (!hint || !goalInput) return;
+  const COMPUTER_AGENT_TYPES_LOCAL = new Set(["computer", "local_computer", "project_debugger"]);
+  if (COMPUTER_AGENT_TYPES_LOCAL.has(agent)) {
+    hint.style.display = "block";
+    hint.innerHTML = `💻 Agent ini menggunakan <strong>Local Agent</strong> untuk mengakses file, folder, dan terminal komputer Anda secara langsung.<br>Contoh: <em>"Lihat isi /home/asrory"</em> · <em>"Scan project BotNesia"</em> · <em>"Cari file package.json"</em>`;
+    goalInput.placeholder = "Contoh: Cari folder BotNesia dan scan project-nya";
+  } else {
+    hint.style.display = "none";
+    goalInput.placeholder = "Tulis pertanyaan atau tugas untuk agent, contoh: Cek invoice yang belum lunas";
+  }
 };
 
 const state = {
@@ -841,15 +867,25 @@ async function generateMultimediaDocument(form) {
 
 async function runAgentTask(form) {
   const data = Object.fromEntries(new FormData(form));
-  const fn = AGENT_RUN_TASK_FN[data.agent];
-  if (!fn) return;
   state.agentTaskRun.running = true;
   state.agentTaskRun.lastError = null;
+  state.agentTaskRun.lastResult = null;
   await renderAgentCenter();
   try {
-    const result = await api[fn](data.goal);
-    state.agentTaskRun.lastResult = result;
-    toast(result.status === "completed" ? "Task selesai." : "Task selesai, tapi verifikasi tidak lolos.", result.status === "completed" ? "success" : "error");
+    if (COMPUTER_AGENT_TYPES.has(data.agent)) {
+      // Computer Agent: kirim ke local agent via LLM planner
+      const result = await api.computerAgentRunLocal(data.goal, 30);
+      state.agentTaskRun.lastResult = { _type: "computer_agent", ...result };
+      const okCount = result.ok_steps || 0;
+      const total = result.total_steps || 0;
+      toast(`Computer Agent selesai: ${okCount}/${total} langkah berhasil.`, okCount > 0 ? "success" : "error");
+    } else {
+      const fn = AGENT_RUN_TASK_FN[data.agent];
+      if (!fn) { toast("Agent tidak dikenal", "error"); state.agentTaskRun.running = false; return; }
+      const result = await api[fn](data.goal);
+      state.agentTaskRun.lastResult = result;
+      toast(result.status === "completed" ? "Task selesai." : "Task selesai, tapi verifikasi tidak lolos.", result.status === "completed" ? "success" : "error");
+    }
   } catch (error) {
     state.agentTaskRun.lastError = error.message;
     state.agentTaskRun.lastResult = null;
@@ -1706,6 +1742,7 @@ async function createWorkforceTaskPrompt() {
 }
 
 const AGENT_RUN_TASK_FN = { finance: "financeRunTask", marketing: "marketingRunTask", hr: "hrRunTask", operations: "opsRunTask" };
+const COMPUTER_AGENT_TYPES = new Set(["computer", "local_computer", "project_debugger"]);
 
 async function renderAgentCenter() {
   loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging.");
@@ -1734,14 +1771,94 @@ async function renderAgentCenter() {
   const cmPendingCount = cmPending.length;
 
   const run = state.agentTaskRun;
+
+  // ── Computer Agent result renderer ─────────────────────────────────────────
+  function renderComputerAgentResult(r) {
+    const toolIcon = t => ({ get_info:"🖥", list_dir:"📂", read_file:"📄", find_files:"🔍", search_text:"🔎", tree:"🌳", scan_project:"🔬", run_command:"⚡", write_file:"✏️", edit_file:"✏️", delete_file:"🗑" }[t] || "🔧");
+    const steps = r.steps || [];
+
+    const stepHtml = steps.map((s, i) => {
+      const statusColor = s.status === "ok" ? "var(--green)" : s.status === "needs_approval" ? "var(--amber,#f59e0b)" : "var(--red)";
+      const statusIcon = s.status === "ok" ? "✅" : s.status === "needs_approval" ? "⏳" : "❌";
+      let resultHtml = "";
+      const res = s.result || {};
+
+      if (s.status === "ok") {
+        if (s.tool === "get_info") {
+          resultHtml = `<table style="font-size:11px;border-collapse:collapse;margin-top:6px">` +
+            [["Hostname",res.hostname],["Platform",res.platform],["User",res.username],["Home",res.home_dir],["Disk",`${res.disk_used_gb}GB / ${res.disk_total_gb}GB`]]
+            .map(([k,v])=>`<tr><td style="color:var(--text-muted);padding:2px 10px 2px 0;white-space:nowrap">${esc(k)}</td><td style="color:var(--text)">${esc(String(v||"–"))}</td></tr>`).join("") + `</table>`;
+        } else if (s.tool === "list_dir") {
+          const items = res.items || [];
+          resultHtml = `<p style="font-size:11px;color:var(--text-muted);margin:4px 0 2px">📂 ${esc(res.path||"")} — ${items.length} item</p>` +
+            `<div style="max-height:140px;overflow-y:auto;font-size:11px">` +
+            items.slice(0, 30).map(it=>`<span style="display:inline-block;margin:1px 6px 1px 0;color:var(--text-muted)">${it.type==="dir"?"📁":"📄"} ${esc(it.name)}</span>`).join("") +
+            (items.length > 30 ? `<span style="color:var(--text-muted)">...+${items.length-30}</span>` : "") + `</div>`;
+        } else if (s.tool === "find_files") {
+          const matches = res.matches || [];
+          resultHtml = `<p style="font-size:11px;color:var(--text-muted);margin:4px 0 2px">${matches.length} file ditemukan</p>` +
+            `<div style="max-height:120px;overflow-y:auto;font-size:11px">` +
+            matches.slice(0,20).map(m=>`<div style="color:var(--text);padding:1px 0">${esc(m)}</div>`).join("") +
+            (matches.length > 20 ? `<div style="color:var(--text-muted)">...+${matches.length-20}</div>` : "") + `</div>`;
+        } else if (s.tool === "search_text") {
+          const matches = res.matches || [];
+          resultHtml = `<p style="font-size:11px;color:var(--text-muted);margin:4px 0 2px">${matches.length} baris ditemukan</p>` +
+            `<div style="max-height:120px;overflow-y:auto;font-size:11px;font-family:monospace">` +
+            matches.slice(0,15).map(m=>`<div style="padding:1px 0"><span style="color:var(--text-muted)">${esc(m.file.split("/").pop())}:${m.line}</span> <span style="color:var(--text)">${esc(m.text)}</span></div>`).join("") + `</div>`;
+        } else if (s.tool === "tree") {
+          resultHtml = `<pre style="font-size:10px;max-height:140px;overflow:auto;margin:4px 0 0;color:var(--text)">${esc((res.tree||"").slice(0,2000))}</pre>`;
+        } else if (s.tool === "scan_project") {
+          const exts = Object.entries(res.extensions||{}).slice(0,6).map(([k,v])=>`${k||"(no ext)"}×${v}`).join(" · ");
+          resultHtml = `<p style="font-size:11px;margin:4px 0 2px"><strong>Jenis project:</strong> ${esc(res.project_type||"unknown")} · ${res.total_files} file</p>` +
+            `<p style="font-size:11px;color:var(--text-muted);margin:2px 0">File kunci: ${esc((res.key_files||[]).join(", ")||"–")}</p>` +
+            `<p style="font-size:11px;color:var(--text-muted);margin:2px 0">Ekstensi: ${esc(exts||"–")}</p>`;
+        } else if (s.tool === "read_file") {
+          resultHtml = `<pre style="font-size:10px;max-height:140px;overflow:auto;margin:4px 0 0;color:var(--text)">${esc((res.content||"").slice(0,1500))}</pre>`;
+        } else if (s.tool === "run_command") {
+          resultHtml = `<pre style="font-size:10px;max-height:100px;overflow:auto;margin:4px 0 0;color:${res.exit_code===0?"var(--green)":"var(--red)"}">${esc((res.stdout||res.stderr||"(kosong)").slice(0,1000))}</pre>`;
+        }
+      } else if (s.status === "needs_approval") {
+        resultHtml = `<p style="font-size:11px;color:var(--amber,#f59e0b);margin:4px 0 0">⏳ Menunggu approval di Antrian Izin sebelum dijalankan</p>`;
+      } else {
+        resultHtml = `<p style="font-size:11px;color:var(--red);margin:4px 0 0">❌ ${esc(s.message||"Error tidak diketahui")}</p>`;
+      }
+
+      return `<div style="border-left:3px solid ${statusColor};padding:8px 12px;margin-bottom:8px;background:var(--surface-2);border-radius:0 6px 6px 0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <span style="font-size:14px">${toolIcon(s.tool)}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--text)">${statusIcon} Step ${i+1}: ${esc(s.tool)}</span>
+          <span style="font-size:11px;color:var(--text-muted);flex:1">${esc(s.reason||"")}</span>
+        </div>
+        ${resultHtml}
+      </div>`;
+    }).join("");
+
+    const needsApprovalHtml = (r.needs_approval||[]).length
+      ? `<div style="margin-top:8px;padding:8px 12px;background:var(--surface-2);border-radius:6px;border:1px solid var(--amber,#f59e0b)">
+          <p style="font-size:12px;font-weight:600;color:var(--amber,#f59e0b);margin:0 0 4px">⏳ ${r.needs_approval.length} langkah perlu approval:</p>
+          ${r.needs_approval.map(na=>`<p style="font-size:11px;color:var(--text-muted);margin:2px 0">${toolIcon(na.tool)} <strong>${esc(na.tool)}</strong> — ${esc(na.reason)}</p>`).join("")}
+          <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0">Buka <strong>Antrian Izin</strong> di bawah untuk menyetujui.</p>
+        </div>` : "";
+
+    return `<div class="card-body" style="display:grid;gap:4px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:600">🖥 Computer Agent</span>
+        ${statusBadge(r.ok_steps > 0 ? "active" : "error", `${r.ok_steps}/${r.total_steps} berhasil`)}
+      </div>
+      ${stepHtml}${needsApprovalHtml}
+    </div>`;
+  }
+
   const runResultPanel = run.lastError
-    ? `<div class="card-body"><p class="subtle" style="color:var(--red);margin:0">${esc(run.lastError)}</p></div>`
+    ? `<div class="card-body"><p style="color:var(--red);margin:0;font-size:13px">${esc(run.lastError)}</p></div>`
     : run.lastResult
-    ? `<div class="card-body" style="display:grid;gap:8px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statusBadge(run.lastResult.status === "completed" ? "active" : "error", run.lastResult.status)}<span class="subtle" style="font-size:10px">${esc(run.lastResult.agent_name || "")}</span></div>
-        <div style="white-space:pre-wrap;font-size:12px;line-height:1.6">${esc(run.lastResult.report || "(tidak ada report)")}</div>
-        ${run.lastResult.verification ? `<p class="subtle" style="margin:0;font-size:10px">Verifikasi: ${esc(run.lastResult.verification.reasoning || "")}</p>` : ""}
-      </div>`
+    ? run.lastResult._type === "computer_agent"
+      ? renderComputerAgentResult(run.lastResult)
+      : `<div class="card-body" style="display:grid;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statusBadge(run.lastResult.status === "completed" ? "active" : "error", run.lastResult.status)}<span class="subtle" style="font-size:10px">${esc(run.lastResult.agent_name || "")}</span></div>
+          <div style="white-space:pre-wrap;font-size:12px;line-height:1.6">${esc(run.lastResult.report || "(tidak ada report)")}</div>
+          ${run.lastResult.verification ? `<p class="subtle" style="margin:0;font-size:10px">Verifikasi: ${esc(run.lastResult.verification.reasoning || "")}</p>` : ""}
+        </div>`
     : "";
 
   const cmRows = cmPending.map((t) => `<tr>
@@ -1790,63 +1907,106 @@ async function renderAgentCenter() {
     : "";
 
   const totalApprovalPending = workforcePendingApproval + caPendingCount + cmPendingCount;
+
+  // ── Local Agent install instructions (offline state) ────────────────────────
+  const _laToken = localStorage.getItem("bn_token") || "";
+  const _laDl    = `${location.origin}/download/botnesia-local-agent.py`;
+  const _laCmd1  = `wget -O botnesia_local_agent.py "${_laDl}"`;
+  const _laCmd2  = `python3 botnesia_local_agent.py --token ${_laToken}`;
+  const laInstallHtml = `<div style="font-size:13px;margin-bottom:14px">
+    <p style="margin:0 0 6px;font-weight:600">Langkah 1 — Download script (sekali saja):</p>
+    <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_laCmd1)}</code>
+    <p style="margin:0 0 6px;font-weight:600">Langkah 2 — Jalankan di terminal:</p>
+    <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_laCmd2)}</code>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a href="${esc(_laDl)}" download="botnesia_local_agent.py" class="button button-sm">⬇ Download Script</a>
+      <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_laCmd1+'\n'+_laCmd2)}).then(()=>toast('Perintah disalin!','success'))">Salin Semua Perintah</button>
+    </div>
+    <p style="margin:10px 0 0;font-size:11px;color:var(--text-muted)">Token sudah terisi otomatis dari akun Anda. Script auto-install dependency.</p>
+  </div>`;
+
+  // ── Local Agent info (online state) ─────────────────────────────────────────
+  const laInfoHtml = localAgent.connected ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">HOST</div>
+        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.hostname||'-')}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">PLATFORM</div>
+        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.platform||'-')}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">USER</div>
+        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.username||'-')}</div>
+      </div>
+    </div>
+    <button class="button button-sm" data-action="local-agent-disconnect">Putus Koneksi</button>` : laInstallHtml;
+
+  // ── Approval queue sections (only shown if items exist) ──────────────────────
+  const caApprovalSection = caPendingCount ? `
+    <div class="page-section-label" style="color:var(--amber)">Antrian Izin — Computer Agent (${caPendingCount})</div>
+    <div class="card approval-queue-card" style="margin-bottom:16px">
+      <div class="card-head"><div><h3>Antrian Izin — Computer Agent</h3><span class="subtle">Perintah berisiko seperti akses file, terminal, atau browser harus disetujui dulu sebelum dijalankan</span></div><span class="approval-count-badge">${caPendingCount}</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Goal</th><th>Target URL</th><th>Dibuat</th><th></th></tr></thead><tbody>${caRows}</tbody></table></div>
+    </div>` : "";
+
+  const cmApprovalSection = cmPendingCount ? `
+    <div class="page-section-label" style="color:var(--amber)">Antrian Izin — Channel Messaging (${cmPendingCount})</div>
+    <div class="card approval-queue-card" style="margin-bottom:16px">
+      <div class="card-head"><div><h3>Antrian Izin — Channel Messaging</h3><span class="subtle">Pesan keluar belum terkirim sampai disetujui oleh admin</span></div><span class="approval-count-badge">${cmPendingCount}</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Penerima</th><th>Pesan</th><th>Dibuat oleh</th><th>Dibuat</th><th></th></tr></thead><tbody>${cmRows}</tbody></table></div>
+    </div>` : "";
+
+  const noApprovalSection = (!caPendingCount && !cmPendingCount) ? `
+    <div class="page-section-label">Antrian Izin</div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px">Perintah berisiko seperti akses file, terminal, atau browser harus disetujui dulu sebelum dijalankan.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin:0">Tidak ada antrean izin.</p>
+      </div>
+    </div>` : "";
+
   setPage(`${pageHeader("Agent Center", "Direktori AI agent, Task Engine, execution log, dan antrian approval dalam satu tampilan.",
     `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
     ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
-    ${metricCard("Menunggu Approval", formatNumber(totalApprovalPending), `${workforcePendingApproval} workforce · ${caPendingCount} CA · ${cmPendingCount} msg`, "workforce", totalApprovalPending ? "trend-down" : "trend-up")}
-    ${metricCard("Computer Agent", formatNumber(caPendingCount), "Aksi tulis menunggu persetujuan", "security", caPendingCount ? "trend-down" : "trend-up")}
+    ${metricCard("Approval Queue", formatNumber(totalApprovalPending), totalApprovalPending ? `${caPendingCount} CA · ${cmPendingCount} msg · ${workforcePendingApproval} workforce` : "Tidak ada antrian", "workforce", totalApprovalPending ? "trend-down" : "")}
+    ${metricCard("Local Agent", localAgent.connected ? "● Online" : "○ Offline", localAgent.connected ? `${esc(localAgent.meta?.hostname||'')}` : "Belum terhubung", "security", localAgent.connected ? "" : "")}
   </div>
-  <div class="page-section-label">Run task</div>
+  <div class="page-section-label">Tanya Agent</div>
   <div class="card" style="margin-bottom:16px">
-    <div class="card-head"><div><h3>Task Engine — Run Goal</h3><span class="subtle">Goal → Plan → Subtasks → Tool Selection → Execution → Verification → Report</span></div></div>
+    <div class="card-head"><div><h3>Tanya / Beri Tugas ke AI Agent</h3><span class="subtle">Tulis pertanyaan atau tugas, pilih agent, lalu klik Jalankan</span></div></div>
     <form data-agent-run-task-form class="card-body" style="display:grid;gap:10px">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select class="select" name="agent" aria-label="Pilih agent">
-          <option value="finance">Finance Agent</option>
-          <option value="marketing">Marketing Agent</option>
-          <option value="hr">HR Agent</option>
-          <option value="operations">Operations Agent</option>
+      <div style="display:grid;gap:8px">
+        <select class="select" id="agent-select" name="agent" aria-label="Pilih agent" onchange="window.onAgentSelectChange(this.value)">
+          <optgroup label="── Bisnis ──">
+            <option value="finance">Finance Agent</option>
+            <option value="marketing">Marketing Agent</option>
+            <option value="hr">HR Agent</option>
+            <option value="operations">Operations Agent</option>
+          </optgroup>
+          <optgroup label="── Komputer Lokal ──">
+            <option value="computer">💻 Computer Agent ${localAgent.connected ? "● Online" : "○ Offline"}</option>
+            <option value="local_computer">🖥 Local Computer Agent ${localAgent.connected ? "● Online" : "○ Offline"}</option>
+            <option value="project_debugger">🔬 Project Debugger Agent ${localAgent.connected ? "● Online" : "○ Offline"}</option>
+          </optgroup>
         </select>
+        <p id="agent-hint" style="font-size:11px;color:var(--text-muted);margin:0;display:none"></p>
       </div>
-      <textarea class="input" name="goal" rows="3" placeholder="Contoh: Cek semua invoice yang belum lunas dan ringkas totalnya" required aria-label="Goal"></textarea>
-      <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${run.running?'disabled':''}>${icon('send',14)} ${run.running?'Menjalankan...':'Run Task'}</button></div>
+      <textarea class="input" id="agent-goal" name="goal" rows="3" placeholder="Tulis pertanyaan atau tugas untuk agent, contoh: Cek invoice yang belum lunas" required aria-label="Goal"></textarea>
+      <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit" ${(run.running || (COMPUTER_AGENT_TYPES.has(run._lastAgent||'') && !localAgent.connected)) ? 'disabled' : ''}>${icon('send',14)} ${run.running ? 'Menjalankan...' : 'Jalankan Tugas'}</button></div>
     </form>
     ${runResultPanel}
   </div>
-  <div class="page-section-label">Local Agent</div>
+  <div class="page-section-label">Tes Akses Komputer Lokal ${localAgent.connected ? '<span class="status-badge status-active" style="margin-left:8px;font-size:10px">● TERHUBUNG</span>' : '<span class="status-badge status-inactive" style="margin-left:8px;font-size:10px">○ OFFLINE</span>'}</div>
   <div class="card" style="margin-bottom:16px">
-    <div class="card-head">
-      <div><h3>BotNesia Local Agent</h3><span class="subtle">AI yang bisa kerja langsung di komputer Anda — akses file, terminal, browser lokal</span></div>
-      <span class="status-badge ${localAgent.connected ? 'status-active' : 'status-inactive'}">${localAgent.connected ? '● Online' : '○ Offline'}</span>
-    </div>
     <div class="card-body">
-      ${localAgent.connected
-        ? `<div style="display:flex;gap:16px;align-items:center;font-size:13px;margin-bottom:14px;flex-wrap:wrap">
-            <span><strong>Host:</strong> ${esc(localAgent.meta?.hostname||'-')}</span>
-            <span><strong>Platform:</strong> ${esc(localAgent.meta?.platform||'-')}</span>
-            <span><strong>User:</strong> ${esc(localAgent.meta?.username||'-')}</span>
-            <button class="button button-sm" data-action="local-agent-disconnect">Putus Koneksi</button>
-           </div>`
-        : (()=>{
-            const _t = localStorage.getItem("bn_token")||"";
-            const _dl = `${location.origin}/download/botnesia-local-agent.py`;
-            const _cmd1 = `wget -O botnesia_local_agent.py "${_dl}"`;
-            const _cmd2 = `python3 botnesia_local_agent.py --token ${_t}`;
-            return `<div style="font-size:13px;margin-bottom:14px">
-              <p style="margin:0 0 6px;font-weight:600">Langkah 1 — Download script:</p>
-              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_cmd1)}</code>
-              <p style="margin:0 0 6px;font-weight:600">Langkah 2 — Jalankan agent:</p>
-              <code style="display:block;background:var(--surface-2);padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;word-break:break-all">${esc(_cmd2)}</code>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <a href="${esc(_dl)}" download="botnesia_local_agent.py" class="button button-sm">⬇ Download Script</a>
-                <button class="button button-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(_cmd1+'\n'+_cmd2)}).then(()=>toast('Perintah disalin!','success'))">Salin Semua Perintah</button>
-              </div>
-             </div>`;
-          })()}
-      <div style="border-top:1px solid var(--border);padding-top:14px">
-        <p style="font-size:13px;font-weight:600;margin:0 0 10px">Test perintah</p>
+      ${laInfoHtml}
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:${localAgent.connected?'14':'0'}px">
+        <p style="font-size:13px;font-weight:600;margin:0 0 4px">Tes Perintah Komputer</p>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">Bagian ini hanya untuk menguji apakah BotNesia bisa mengakses komputer lokal, file, terminal, dan browser.</p>
         <div style="display:grid;gap:8px;margin-bottom:10px">
           <select id="la-tool" style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px" onchange="laToolChange(this.value)">
             <option value="get_info">get_info — info sistem</option>
@@ -1856,19 +2016,15 @@ async function renderAgentCenter() {
             <option value="find_files">find_files — cari file</option>
           </select>
           <div id="la-fields" style="display:grid;gap:6px"></div>
-          <button class="button button-primary" data-action="local-agent-test" ${localAgent.connected?'':'disabled title="Agent belum terhubung"'}>Kirim</button>
+          <button class="button button-primary" data-action="local-agent-test" ${localAgent.connected?'':'disabled'}>
+            ${localAgent.connected ? 'Kirim Perintah Tes' : '⚠ Agent Offline — sambungkan dulu'}
+          </button>
         </div>
-        <pre id="la-result" style="display:none;background:var(--surface-2);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;max-height:240px;white-space:pre-wrap"></pre>
+        <div id="la-result" style="display:none"></div>
       </div>
     </div>
   </div>
-  ${totalApprovalPending ? `<div class="page-section-label" style="color:var(--amber)">Approval queue — ${totalApprovalPending} butuh persetujuan</div>` : '<div class="page-section-label">Approval queue</div>'}
-  <div class="card ${caPendingCount ? 'approval-queue-card' : ''}" style="margin-bottom:16px"><div class="card-head"><div><h3>Computer Agent — Menunggu Approval</h3><span class="subtle">Aksi tulis belum dieksekusi sampai Approve</span></div>${caPendingCount ? `<span class="approval-count-badge">${caPendingCount}</span>` : ''}</div>
-    ${caRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Goal</th><th>Target URL</th><th>Dibuat</th><th></th></tr></thead><tbody>${caRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada aksi Computer Agent yang menunggu approval saat ini.")}
-  </div>
-  <div class="card ${cmPendingCount ? 'approval-queue-card' : ''}" style="margin-bottom:16px"><div class="card-head"><div><h3>Channel Messaging — Menunggu Approval</h3><span class="subtle">Pesan belum terkirim sampai disetujui</span></div>${cmPendingCount ? `<span class="approval-count-badge">${cmPendingCount}</span>` : ''}</div>
-    ${cmRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Penerima</th><th>Pesan</th><th>Dibuat oleh</th><th>Dibuat</th><th></th></tr></thead><tbody>${cmRows}</tbody></table></div>` : emptyState("Tidak ada antrian", "Tidak ada pesan keluar yang menunggu approval saat ini.")}
-  </div>
+  ${caApprovalSection}${cmApprovalSection}${noApprovalSection}
   <div class="page-section-label">Agent directory</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3><span class="subtle">${formatNumber(agents.length)} agent terdaftar</span></div>
     ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
@@ -1971,8 +2127,59 @@ function translateFeature(text) {
     .replace(/Log Audit/gi, "Audit Log");
 }
 
+const BILLING_PAYMENT_BANNER_STYLE = {
+  success: "background:#e8f5e9;border-color:#66bb6a;color:#1b5e20",
+  pending: "background:#fff8e1;border-color:#ffb300;color:#8d6e00",
+  failed:  "background:#ffebee;border-color:#ef5350;color:#b71c1c",
+};
+const BILLING_PAYMENT_BANNER_ICON = { success: "✓", pending: "⏳", failed: "✕" };
+
+// Midtrans mengarahkan browser kembali ke /dashboard/billing?order_id=...  setelah
+// checkout (full page redirect, bukan navigasi SPA) -- backend main.py meneruskan
+// query string itu ke sini sebagai #billing. `order_id` di URL HANYA dipakai untuk
+// tahu invoice mana yang harus dicek; status yang ditampilkan selalu dibaca ulang
+// dari backend (kolom `invoices.status`, yang cuma diisi oleh midtrans_webhook),
+// tidak pernah dipercaya langsung dari redirect. URL dibersihkan segera supaya
+// refresh halaman tidak memicu pengecekan berulang dari order_id lama.
+async function resolveBillingPaymentBanner() {
+  const params = new URLSearchParams(location.search);
+  const redirectOrderId = params.get("order_id");
+  if (redirectOrderId) {
+    state.pendingPaymentOrderId = redirectOrderId;
+    state.pendingPaymentAttempts = 0;
+    history.replaceState(null, "", location.pathname + "#billing");
+  }
+  const orderId = state.pendingPaymentOrderId;
+  if (!orderId) return "";
+
+  let invStatus = null;
+  try { invStatus = (await api.invoiceByNumber(orderId)).invoice?.status; } catch {}
+
+  const outcome = invStatus === "paid" ? "success"
+    : (invStatus === "void" || invStatus === "uncollectible") ? "failed"
+    : "pending";
+  history.replaceState(null, "", location.pathname + `#billing/${outcome}`);
+
+  if (outcome === "pending" && (state.pendingPaymentAttempts||0) < 5) {
+    // Webhook Midtrans kadang butuh beberapa detik untuk sampai setelah redirect
+    // browser -- coba lagi singkat sebelum menganggap ini benar-benar tertunda.
+    state.pendingPaymentAttempts = (state.pendingPaymentAttempts||0) + 1;
+    setTimeout(() => { if (state.route === "billing") renderBilling(); }, 3000);
+  } else {
+    if (outcome === "success") bustCache("plans","subscription","usage","invoices");
+    delete state.pendingPaymentOrderId;
+    delete state.pendingPaymentAttempts;
+  }
+
+  return `<div style="margin-bottom:16px;padding:12px 16px;border:1px solid;border-radius:8px;font-size:13px;${BILLING_PAYMENT_BANNER_STYLE[outcome]}">
+    <strong>${BILLING_PAYMENT_BANNER_ICON[outcome]} ${esc(t(`billing.payment_${outcome}_title`))}</strong>
+    <div style="margin-top:2px">${esc(t(`billing.payment_${outcome}_sub`))}</div>
+  </div>`;
+}
+
 async function renderBilling() {
   loadingPage(t('billing.title'), t('billing.subtitle'));
+  const paymentBanner = await resolveBillingPaymentBanner();
   const [plansResult, subResult, usageResult, invoicesResult, creditsResult] = await Promise.all([
     cachedSettle("plans", () => api.plans(), 300),
     cachedSettle("subscription", () => api.subscription(), 120),
@@ -2163,6 +2370,7 @@ async function renderBilling() {
     : '';
 
   setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${isTrial ? 'pending' : currentStatus === 'active' ? 'active' : 'pending'}">${esc(isTrial ? 'trial' : currentStatus)}</span>`)}
+  ${paymentBanner}
   ${trialBanner}
   <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">${t('billing.plan_section')}</div>
   <div class="billing-plans-grid" style="grid-template-columns:repeat(4,1fr)">${mainPlanCards}</div>
@@ -3173,7 +3381,7 @@ async function checkout(planKey, useFreeTrial = false) {
   const label = useFreeTrial ? `Mulai free trial 1 bulan paket ${planKey}?` : `Aktifkan paket ${planKey}?`;
   if(!confirm(label)) return;
   try {
-    const result = await api.checkout(planKey, "monthly", "local", useFreeTrial);
+    const result = await api.checkout(planKey, "monthly", "midtrans", useFreeTrial);
     bustCache("plans","subscription","usage");
     if(result.redirect_url) location.href = result.redirect_url;
     else {
@@ -3194,7 +3402,7 @@ async function topupCredits(amountIdr) {
   const convLabel = convCount ? ` (+${convCount.toLocaleString('id-ID')} ${t('billing.conversations_unit')})` : '';
   if(!confirm(`Top up Rp${Number(amountIdr).toLocaleString('id-ID')}${convLabel}?`)) return;
   try {
-    const result = await api.topupCredits(Number(amountIdr), "local");
+    const result = await api.topupCredits(Number(amountIdr), "midtrans");
     bustCache("credits");
     if(result.redirect_url) location.href = result.redirect_url;
     else {
@@ -3441,8 +3649,25 @@ document.addEventListener("click", async (event) => {
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-test"){
     const tool = document.getElementById("la-tool")?.value || "get_info";
-    const pre  = document.getElementById("la-result");
+    const resultDiv = document.getElementById("la-result");
     const g = id => (document.getElementById(id)?.value || "").trim();
+
+    // Validasi input list_dir: tolak kalimat biasa yang bukan path
+    if(tool === "list_dir"){
+      const rawPath = g("la-path");
+      const looksLikeQuestion = rawPath.includes("?") || rawPath.includes(" ") && !rawPath.startsWith("/") && !rawPath.startsWith("~") || (rawPath.length > 30 && !rawPath.match(/^[~/]/));
+      if(looksLikeQuestion){
+        if(resultDiv){
+          resultDiv.style.display = "block";
+          resultDiv.innerHTML = `<div style="background:var(--surface-2);border-radius:6px;border:1px solid var(--amber,#f59e0b);padding:12px 14px">
+            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:var(--amber,#f59e0b)">⚠ Ini terlihat seperti pertanyaan, bukan path folder.</p>
+            <p style="margin:0;font-size:12px;color:var(--text-muted)">Gunakan path seperti <code>/home/asrory</code> atau <code>~/Downloads</code>.<br>Kalau ingin bertanya ke AI, gunakan kotak <strong>Tanya Agent</strong> di bagian atas.</p>
+          </div>`;
+        }
+        return;
+      }
+    }
+
     const args = {
       get_info:    {},
       list_dir:    { path: g("la-path") || "~/" },
@@ -3450,11 +3675,66 @@ document.addEventListener("click", async (event) => {
       run_command: { command: g("la-cmd") },
       find_files:  { pattern: g("la-pat") || "*", dir: g("la-dir") || "~/" },
     }[tool] || {};
-    if(pre){ pre.style.display="block"; pre.textContent="⏳ Mengirim..."; }
+    if(resultDiv){ resultDiv.style.display="block"; resultDiv.innerHTML=`<p style="font-size:12px;color:var(--text-muted);margin:0;padding:8px">⏳ Mengirim perintah...</p>`; }
     try{
       const r = await api.localAgentExecute({tool, args, timeout:30});
-      if(pre) pre.textContent = JSON.stringify(r, null, 2);
-    }catch(err){ if(pre) pre.textContent = "Error: "+(err.message||err); toast("Gagal kirim perintah","error"); }
+      if(!resultDiv) return;
+      if(!r.success){
+        resultDiv.innerHTML=`<p style="color:var(--red);font-size:12px;margin:0;padding:8px">❌ ${esc(r.error||'Gagal')}</p>`;
+        return;
+      }
+      // Format hasil per tool type
+      let html = "";
+      if(tool==="get_info"){
+        const rows = [
+          ["Hostname",r.hostname],["Platform",r.platform],["OS Version",(r.platform_version||"").slice(0,60)],
+          ["Python",r.python_version],["User",r.username],["Home",r.home_dir],["CWD",r.cwd],
+          ["Disk Total",r.disk_total_gb!=null?r.disk_total_gb+"GB":"–"],
+          ["Disk Used",r.disk_used_gb!=null?r.disk_used_gb+"GB":"–"],
+          ["Disk Free",r.disk_free_gb!=null?r.disk_free_gb+"GB":"–"],
+        ];
+        html = `<table style="width:100%;border-collapse:collapse;font-size:12px">`
+          +rows.map(([k,v])=>`<tr><td style="padding:4px 10px;color:var(--text-muted);white-space:nowrap;width:120px">${esc(k)}</td><td style="padding:4px 10px;color:var(--text);word-break:break-all">${esc(String(v||"–"))}</td></tr>`).join("")
+          +`</table>`;
+      } else if(tool==="list_dir"){
+        const items = r.items||[];
+        const basePath = (r.path||"").replace(/\/+$/,"");
+        const fmtSize = s => s >= 1048576 ? (s/1048576).toFixed(1)+"MB" : s >= 1024 ? (s/1024).toFixed(1)+"KB" : s+"B";
+        html = `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--text-muted)">📂 <strong style="color:var(--text)">${esc(r.path||"–")}</strong></span>
+          <span style="font-size:11px;color:var(--text-muted)">${items.length} item</span>
+        </div>`
+        +`<div style="max-height:260px;overflow-y:auto">`
+        +items.map(it=>{
+          const fullPath = basePath + "/" + it.name;
+          const copyBtn = `<button onclick="navigator.clipboard.writeText(${JSON.stringify(fullPath)}).then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='⎘',1000)})" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:3px" title="Salin path">⎘</button>`;
+          const sizeTag = it.type==="file" ? `<span style="color:var(--text-muted);font-size:10px;white-space:nowrap">${fmtSize(it.size)}</span>` : "";
+          const typeTag = `<span style="font-size:9px;color:var(--text-muted);background:var(--surface-3,var(--surface-2));padding:1px 5px;border-radius:3px">${it.type==="dir"?"folder":"file"}</span>`;
+          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border);font-size:12px">
+            <span style="width:16px;text-align:center">${it.type==="dir"?"📁":"📄"}</span>
+            <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(fullPath)}">${esc(it.name)}</span>
+            ${typeTag}${sizeTag}${copyBtn}
+          </div>`;
+        }).join("")
+        +`</div>`;
+      } else if(tool==="read_file"){
+        html = `<p style="font-size:11px;color:var(--text-muted);padding:6px 10px;margin:0">${esc(r.path||"")} — ${r.size||0} bytes</p>`
+          +`<pre style="margin:0;padding:10px;font-size:11px;max-height:200px;overflow:auto;white-space:pre-wrap;background:var(--surface-2)">${esc((r.content||"").slice(0,4000))}</pre>`;
+      } else if(tool==="run_command"){
+        html = `<p style="font-size:11px;color:var(--text-muted);padding:6px 10px;margin:0">$ ${esc(r.command||"")}</p>`
+          +`<pre style="margin:0;padding:10px;font-size:11px;max-height:200px;overflow:auto;white-space:pre-wrap;background:var(--surface-2);color:${r.exit_code===0?"var(--green)":"var(--red)"}">${esc((r.stdout||r.stderr||"(kosong)").slice(0,4000))}</pre>`;
+      } else if(tool==="find_files"){
+        const matches = r.matches||[];
+        html = `<p style="font-size:11px;color:var(--text-muted);padding:6px 10px;margin:0">Pattern: ${esc(r.pattern||"")} — ${matches.length} file ditemukan</p>`
+          +`<div style="max-height:200px;overflow-y:auto">`
+          +matches.map(m=>`<div style="padding:3px 10px;font-size:12px;color:var(--text)">${esc(m)}</div>`).join("")
+          +`</div>`;
+      } else {
+        html = `<pre style="margin:0;padding:10px;font-size:11px;max-height:200px;overflow:auto;white-space:pre-wrap;background:var(--surface-2)">${esc(JSON.stringify(r,null,2))}</pre>`;
+      }
+      resultDiv.innerHTML = `<div style="background:var(--surface-2);border-radius:6px;border:1px solid var(--border);overflow:hidden">${html}</div>`;
+      toast("Berhasil","success");
+    }catch(err){ if(resultDiv) resultDiv.innerHTML=`<p style="color:var(--red);font-size:12px;margin:0;padding:8px">❌ ${esc(err.message||String(err))}</p>`; toast("Gagal kirim perintah","error"); }
     return;
   }
   const caApprove=event.target.closest("[data-ca-approve]"); if(caApprove){ try{ await api.computerAgentApprove(caApprove.dataset.caApprove); toast("Aksi Computer Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
