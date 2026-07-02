@@ -341,8 +341,16 @@ async def _exec_condition(node: dict, context: dict) -> dict:
 
 
 async def _exec_agent(node: dict, context: dict, *, agent_config: dict | None) -> dict:
-    if not agent_config or not agent_config.get("api_key"):
-        return {"status": "skipped", "output": {"reason": "AI belum dikonfigurasi (GROQ_API_KEY kosong)."}}
+    # api_key (Groq) is one of several possible providers, not the only one --
+    # gating on it alone skipped every agent node once the project's active
+    # provider moved to DeepSeek/OpenRouter and GROQ_API_KEY went empty, even
+    # though those credentials were already sitting unused in agent_config.
+    has_any_provider = agent_config and (
+        agent_config.get("api_key") or agent_config.get("deepseek_api_key")
+        or agent_config.get("openrouter_api_key") or agent_config.get("gemini_api_key")
+    )
+    if not has_any_provider:
+        return {"status": "skipped", "output": {"reason": "AI belum dikonfigurasi (tidak ada API key provider yang tersedia)."}}
 
     node_type = node.get("type") or "cs_agent"
     persona = AGENT_PERSONAS.get(node_type, AGENT_PERSONAS["cs_agent"])
@@ -351,7 +359,10 @@ async def _exec_agent(node: dict, context: dict, *, agent_config: dict | None) -
         api_key=agent_config.get("api_key"),
         model=agent_config.get("model"),
         base_url=agent_config.get("base_url"),
-        app_url=agent_config.get("app_url") or "https://botnesia.id",
+        app_url=agent_config.get("app_url") or "https://botnesia.uk",
+        deepseek_api_key=agent_config.get("deepseek_api_key"),
+        openrouter_api_key=agent_config.get("openrouter_api_key"),
+        gemini_api_key=agent_config.get("gemini_api_key"),
     )
     cfg = node.get("config") or {}
     instruction = (cfg.get("instruction") or "").strip() or (

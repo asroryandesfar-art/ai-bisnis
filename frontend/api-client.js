@@ -44,7 +44,16 @@ async function request(path, options = {}) {
     headers.set("Content-Type", "application/json");
     body = JSON.stringify(body);
   }
-  const response = await fetch(path, { ...options, headers, body });
+  let response;
+  try {
+    response = await fetch(path, { ...options, headers, body });
+  } catch {
+    // fetch() itself threw -- offline, DNS failure, CORS, etc, not an HTTP
+    // error response. Surface a status of 0 so callers can tell this apart
+    // from a real 4xx/5xx and show a humanized message instead of a raw
+    // browser exception ("Failed to fetch") leaking into the Indonesian UI.
+    throw new APIError(0, "API tidak dapat dihubungi. Periksa koneksi Anda.");
+  }
   const type = response.headers.get("content-type") || "";
   const data = type.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
   if (response.status === 401) {
@@ -332,6 +341,8 @@ export const api = {
   localAgentExecute: (body) => request(`/api/local-agent/execute`, { method: "POST", body }),
   localAgentHistory: (params = {}) => request(`/api/local-agent/history${encodeQuery(params)}`),
   localAgentDisconnect: () => request(`/api/local-agent/disconnect`, { method: "POST" }),
+  localAgentApproveCommand: (id) => request(`/api/local-agent/commands/${id}/approve`, { method: "POST" }),
+  localAgentRejectCommand: (id, reason) => request(`/api/local-agent/commands/${id}/reject`, { method: "POST", body: { reason } }),
   computerAgentRunLocal: (goal, timeout = 30) => request(`/api/computer-agent/run-local`, { method: "POST", body: { goal, timeout } }),
   channelMessagingTasks: (params = {}) => request(`/api/channel-messaging/tasks${encodeQuery(params)}`),
   channelMessagingApprove: (id) => request(`/api/channel-messaging/tasks/${id}/approve`, { method: "POST" }),

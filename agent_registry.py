@@ -83,17 +83,25 @@ class AdminAgent(BaseAgent):
         import workforce_orchestrator
         import computer_agent
 
+        async def _pending_local_agent_commands() -> list:
+            rows = await pool.fetch(
+                "SELECT id FROM local_agent_commands WHERE org_id=$1 AND status='pending_approval'",
+                org_id,
+            )
+            return [dict(r) for r in rows]
+
         results = await asyncio.gather(
             execution_log.execution_log_summary(pool, org_id),
             workforce_orchestrator.dashboard_summary(pool, org_id),
             computer_agent.list_tasks(pool, org_id=org_id, status="pending_approval"),
+            _pending_local_agent_commands(),
             return_exceptions=True,
         )
 
         def _safe(value: object, fallback):
             return fallback if isinstance(value, Exception) else value
 
-        execution_summary, workforce_summary, pending_ca_tasks = results
+        execution_summary, workforce_summary, pending_ca_tasks, pending_la_commands = results
         agents = list_agents()
         return {
             "agents": {
@@ -104,4 +112,5 @@ class AdminAgent(BaseAgent):
             "execution_log": _safe(execution_summary, {"by_source_type": {}, "by_status": {}}),
             "workforce": _safe(workforce_summary, {}),
             "computer_agent_pending_approval_count": len(_safe(pending_ca_tasks, [])),
+            "local_agent_pending_approval_count": len(_safe(pending_la_commands, [])),
         }

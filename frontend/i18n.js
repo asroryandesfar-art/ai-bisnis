@@ -360,6 +360,8 @@ const T = {
     "billing.payment_pending_sub":"Kami sedang menunggu konfirmasi dari Midtrans. Halaman ini akan otomatis diperbarui.",
     "billing.payment_failed_title":"Pembayaran gagal atau dibatalkan",
     "billing.payment_failed_sub":"Transaksi tidak berhasil diselesaikan. Silakan coba lagi atau pilih metode pembayaran lain.",
+    "billing.gateway_status_title":"Metode pembayaran Midtrans sedang menunggu approval",
+    "billing.gateway_status_sub":"Pembuatan invoice dan halaman pembayaran Midtrans (Production) sudah berfungsi penuh. Penyelesaian pembayaran nyata masih menunggu review bisnis dari pihak Midtrans, bukan kendala di sistem kami.",
     // Billing — feature string patterns (untuk translateFeature)
     "billing.feat.convs_per_month":"percakapan/bulan",
     "billing.feat.agents":"AI agents",
@@ -493,6 +495,8 @@ const T = {
     "billing.payment_pending_sub":"We're waiting for confirmation from Midtrans. This page will update automatically.",
     "billing.payment_failed_title":"Payment failed or cancelled",
     "billing.payment_failed_sub":"The transaction wasn't completed. Please try again or choose another payment method.",
+    "billing.gateway_status_title":"Midtrans payment channel pending approval",
+    "billing.gateway_status_sub":"Invoice creation and the Midtrans (Production) payment page are fully working. Completing a real payment is still waiting on Midtrans's own business review, not an issue on our side.",
     // Billing — feature string patterns
     "billing.feat.convs_per_month":"conversations/month",
     "billing.feat.agents":"AI agents",

@@ -8,6 +8,16 @@ on a feature that hasn't actually been clicked and confirmed working.
 already logged in to `/dashboard`. Pick one marketplace demo bot for the
 chat widget (e.g. "Customer Service Agent").
 
+**What kind of demo is this?** This is a guided click-through of **real
+production features on the founder's own live tenant** — not a synthetic
+seeded demo workspace with fake customers/invoices. Investor Demo Mode
+(section below) is the one part that's explicitly simulated (it says so on
+screen: a fabricated declining-revenue scenario feeds a real LLM call).
+Everything else — the chat routing, Agent Center, Local Agent, and billing
+— is the actual system a paying tenant would use. We chose this over
+building a separate fake-data demo tenant because it's a stronger, more
+honest proof of work: nothing you see is staged for the demo.
+
 ---
 
 ### 0:00–0:20 — Hook (landing page)
@@ -85,11 +95,34 @@ Navigate to **Agent Center**. Point at:
 
 ---
 
+## Extended cut (if you have 4–5 minutes instead of 3)
+
+Two more real, unstaged flows worth showing if there's time:
+
+- **Billing → real Midtrans payment** (`#billing`): open Billing → "Top Up
+  Percakapan" → smallest package (Rp25.000) → redirected to a real
+  Midtrans Snap **Production** payment page → back on `/dashboard/billing`,
+  a live banner reflects the actual invoice status sourced only from
+  Midtrans's server-to-server webhook. Talking point: *"Real payment
+  gateway, real webhook, real idempotent invoice handling — the only thing
+  gating an actual charge going through right now is Midtrans's own
+  business/KYC review on their side, not our code."*
+- **Local Agent + approval queue** (`#agent-center`): show the Local Agent
+  connection status, run a read-only command (e.g. list a folder) live,
+  then trigger something risky (e.g. a shell command) via "Tanya Agent" —
+  it lands in the **Antrian Izin — Local Agent** queue instead of running
+  immediately. Approve it from the queue and watch it execute. Talking
+  point: *"This is a real human-in-the-loop safety gate for an agent that
+  can touch a user's own computer, not just a UI mockup of one."*
+
+---
+
 ## Backup talking points (if something is slow / a question comes up)
 
-- **"Is this mocked?"** — No. 911 automated backend tests, every dashboard
-  page live-crawled for errors before this submission, real Groq LLM calls
-  on every demo step above (latency you saw is real inference time).
+- **"Is this mocked?"** — No. 1126 automated backend tests, every dashboard
+  page live-crawled for errors before this submission, real LLM calls
+  (DeepSeek/OpenRouter) on every demo step above (latency you saw is real
+  inference time).
 - **"What stops an agent from going rogue?"** — The approval-gate pattern
   shown in Agent Center: any write action that reaches a real customer
   (sending a message) is architecturally incapable of bypassing the

@@ -17,7 +17,8 @@ serving real tenants today — not a demo shell.
 |---|---|---|---|
 | ✔ Multi-Agent Collaboration | ✔ Autonomous AI | ✔ Long-Term Memory | ✔ Knowledge Engine |
 | ✔ AI Workflow Automation | ✔ Human Approval Gate | ✔ Enterprise SaaS | ✔ Multi-Tenant |
-| ✔ Secure Production Architecture | ✔ 911 Automated Tests | ✔ 25 Wired AI Agents | ✔ 5 Live Channels |
+| ✔ Secure Production Architecture | ✔ 1126 Automated Tests | ✔ 25 Wired AI Agents | ✔ 5 Live Channels |
+| ✔ Local Computer Agent | ✔ Real Midtrans Payments | ✔ Human Approval Queues | ✔ Live on botnesia.uk |
 
 ---
 
@@ -78,6 +79,12 @@ Full diagrams and per-subsystem detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTU
   knowledge builder, workflow builder, billing, security, and the full AI
   Workforce + Agent Center — responsive down to mobile.
 
+## Screenshots
+
+| Landing page | Executive Center | Investor Demo |
+|---|---|---|
+| ![Landing page](docs/marketing/screenshots/landing-page.png) | ![Executive Center](docs/marketing/screenshots/executive-center.png) | ![Investor Demo](docs/marketing/screenshots/investor-demo.png) |
+
 ## Quickstart
 
 ```bash
@@ -101,8 +108,46 @@ Cloudflare named tunnel — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 928 tests (911 existing + 17 new Casper tests)
+python3 -m pytest -q   # 1126 tests
 ```
+
+## Current Status
+
+Honest snapshot, not marketing copy:
+
+- **Tests**: 1126 total, 1104 passing, 19 pre-existing failures (document
+  generator + AI language-quality checks — unrelated to the features below,
+  not fixed as part of this pass), 3 skipped.
+- **Local Computer Agent**: real and live — a downloadable script
+  (`botnesia_local_agent.py`) connects a tenant's own PC to BotNesia over a
+  WebSocket, giving the AI file/terminal/browser access on that machine with
+  a human-approval gate for anything risky (`run_command`, file writes).
+  Try it from **Agent Center** in the dashboard.
+- **Billing (Midtrans)**: fully wired end-to-end against Midtrans
+  **Production** — invoice creation, Snap token generation, hosted payment
+  page, signed webhook notification, and idempotent invoice status updates
+  are all confirmed working with real API calls. The one remaining step is
+  outside our code: Midtrans's own business/KYC review for the merchant
+  account, which gates real money movement on their side.
+- **Infra**: FastAPI + PostgreSQL 16 running persistently (not ephemeral),
+  behind a Cloudflare named tunnel with HTTPS, with a daily automated
+  database backup (14-day retention).
+
+## Try it yourself
+
+**Billing** (`#billing` in the dashboard): open Billing → "Top Up
+Percakapan" → choose the smallest package (Rp25.000) → you're redirected to
+a real Midtrans Snap payment page → complete or cancel → you land back on
+`/dashboard/billing`, which shows a live success/pending/failed banner
+sourced only from Midtrans's server-to-server webhook (never trusted from
+the redirect URL itself).
+
+**Agent Center** (`#agent-center`): open Agent Center → download and run
+the Local Agent script shown on the page → once connected, use "Tanya
+Agent" to ask a Finance/Marketing/HR/Operations question in plain
+Indonesian, or use the local-access test panel to list a folder or run a
+command on your own machine → risky actions land in the **Antrian Izin —
+Local Agent** approval queue until you approve them.
 
 ## Documentation
 
@@ -219,9 +264,11 @@ cargo build --release --target wasm32-unknown-unknown
 
 ## Tech stack
 
-FastAPI + asyncpg (PostgreSQL 16 + pgvector) · Groq (Llama 4) for LLM
-inference · vanilla JS SPA frontend (no build step) · Cloudflare Tunnel for
-HTTPS · Midtrans/Xendit for billing · **Casper Testnet** for on-chain AI session anchoring.
+FastAPI + asyncpg (PostgreSQL 16 + pgvector) · DeepSeek + OpenRouter
+(multi-provider LLM routing, Groq fallback available) for LLM inference ·
+vanilla JS SPA frontend (no build step) · Cloudflare Tunnel for HTTPS ·
+Midtrans/Xendit for billing · **Casper Testnet** for on-chain AI session
+anchoring.
 
 ## Folder structure
 
@@ -256,7 +303,7 @@ ai bisnis/
 │   └── test_casper_workflow.py
 ├── casper_anchor.py          # Core Casper Testnet deploy logic (pycspr)
 ├── schema.sql / bn_platform/schema_platform.sql   # Full DB schema (idempotent migrations)
-├── test_*.py                 # 928 backend tests, one file per module/feature
+├── test_*.py                 # 1126 backend tests, one file per module/feature
 └── requirements.txt
 ```
 

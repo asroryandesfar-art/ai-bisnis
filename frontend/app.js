@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260702-billing-redirect-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260702-demo-readiness-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -1745,13 +1745,14 @@ const AGENT_RUN_TASK_FN = { finance: "financeRunTask", marketing: "marketingRunT
 const COMPUTER_AGENT_TYPES = new Set(["computer", "local_computer", "project_debugger"]);
 
 async function renderAgentCenter() {
-  loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent + Channel Messaging.");
+  loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent + Local Agent + Channel Messaging.");
   const results = await Promise.all([
     settle("overview", api.agentCenterOverview()),
     settle("agents", api.agentCenterAgents()),
     settle("executionLog", api.executionLogList({ limit: 20 })),
     settle("caPending", api.computerAgentTasks({ status: "pending_approval", limit: 20 })),
     settle("cmPending", api.channelMessagingTasks({ status: "pending_approval", limit: 20 })),
+    settle("laPending", api.localAgentHistory({ status: "pending_approval", limit: 20 })),
     settle("localAgent", api.localAgentStatus()),
   ]);
   const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
@@ -1762,6 +1763,7 @@ async function renderAgentCenter() {
   const logEntries = data.executionLog?.entries || [];
   const caPending = data.caPending?.tasks || [];
   const cmPending = data.cmPending?.tasks || [];
+  const laPending = data.laPending?.commands || [];
   const localAgent = data.localAgent || {};
 
   const bySourceType = overview.execution_log?.by_source_type || {};
@@ -1769,6 +1771,7 @@ async function renderAgentCenter() {
   const workforcePendingApproval = overview.workforce?.pending_approval_count || 0;
   const caPendingCount = overview.computer_agent_pending_approval_count || 0;
   const cmPendingCount = cmPending.length;
+  const laPendingCount = laPending.length;
 
   const run = state.agentTaskRun;
 
@@ -1902,11 +1905,25 @@ async function renderAgentCenter() {
     </div></td>
   </tr>`).join("");
 
+  const laRows = laPending.map((t) => {
+    let argsPreview = "—";
+    try { argsPreview = JSON.stringify(JSON.parse(t.args || "{}")); } catch { argsPreview = t.args || "—"; }
+    return `<tr>
+    <td>${statusBadge("pending", t.tool)}</td>
+    <td><span class="mono" style="font-size:11px">${esc(argsPreview.slice(0, 80))}</span></td>
+    <td>${relativeTime(t.created_at)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="button button-primary" data-la-approve="${esc(t.id)}">Approve</button>
+      <button class="button button-danger" data-la-reject="${esc(t.id)}">Reject</button>
+    </div></td>
+  </tr>`;
+  }).join("");
+
   const failedNote = failed.length
     ? `<div class="card" style="margin-top:16px"><div class="card-head"><h3>Data belum lengkap</h3></div><div class="card-body"><p class="subtle" style="margin:0;font-size:11px">${esc(failed.map((r) => `${r.label}: ${r.error.message}`).join(" · "))}</p></div></div>`
     : "";
 
-  const totalApprovalPending = workforcePendingApproval + caPendingCount + cmPendingCount;
+  const totalApprovalPending = workforcePendingApproval + caPendingCount + cmPendingCount + laPendingCount;
 
   // ── Local Agent install instructions (offline state) ────────────────────────
   const _laToken = localStorage.getItem("bn_token") || "";
@@ -1958,7 +1975,14 @@ async function renderAgentCenter() {
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Channel</th><th>Penerima</th><th>Pesan</th><th>Dibuat oleh</th><th>Dibuat</th><th></th></tr></thead><tbody>${cmRows}</tbody></table></div>
     </div>` : "";
 
-  const noApprovalSection = (!caPendingCount && !cmPendingCount) ? `
+  const laApprovalSection = laPendingCount ? `
+    <div class="page-section-label" style="color:var(--amber)">Antrian Izin — Local Agent (${laPendingCount})</div>
+    <div class="card approval-queue-card" style="margin-bottom:16px">
+      <div class="card-head"><div><h3>Antrian Izin — Local Agent</h3><span class="subtle">Aksi berisiko di komputer Anda (terminal, tulis/hapus file) harus disetujui dulu sebelum dijalankan</span></div><span class="approval-count-badge">${laPendingCount}</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Tool</th><th>Args</th><th>Dibuat</th><th></th></tr></thead><tbody>${laRows}</tbody></table></div>
+    </div>` : "";
+
+  const noApprovalSection = (!caPendingCount && !cmPendingCount && !laPendingCount) ? `
     <div class="page-section-label">Antrian Izin</div>
     <div class="card" style="margin-bottom:16px">
       <div class="card-body">
@@ -1972,7 +1996,7 @@ async function renderAgentCenter() {
   <div class="grid grid-4" style="margin-bottom:16px">
     ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
     ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
-    ${metricCard("Approval Queue", formatNumber(totalApprovalPending), totalApprovalPending ? `${caPendingCount} CA · ${cmPendingCount} msg · ${workforcePendingApproval} workforce` : "Tidak ada antrian", "workforce", totalApprovalPending ? "trend-down" : "")}
+    ${metricCard("Approval Queue", formatNumber(totalApprovalPending), totalApprovalPending ? `${caPendingCount} CA · ${laPendingCount} local · ${cmPendingCount} msg · ${workforcePendingApproval} workforce` : "Tidak ada antrian", "workforce", totalApprovalPending ? "trend-down" : "")}
     ${metricCard("Local Agent", localAgent.connected ? "● Online" : "○ Offline", localAgent.connected ? `${esc(localAgent.meta?.hostname||'')}` : "Belum terhubung", "security", localAgent.connected ? "" : "")}
   </div>
   <div class="page-section-label">Tanya Agent</div>
@@ -2024,7 +2048,7 @@ async function renderAgentCenter() {
       </div>
     </div>
   </div>
-  ${caApprovalSection}${cmApprovalSection}${noApprovalSection}
+  ${caApprovalSection}${laApprovalSection}${cmApprovalSection}${noApprovalSection}
   <div class="page-section-label">Agent directory</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3><span class="subtle">${formatNumber(agents.length)} agent terdaftar</span></div>
     ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
@@ -2126,6 +2150,11 @@ function translateFeature(text) {
     .replace(/Keamanan Lanjutan/gi, "Advanced Security")
     .replace(/Log Audit/gi, "Audit Log");
 }
+
+// Flip to true (or delete the gatewayStatusBanner block in renderBilling())
+// once Midtrans finishes the merchant business review and approves real
+// payment channels for this account.
+const MIDTRANS_GATEWAY_APPROVED = false;
 
 const BILLING_PAYMENT_BANNER_STYLE = {
   success: "background:#e8f5e9;border-color:#66bb6a;color:#1b5e20",
@@ -2369,8 +2398,17 @@ async function renderBilling() {
        </div>`
     : '';
 
+  // Set MIDTRANS_GATEWAY_APPROVED to true (or delete this banner) once Midtrans
+  // finishes the merchant business review and real payment channels are live.
+  const gatewayStatusBanner = !MIDTRANS_GATEWAY_APPROVED
+    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#fff8e1;border:1px solid #ffb300;border-radius:8px;font-size:13px;color:#8d6e00">
+         ⏳ <strong>${esc(t('billing.gateway_status_title'))}</strong><br>${esc(t('billing.gateway_status_sub'))}
+       </div>`
+    : '';
+
   setPage(`${pageHeader(t('billing.title'), t('billing.subtitle'), `${planBadge(currentKey)} <span class="status-badge ${isTrial ? 'pending' : currentStatus === 'active' ? 'active' : 'pending'}">${esc(isTrial ? 'trial' : currentStatus)}</span>`)}
   ${paymentBanner}
+  ${gatewayStatusBanner}
   ${trialBanner}
   <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">${t('billing.plan_section')}</div>
   <div class="billing-plans-grid" style="grid-template-columns:repeat(4,1fr)">${mainPlanCards}</div>
@@ -3377,6 +3415,20 @@ async function editKbSop(sopId) {
   catch(error){ toast(error.message,"error"); }
 }
 
+// Map raw backend/Midtrans failure text to a message a non-technical user can
+// act on, instead of showing e.g. "Gagal membuat transaksi Midtrans" verbatim.
+function humanizeCheckoutError(error) {
+  const msg = String(error?.message || "");
+  if (error?.status === 0) return "API tidak dapat dihubungi. Periksa koneksi internet Anda dan coba lagi.";
+  if (/midtrans/i.test(msg) && /(belum dikonfigurasi|gagal membuat transaksi)/i.test(msg)) {
+    return "Pembayaran Midtrans belum bisa diproses saat ini — channel pembayaran masih menunggu approval dari Midtrans. Coba lagi nanti, atau hubungi kami.";
+  }
+  if (/xendit/i.test(msg) && /(belum dikonfigurasi|gagal membuat invoice)/i.test(msg)) {
+    return "Pembayaran Xendit belum tersedia saat ini. Coba metode pembayaran lain atau hubungi kami.";
+  }
+  return msg || "Terjadi kesalahan saat memproses pembayaran.";
+}
+
 async function checkout(planKey, useFreeTrial = false) {
   const label = useFreeTrial ? `Mulai free trial 1 bulan paket ${planKey}?` : `Aktifkan paket ${planKey}?`;
   if(!confirm(label)) return;
@@ -3392,7 +3444,7 @@ async function checkout(planKey, useFreeTrial = false) {
       await renderBilling();
     }
   }
-  catch(error){ toast(error.message, "error"); }
+  catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
 async function topupCredits(amountIdr) {
@@ -3411,7 +3463,7 @@ async function topupCredits(amountIdr) {
       await renderBilling();
     }
   }
-  catch(error){ toast(error.message, "error"); }
+  catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
 async function sendPlayground(form) {
@@ -3739,6 +3791,8 @@ document.addEventListener("click", async (event) => {
   }
   const caApprove=event.target.closest("[data-ca-approve]"); if(caApprove){ try{ await api.computerAgentApprove(caApprove.dataset.caApprove); toast("Aksi Computer Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const caReject=event.target.closest("[data-ca-reject]"); if(caReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.computerAgentReject(caReject.dataset.caReject, reason); toast("Task ditolak.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  const laApprove=event.target.closest("[data-la-approve]"); if(laApprove){ try{ await api.localAgentApproveCommand(laApprove.dataset.laApprove); toast("Aksi Local Agent disetujui & dijalankan.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  const laReject=event.target.closest("[data-la-reject]"); if(laReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.localAgentRejectCommand(laReject.dataset.laReject, reason); toast("Perintah ditolak.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const cmApprove=event.target.closest("[data-cm-approve]"); if(cmApprove){ try{ const result=await api.channelMessagingApprove(cmApprove.dataset.cmApprove); const sendResult=parseFeatures(result.result); toast(result.status==="sent"?"Pesan berhasil dikirim.":"Approved, tapi pengiriman gagal: "+(sendResult.error||"unknown"),result.status==="sent"?"success":"error"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   const cmReject=event.target.closest("[data-cm-reject]"); if(cmReject){ const reason=prompt("Alasan reject:","Tidak relevan"); if(!reason) return; try{ await api.channelMessagingReject(cmReject.dataset.cmReject, reason); toast("Pesan ditolak, tidak akan dikirim.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="learning-scan"){ try{ const result=await api.learningScan(); toast(`Scan selesai: ${result.insights?.length||0} insight diperbarui.`,"success"); await renderLearning(); }catch(error){ toast(error.message,"error"); } return; }

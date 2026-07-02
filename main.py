@@ -201,7 +201,7 @@ class Settings(BaseSettings):
     jwt_expire_hours:     int = 24 * 7
     storage_bucket:       str = "botnesia-docs"
     app_name:             str = "BotNesia"
-    app_url:              str = "https://botnesia.id"
+    app_url:              str = "https://botnesia.uk"
     cors_allowed_origins: str = "*"  # comma-separated, "*" = allow semua (default lama)
 
     class Config:
@@ -4037,6 +4037,7 @@ def get_workflow_agent_config() -> dict:
         "base_url": (cfg.groq_base_url or "").strip() or None,
         "deepseek_api_key": cfg.deepseek_api_key,
         "openrouter_api_key": cfg.openrouter_api_key,
+        "gemini_api_key": cfg.effective_gemini_api_key,
         "app_url": cfg.app_url,
         "searxng_url": cfg.searxng_url,
         "search_api_key": cfg.search_api_key,
@@ -4065,7 +4066,10 @@ async def public_investor_demo(request: Request):
     agent_cfg = get_workflow_agent_config()
     agent = exec_agent_module.ExecutiveAgent(
         api_key=agent_cfg.get("api_key"), model=agent_cfg.get("model"),
-        base_url=agent_cfg.get("base_url"), app_url=agent_cfg.get("app_url", "https://botnesia.id"),
+        base_url=agent_cfg.get("base_url"), app_url=agent_cfg.get("app_url", "https://botnesia.uk"),
+        deepseek_api_key=agent_cfg.get("deepseek_api_key"),
+        openrouter_api_key=agent_cfg.get("openrouter_api_key"),
+        gemini_api_key=agent_cfg.get("gemini_api_key"),
     )
     return await exec_agent_module.run_investor_demo(agent=agent)
 
