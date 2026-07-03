@@ -348,11 +348,11 @@ export default function Beranda() {
           <Text style={styles.kpiValue}>{biz ? num(biz.convs30d) : "–"}</Text>
           <Text style={styles.statSub}>30 hari terakhir</Text>
         </Pressable>
-        <View style={styles.kpiCard}>
+        <Pressable style={styles.kpiCard} onPress={() => router.push("/handoff")}>
           <Text style={styles.statLabel}>Antrian Handoff</Text>
           <Text style={styles.kpiValue}>{biz ? num(biz.handoffQueueLen) : "–"}</Text>
           <Text style={styles.statSub}>menunggu agen manusia</Text>
-        </View>
+        </Pressable>
         <View style={styles.kpiCard}>
           <Text style={styles.statLabel}>Ops Health</Text>
           <Text style={styles.kpiValue}>{biz?.opsScore ?? "–"}</Text>

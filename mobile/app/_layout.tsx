@@ -36,6 +36,8 @@ export default function RootLayout() {
         <Stack.Screen name="conversation" />
         <Stack.Screen name="faq" />
         <Stack.Screen name="analytics" />
+        <Stack.Screen name="handoff" />
+        <Stack.Screen name="channels" />
       </Stack>
     </>
   );

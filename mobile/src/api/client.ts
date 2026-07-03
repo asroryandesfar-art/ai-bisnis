@@ -156,6 +156,35 @@ export const api = {
   botAnalytics: (botId: string, days = 30) => request<any>(`/bots/${botId}/analytics?days=${days}`),
   handoffQueue: (params: { limit?: number } = {}) =>
     request<{ queue: any[] }>(`/api/handoff/queue${params.limit ? `?limit=${params.limit}` : ""}`),
+  handoffStats: () => request<{ stats: any }>("/api/handoff/stats"),
+  claimHandoff: (id: string) => request<any>(`/api/handoff/${id}/claim`, { method: "POST" }),
+  replyHandoff: (id: string, message: string) => request<any>(`/api/handoff/${id}/reply`, { method: "POST", body: { message } }),
+  resolveHandoff: (id: string, note?: string | null) => request<any>(`/api/handoff/${id}/resolve`, { method: "POST", body: { note: note ?? null } }),
+
+  // Channels -- mirrors web's renderChannels (frontend/app.js).
+  channelStatus: (refresh = false) => request<{ channels: any[]; summary: any }>(`/api/channels/status${refresh ? "?refresh=true" : ""}`),
+  channelAnalytics: (days = 30) => request<any>(`/api/channels/analytics?days=${days}`),
+  connectChannel: (body: { bot_id: string; channel_type: string; display_name: string; external_id?: string | null; credentials?: any; config?: any }) =>
+    request<{ channel: any }>("/api/channels/connect", { method: "POST", body }),
+  disconnectChannel: (connectionId: string) => request<any>("/api/channels/disconnect", { method: "POST", body: { connection_id: connectionId } }),
+  whatsappEmbeddedStatus: () => request<{ accounts: any[] }>("/integrations/whatsapp/status"),
+  whatsappEmbeddedConnect: (botId: string) =>
+    request<{ app_id: string; config_id: string; graph_api_version: string; state: string; bot_id: string }>(
+      `/integrations/whatsapp/connect?bot_id=${botId}`
+    ),
+  whatsappEmbeddedCallback: (body: { state: string; code: string; waba_id: string; phone_number_id: string; business_id?: string | null }) =>
+    request<any>("/integrations/whatsapp/callback", { method: "POST", body }),
+  whatsappEmbeddedDisconnect: (botId: string) =>
+    request<any>("/integrations/whatsapp/disconnect", { method: "POST", body: { bot_id: botId } }),
+  metaOAuthStatus: () =>
+    request<{ connected: boolean; status: string; pages: any[]; token_expires_at: string | null; selected: any }>(
+      "/api/integrations/meta/oauth/status"
+    ),
+  metaOAuthStart: (botId: string, channel: "facebook" | "instagram") =>
+    request<{ auth_url: string; state: string }>("/api/integrations/meta/oauth/start", { method: "POST", body: { bot_id: botId, channel } }),
+  metaOAuthSelect: (body: { bot_id: string; page_id: string; channels: string[]; instagram_id?: string }) =>
+    request<any>("/api/integrations/meta/oauth/select", { method: "POST", body }),
+  metaOAuthRefresh: () => request<any>("/api/integrations/meta/oauth/refresh", { method: "POST" }),
 
   // Chat Inbox -- real customer conversations (distinct from `chat()` above,
   // which is the admin-facing test playground). Mirrors web's renderConversations

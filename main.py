@@ -1796,9 +1796,23 @@ async def get_org(
         raise HTTPException(404, "Organisasi tidak ditemukan")
 
     use_cloud = should_use_cloud(org["plan"], org["billing_status"])
-    cloud_ready = bool(cfg.groq_api_key)
-    provider = "groq" if cfg.groq_api_key else None
-    cloud_model = cfg.groq_model if cfg.groq_api_key else None
+    # Same provider priority as base.py's BaseAgent._call_llm() fallback chain:
+    # Gemini -> DeepSeek -> OpenRouter -> Groq. Previously this only checked
+    # groq_api_key, so it reported "offline" even when DeepSeek/OpenRouter
+    # (the actual active providers since the Groq/Gemini pivot) were serving
+    # every request fine -- kept /health's `ai.configured` check in sync with
+    # this same set of providers already, just never updated here too.
+    if cfg.effective_gemini_api_key:
+        provider, cloud_model = "gemini", cfg.gemini_model
+    elif cfg.deepseek_api_key:
+        provider, cloud_model = "deepseek", "deepseek-chat"
+    elif cfg.openrouter_api_key:
+        provider, cloud_model = "openrouter", "openai/gpt-4o-mini"
+    elif cfg.groq_api_key:
+        provider, cloud_model = "groq", cfg.groq_model
+    else:
+        provider, cloud_model = None, None
+    cloud_ready = provider is not None
     effective_mode = "cloud" if cloud_ready else "offline"
 
     return {

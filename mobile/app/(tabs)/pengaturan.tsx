@@ -317,6 +317,14 @@ export default function Pengaturan() {
       <Text style={styles.sectionLabel}>INTEGRASI</Text>
       <Card style={styles.groupCard}>
         <Row
+          icon="chat-processing-outline"
+          label="Channels"
+          value="WhatsApp, Telegram, IG, FB, Website"
+          onPress={() => router.push("/channels")}
+          chevron
+        />
+        <Divider />
+        <Row
           icon="gmail"
           label="Gmail"
           value={gmail?.connected ? (gmail.email || "Terhubung") : "Belum terhubung"}
