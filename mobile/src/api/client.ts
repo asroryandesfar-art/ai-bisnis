@@ -264,4 +264,23 @@ export const api = {
   securityDashboard: () => request<any>("/api/security/dashboard"),
   executiveDashboard: () => request<any>("/api/executive/dashboard"),
   workforceDashboard: () => request<any>("/api/workforce/dashboard"),
+
+  // Security Dashboard -- mirrors web's renderSecurity (frontend/app.js).
+  securityScanAndAlert: () => request<any>("/api/security/scan-and-alert", { method: "POST" }),
+  securityRiskAlerts: (params: { status_filter?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status_filter) q.set("status_filter", params.status_filter);
+    if (params.limit) q.set("limit", String(params.limit));
+    return request<{ alerts: any[] }>(`/api/security/risk-alerts?${q.toString()}`);
+  },
+  updateSecurityRiskAlert: (id: string, status: string) =>
+    request<any>(`/api/security/risk-alerts/${id}`, { method: "PATCH", body: { status } }),
+  securityReports: (params: { limit?: number } = {}) =>
+    request<{ reports: any[] }>(`/api/security/reports${params.limit ? `?limit=${params.limit}` : ""}`),
+  generateSecurityReport: (reportType: string) =>
+    request<any>("/api/security/reports/generate", { method: "POST", body: { report_type: reportType } }),
+  revokeSecuritySession: (id: string) => request<any>(`/api/security/sessions/${id}/revoke`, { method: "POST" }),
+  createApiKey: (body: { name: string; expires_in_days?: number }) => request<{ key: string }>("/api-keys", { method: "POST", body }),
+  rotateApiKey: (id: string) => request<{ key: string }>(`/api/security/api-keys/${id}/rotate`, { method: "POST" }),
+  revokeApiKey: (id: string) => request<any>(`/api/security/api-keys/${id}`, { method: "DELETE" }),
 };

@@ -261,6 +261,13 @@ export default function Pengaturan() {
           onPress={() => router.push("/team")}
           chevron
         />
+        <Divider />
+        <Row
+          icon="shield-lock-outline"
+          label="Security Dashboard"
+          onPress={() => router.push("/security")}
+          chevron
+        />
       </Card>
 
       {/* Mesin AI */}
