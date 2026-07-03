@@ -1,5 +1,4 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
@@ -62,11 +61,22 @@ export default function Knowledge() {
       Alert.alert("Belum ada agen", "Buat agen dulu di tab Agen sebelum upload dokumen.");
       return;
     }
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf", "text/*", "text/csv", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
+    let result: any;
+    try {
+      // Loaded lazily (not as a top-level import) so a native-module issue
+      // with this specific package can only ever fail this one action --
+      // never crash the whole app at boot, since Expo Router eagerly
+      // imports every file under app/ to build its route table.
+      const DocumentPicker = await import("expo-document-picker");
+      result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "text/*", "text/csv", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+    } catch (e: any) {
+      Alert.alert("Gagal membuka file picker", e?.message || "Fitur pilih file tidak tersedia di perangkat ini.");
+      return;
+    }
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     setUploading(true);
