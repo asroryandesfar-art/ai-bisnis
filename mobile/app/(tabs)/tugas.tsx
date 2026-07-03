@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Badge, BadgeKind } from "../../src/components/Badge";
 import { Card } from "../../src/components/Card";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { api } from "../../src/api/client";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
@@ -175,18 +176,20 @@ export default function Tugas() {
 
   return (
     <View style={styles.flex}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Otomatisasi Tugas</Text>
-          <Text style={styles.subtitle}>{activeWf} otomatisasi aktif · {runningCount} task berjalan</Text>
-        </View>
-        <Pressable style={styles.scanBtn} onPress={scanConflicts} disabled={scanning}>
-          {scanning ? <ActivityIndicator size="small" color={colors.brand.violet400} /> : <MaterialCommunityIcons name="radar" size={18} color={colors.brand.violet400} />}
-        </Pressable>
-        <Pressable style={styles.addButton} onPress={() => router.push("/task-create")}>
-          <Ionicons name="add" size={22} color="#fff" />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Otomatisasi Tugas"
+        subtitle={`${activeWf} otomatisasi aktif · ${runningCount} task berjalan`}
+        action={
+          <>
+            <Pressable style={styles.scanBtn} onPress={scanConflicts} disabled={scanning}>
+              {scanning ? <ActivityIndicator size="small" color={colors.brand.violet400} /> : <MaterialCommunityIcons name="radar" size={18} color={colors.brand.violet400} />}
+            </Pressable>
+            <Pressable style={styles.addButton} onPress={() => router.push("/task-create")}>
+              <Ionicons name="add" size={22} color="#fff" />
+            </Pressable>
+          </>
+        }
+      />
 
       <ScrollView
         contentContainerStyle={styles.list}
@@ -351,9 +354,6 @@ function ActionBtn({ label, onPress, primary, danger }: { label: string; onPress
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg.base },
-  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.lg, paddingTop: spacing.xl },
-  title: { color: colors.text.primary, fontSize: 22, fontWeight: "800" },
-  subtitle: { color: colors.text.muted, fontSize: 12, marginTop: 2 },
   scanBtn: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.bg.border, alignItems: "center", justifyContent: "center" },
   addButton: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brand.violet600, alignItems: "center", justifyContent: "center" },
   list: { padding: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: spacing.xxl },

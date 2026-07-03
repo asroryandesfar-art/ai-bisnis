@@ -1,8 +1,9 @@
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -20,9 +21,21 @@ import { radius, spacing } from "../../src/theme/spacing";
 
 export default function Login() {
   const router = useRouter();
+  const [tab, setTab] = useState<"login" | "register">("login");
+
+  // Login fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  // Register fields -- same 3 fields as the web's #register-form (org_name,
+  // email, password min 8), no separate full_name (web doesn't collect it
+  // either; RegisterReq.full_name is optional server-side).
+  const [orgName, setOrgName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [showRegPassword, setShowRegPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,13 +57,38 @@ export default function Login() {
     }
   }
 
+  async function handleRegister() {
+    if (!orgName || !regEmail || !regPassword) {
+      setError("Nama bisnis, email, dan password wajib diisi.");
+      return;
+    }
+    if (regPassword.length < 8) {
+      setError("Password minimal 8 karakter.");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const { token } = await api.register(orgName.trim(), regEmail.trim(), regPassword);
+      await tokenStore.set(token);
+      router.replace("/beranda");
+    } catch (e) {
+      setError(e instanceof APIError ? e.message : "Pendaftaran gagal. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function switchTab(next: "login" | "register") {
+    setTab(next);
+    setError(null);
+  }
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.brandRow}>
-          <View style={styles.brandIcon}>
-            <MaterialCommunityIcons name="robot-outline" size={22} color="#fff" />
-          </View>
+          <Image source={require("../../assets/brand-logo.png")} style={styles.brandIcon} />
           <View>
             <Text style={styles.brandTitle}>BotNesia</Text>
             <Text style={styles.brandSubtitle}>AI Business Platform</Text>
@@ -58,49 +96,93 @@ export default function Login() {
         </View>
 
         <View style={styles.tabRow}>
-          <View style={styles.tabActive}>
-            <Text style={styles.tabActiveText}>Masuk</Text>
-          </View>
-          <Pressable style={styles.tabInactive} onPress={() => Alert.alert("Segera hadir", "Pendaftaran mandiri belum tersedia di app mobile.")}>
-            <Text style={styles.tabInactiveText}>Daftar</Text>
+          <Pressable style={tab === "login" ? styles.tabActive : styles.tabInactive} onPress={() => switchTab("login")}>
+            <Text style={tab === "login" ? styles.tabActiveText : styles.tabInactiveText}>Masuk</Text>
+          </Pressable>
+          <Pressable style={tab === "register" ? styles.tabActive : styles.tabInactive} onPress={() => switchTab("register")}>
+            <Text style={tab === "register" ? styles.tabActiveText : styles.tabInactiveText}>Daftar</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.h1}>Selamat Datang</Text>
-        <Text style={styles.h1Sub}>Masuk ke dashboard AI Anda</Text>
+        {tab === "login" ? (
+          <>
+            <Text style={styles.h1}>Selamat Datang</Text>
+            <Text style={styles.h1Sub}>Masuk ke dashboard AI Anda</Text>
 
-        <View style={{ gap: spacing.lg, marginTop: spacing.lg }}>
-          <TextField
-            label="Email"
-            placeholder="anda@perusahaan.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <View>
-            <TextField
-              label="Password"
-              placeholder="••••••••••"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-            />
-            <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
-              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color={colors.text.muted} />
+            <View style={{ gap: spacing.lg, marginTop: spacing.lg }}>
+              <TextField
+                label="Email"
+                placeholder="anda@perusahaan.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+              />
+              <View>
+                <TextField
+                  label="Password"
+                  placeholder="••••••••••"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                />
+                <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
+                  <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color={colors.text.muted} />
+                </Pressable>
+              </View>
+            </View>
+
+            <Pressable style={styles.forgotWrap} onPress={() => Alert.alert("Segera hadir", "Reset password lewat app mobile belum tersedia.")}>
+              <Text style={styles.forgotText}>Lupa password?</Text>
             </Pressable>
-          </View>
-        </View>
 
-        <Pressable style={styles.forgotWrap} onPress={() => Alert.alert("Segera hadir", "Reset password lewat app mobile belum tersedia.")}>
-          <Text style={styles.forgotText}>Lupa password?</Text>
-        </Pressable>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+            <View style={{ marginTop: spacing.lg }}>
+              <GradientButton title="Masuk ke Dashboard  →" onPress={handleLogin} loading={loading} />
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.h1}>Buat Workspace</Text>
+            <Text style={styles.h1Sub}>Siapkan akun dan organisasi baru</Text>
 
-        <View style={{ marginTop: spacing.lg }}>
-          <GradientButton title="Masuk ke Dashboard  →" onPress={handleLogin} loading={loading} />
-        </View>
+            <View style={{ gap: spacing.lg, marginTop: spacing.lg }}>
+              <TextField
+                label="Nama bisnis"
+                placeholder="Toko Maju Jaya"
+                value={orgName}
+                onChangeText={setOrgName}
+              />
+              <TextField
+                label="Email"
+                placeholder="anda@perusahaan.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={regEmail}
+                onChangeText={setRegEmail}
+              />
+              <View>
+                <TextField
+                  label="Password"
+                  placeholder="Minimal 8 karakter"
+                  secureTextEntry={!showRegPassword}
+                  value={regPassword}
+                  onChangeText={setRegPassword}
+                />
+                <Pressable style={styles.eyeButton} onPress={() => setShowRegPassword((v) => !v)}>
+                  <Ionicons name={showRegPassword ? "eye-off-outline" : "eye-outline"} size={18} color={colors.text.muted} />
+                </Pressable>
+              </View>
+            </View>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <View style={{ marginTop: spacing.lg }}>
+              <GradientButton title="Buat Akun  →" onPress={handleRegister} loading={loading} />
+            </View>
+          </>
+        )}
 
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
@@ -125,10 +207,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg.base },
   container: { padding: spacing.xl, paddingTop: spacing.xxl + spacing.lg, gap: 0 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.xl },
-  brandIcon: {
-    width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brand.violet600,
-    alignItems: "center", justifyContent: "center",
-  },
+  brandIcon: { width: 44, height: 44, borderRadius: radius.md, resizeMode: "cover" },
   brandTitle: { color: colors.text.primary, fontSize: 18, fontWeight: "800" },
   brandSubtitle: { color: colors.text.muted, fontSize: 11, fontWeight: "600" },
   tabRow: { flexDirection: "row", backgroundColor: colors.bg.card, borderRadius: radius.lg, padding: 4, marginBottom: spacing.xl },

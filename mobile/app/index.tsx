@@ -1,8 +1,6 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { GradientButton } from "../src/components/GradientButton";
 import { tokenStore } from "../src/auth/tokenStore";
 import { colors } from "../src/theme/colors";
@@ -32,9 +30,7 @@ export default function Splash() {
 
       <View style={styles.center}>
         <View style={styles.logoWrap}>
-          <LinearGradient colors={colors.brand.gradient} style={styles.logoBox}>
-            <MaterialCommunityIcons name="robot-outline" size={44} color="#fff" />
-          </LinearGradient>
+          <Image source={require("../assets/brand-logo.png")} style={styles.logoBox} />
           <View style={styles.onlineDot}>
             <View style={styles.onlineDotInner} />
           </View>
@@ -76,7 +72,7 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", gap: spacing.lg, paddingHorizontal: spacing.xl },
   logoWrap: { position: "relative" },
   logoBox: {
-    width: 96, height: 96, borderRadius: 24, alignItems: "center", justifyContent: "center",
+    width: 96, height: 96, borderRadius: 24, resizeMode: "cover",
     shadowColor: colors.brand.violet600, shadowOpacity: 0.6, shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
   },
   onlineDot: {

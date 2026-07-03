@@ -1,8 +1,18 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
+import { onUnauthorized } from "../src/api/client";
 import { colors } from "../src/theme/colors";
 
 export default function RootLayout() {
+  const router = useRouter();
+
+  // Mirrors the web's `window.addEventListener("botnesia:unauthorized", showAuth)`
+  // (frontend/app.js:3919) -- without this, a 401 (expired/revoked token)
+  // would clear the stored token but leave the user stranded on whatever
+  // screen they were on instead of returning them to login.
+  useEffect(() => onUnauthorized(() => router.replace("/login")), [router]);
+
   return (
     <>
       <StatusBar style="light" />
@@ -22,6 +32,10 @@ export default function RootLayout() {
         <Stack.Screen name="knowledge" />
         <Stack.Screen name="computer" />
         <Stack.Screen name="notifikasi" />
+        <Stack.Screen name="inbox" />
+        <Stack.Screen name="conversation" />
+        <Stack.Screen name="faq" />
+        <Stack.Screen name="analytics" />
       </Stack>
     </>
   );

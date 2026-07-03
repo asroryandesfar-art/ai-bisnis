@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Badge } from "../../src/components/Badge";
 import { Card } from "../../src/components/Card";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { api } from "../../src/api/client";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
@@ -82,17 +83,15 @@ export default function Agen() {
 
   return (
     <View style={styles.flex}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Agen AI</Text>
-          <Text style={styles.subtitle}>
-            {bots.length} agen terdaftar · {activeCount} aktif
-          </Text>
-        </View>
-        <Pressable style={styles.addButton} onPress={() => router.push("/agent-editor")}>
-          <Ionicons name="add" size={22} color="#fff" />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Agen AI"
+        subtitle={`${bots.length} agen terdaftar · ${activeCount} aktif`}
+        action={
+          <Pressable style={styles.addButton} onPress={() => router.push("/agent-editor")}>
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
+        }
+      />
 
       <View style={styles.searchWrap}>
         <Ionicons name="search-outline" size={16} color={colors.text.muted} style={{ marginRight: spacing.sm }} />
@@ -159,7 +158,11 @@ export default function Agen() {
                 ) : null}
               </View>
             </View>
-            <View style={styles.statsRow}>
+            <Pressable
+              style={styles.statsRow}
+              onPress={() => router.push({ pathname: "/analytics", params: { botId: bot.id } })}
+              hitSlop={8}
+            >
               <View style={styles.statItem}>
                 <Text style={styles.statLabel}>Percakapan</Text>
                 <Text style={styles.statValue}>{bot.total_convs}</Text>
@@ -177,7 +180,7 @@ export default function Agen() {
                 <Text style={styles.chatBtnText}>Chat</Text>
               </Pressable>
               <MaterialCommunityIcons name="chevron-right" size={20} color={colors.text.faint} />
-            </View>
+            </Pressable>
           </Card>
           </Pressable>
         ))}
@@ -188,12 +191,6 @@ export default function Agen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg.base },
-  header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
-    padding: spacing.lg, paddingTop: spacing.xl,
-  },
-  title: { color: colors.text.primary, fontSize: 22, fontWeight: "800" },
-  subtitle: { color: colors.text.muted, fontSize: 12, marginTop: 2 },
   addButton: {
     width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brand.violet600,
     alignItems: "center", justifyContent: "center",

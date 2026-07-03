@@ -21,7 +21,9 @@ type Listener = () => void;
 const unauthorizedListeners = new Set<Listener>();
 export function onUnauthorized(fn: Listener) {
   unauthorizedListeners.add(fn);
-  return () => unauthorizedListeners.delete(fn);
+  return () => {
+    unauthorizedListeners.delete(fn);
+  };
 }
 
 export async function request<T = any>(
@@ -68,7 +70,18 @@ export async function request<T = any>(
 
 export const api = {
   login: (email: string, password: string) => request<{ token: string }>("/auth/login", { method: "POST", body: { email, password } }),
-  health: () => request("/health"),
+  register: (orgName: string, email: string, password: string) =>
+    request<{ token: string; org_id: string; trial_ends: string }>("/auth/register", {
+      method: "POST",
+      body: { org_name: orgName, email, password },
+    }),
+  health: () => request<{ status: string; db: boolean; schema: boolean; ai: { configured: boolean; providers?: Record<string, any> } }>("/health"),
+  integrations: () => request<{ gmail: { connected: boolean; email: string | null; bot_id: string | null } }>("/integrations"),
+  gmailStart: () => request<{ auth_url: string }>("/integrations/gmail/start", { method: "POST" }),
+  gmailMapBot: (botId: string) => request<any>("/integrations/gmail/map-bot", { method: "POST", body: { bot_id: botId } }),
+  gmailPoll: () => request<any>("/integrations/gmail/poller/run-once", { method: "POST" }),
+  deleteIntegration: (key: string) => request<any>(`/integrations/${key}`, { method: "DELETE" }),
+  securityScan: () => request<{ score: number; findings_count: number; findings: any[] }>("/api/security/scan", { method: "POST" }),
   dashboardOverview: () => request("/api/dashboard/overview"),
   bots: () => request<any[]>("/bots"),
   agentCenterOverview: () => request("/api/agent-center/overview"),
@@ -143,11 +156,71 @@ export const api = {
   botAnalytics: (botId: string, days = 30) => request<any>(`/bots/${botId}/analytics?days=${days}`),
   handoffQueue: (params: { limit?: number } = {}) =>
     request<{ queue: any[] }>(`/api/handoff/queue${params.limit ? `?limit=${params.limit}` : ""}`),
-  knowledgeSources: () => request<{ sources: any[]; stats: any }>("/api/knowledge/sources?limit=100"),
+
+  // Chat Inbox -- real customer conversations (distinct from `chat()` above,
+  // which is the admin-facing test playground). Mirrors web's renderConversations
+  // / renderMessagePanel (frontend/app.js).
+  botConversations: (botId: string, params: { limit?: number; offset?: number } = {}) =>
+    request<any[]>(`/bots/${botId}/conversations?limit=${params.limit ?? 20}&offset=${params.offset ?? 0}`),
+  conversationMessages: (convId: string) => request<any[]>(`/conversations/${convId}/messages`),
+  messageSources: (messageId: string) => request<any[]>(`/messages/${messageId}/sources`),
+  submitFeedback: (messageId: string, conversationId: string, rating: "helpful" | "not_helpful", comment?: string | null) =>
+    request<any>("/api/feedback-learning/feedback", {
+      method: "POST",
+      body: { message_id: messageId, conversation_id: conversationId, rating, comment: comment ?? null },
+    }),
+  knowledgeSources: (params: { botId?: string; status?: string; category?: string; agentId?: string; search?: string } = {}) => {
+    const q = new URLSearchParams({ limit: "100" });
+    if (params.botId) q.set("bot_id", params.botId);
+    if (params.status) q.set("status", params.status);
+    if (params.category) q.set("category", params.category);
+    if (params.agentId) q.set("agent_id", params.agentId);
+    if (params.search) q.set("search", params.search);
+    return request<{ sources: any[]; stats: any }>(`/api/knowledge/sources?${q.toString()}`);
+  },
+  knowledgeSeedStatus: (botId: string) => request<any>(`/api/knowledge/seed/status?bot_id=${botId}`),
   uploadDocument: (botId: string, file: { uri: string; name: string; mimeType?: string | null }) => {
     const form = new FormData();
     form.append("file", { uri: file.uri, name: file.name, type: file.mimeType || "application/octet-stream" } as any);
     return request<any>(`/bots/${botId}/documents`, { method: "POST", body: form });
+  },
+  documents: (botId: string) => request<any[]>(`/bots/${botId}/documents`),
+  deleteDocument: (botId: string, docId: string) => request<any>(`/bots/${botId}/documents/${docId}`, { method: "DELETE" }),
+  bulkKnowledgeUrls: (botId: string, urls: Record<string, any>[], crawl = true) =>
+    request<{ imported: number; skipped_duplicate: number; skipped_invalid: number; total: number; stats: any }>(
+      "/api/knowledge/urls/bulk",
+      { method: "POST", body: { bot_id: botId, urls, crawl } }
+    ),
+  seedKnowledgeGeneral: (botId: string, crawl = true) =>
+    request<any>("/api/knowledge/seed/general", { method: "POST", body: { bot_id: botId, crawl } }),
+  seedKnowledgeAgents: (botId: string, crawl = true) =>
+    request<any>("/api/knowledge/seed/agents", { method: "POST", body: { bot_id: botId, crawl } }),
+  seedKnowledgeAgent: (agentType: string, botId: string, crawl = true) =>
+    request<any>(`/api/knowledge/seed/${agentType}`, { method: "POST", body: { bot_id: botId, crawl } }),
+  seedMarketplaceKnowledge: (botId: string | null = null, crawl = false, installedOnly = false) =>
+    request<any>("/api/knowledge/seed/marketplace-1000", { method: "POST", body: { bot_id: botId, crawl, installed_only: installedOnly } }),
+  retryFailedKnowledgeSources: (body: { bot_id?: string | null; agent_id?: string | null; category?: string | null; crawl?: boolean } = {}) =>
+    request<{ retried: number; crawler: string }>("/api/knowledge/sources/retry-failed", { method: "POST", body }),
+  retryKnowledgeSource: (sourceId: string) => request<any>(`/api/knowledge/sources/${sourceId}/retry`, { method: "POST" }),
+  deleteKnowledgeSource: (sourceId: string) => request<any>(`/api/knowledge/sources/${sourceId}`, { method: "DELETE" }),
+
+  // Knowledge Builder (FAQ/SOP auto-generation) -- mirrors web's
+  // renderKnowledgeBuilder (frontend/app.js).
+  kbOverview: (botId: string) => request<any>(`/api/knowledge-builder/bots/${botId}/overview`),
+  kbRegenerate: (botId: string, docId: string) =>
+    request<any>(`/api/knowledge-builder/bots/${botId}/documents/${docId}/generate`, { method: "POST" }),
+  kbFaqs: (botId: string, status?: string | null) =>
+    request<{ faqs: any[] }>(`/api/knowledge-builder/bots/${botId}/faqs${status ? `?status=${status}` : ""}`),
+  kbUpdateFaq: (faqId: string, body: { status?: string; question?: string; answer?: string; category?: string }) =>
+    request<any>(`/api/knowledge-builder/faqs/${faqId}`, { method: "PATCH", body }),
+  kbSops: (botId: string, status?: string | null) =>
+    request<{ sops: any[] }>(`/api/knowledge-builder/bots/${botId}/sops${status ? `?status=${status}` : ""}`),
+  kbUpdateSop: (sopId: string, body: { status?: string; title?: string; steps?: string[]; category?: string }) =>
+    request<any>(`/api/knowledge-builder/sops/${sopId}`, { method: "PATCH", body }),
+  importFaqCsv: (botId: string, file: { uri: string; name: string; mimeType?: string | null }) => {
+    const form = new FormData();
+    form.append("file", { uri: file.uri, name: file.name, type: file.mimeType || "text/csv" } as any);
+    return request<any>(`/bots/${botId}/documents/faq-import`, { method: "POST", body: form });
   },
   financeDashboard: () => request<any>("/api/finance/dashboard"),
   marketingDashboard: () => request<any>("/api/marketing/dashboard"),

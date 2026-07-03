@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Badge } from "../../src/components/Badge";
 import { Card } from "../../src/components/Card";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { api } from "../../src/api/client";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
@@ -142,16 +143,13 @@ export default function Billing() {
       ];
 
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.violet400} />}
-    >
-      <View>
-        <Text style={styles.title}>Billing & Langganan</Text>
-        <Text style={styles.subtitle}>Kelola paket, kredit, dan pembayaran</Text>
-      </View>
-
+    <View style={styles.flex}>
+      <ScreenHeader title="Billing & Langganan" subtitle="Kelola paket, kredit, dan pembayaran" />
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand.violet400} />}
+      >
       {error ? (
         <Card style={{ borderColor: colors.status.danger }}>
           <Text style={{ color: colors.status.danger, fontSize: 13 }}>{error}</Text>
@@ -314,15 +312,14 @@ export default function Billing() {
           ))
         )}
       </Card>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg.base },
-  container: { padding: spacing.lg, paddingTop: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxl },
-  title: { color: colors.text.primary, fontSize: 22, fontWeight: "800" },
-  subtitle: { color: colors.text.muted, fontSize: 12, marginTop: 2 },
+  container: { padding: spacing.lg, paddingTop: 0, gap: spacing.lg, paddingBottom: spacing.xxl },
 
   gatewayBanner: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start", backgroundColor: colors.status.warningBg, borderColor: colors.status.warning },
   gatewayIcon: { fontSize: 18 },
