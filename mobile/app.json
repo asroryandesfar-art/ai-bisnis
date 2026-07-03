@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "BotNesia",
+    "slug": "botnesia-mobile",
+    "scheme": "botnesia",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0D1017",
+    "ios": {
+      "supportsTablet": true,
+      "backgroundColor": "#0D1017"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D1017",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ]
+  }
+}
