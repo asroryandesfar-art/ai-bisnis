@@ -86,7 +86,13 @@ export const api = {
   bots: () => request<any[]>("/bots"),
   agentCenterOverview: () => request("/api/agent-center/overview"),
   org: () => request("/org"),
-  team: () => request("/api/rbac/team"),
+  team: () => request<{ team: any[] }>("/api/rbac/team"),
+  rbacRoles: () => request<{ roles: any[] }>("/api/rbac/roles"),
+  rbacMe: () => request<{ user_id: string; roles: string[]; permissions: string[] }>("/api/rbac/me"),
+  inviteMember: (body: { email: string; full_name?: string; role_key: string; password: string }) =>
+    request<any>("/api/rbac/invite", { method: "POST", body }),
+  assignRole: (userId: string, roleKey: string) => request<any>("/api/rbac/assign", { method: "POST", body: { user_id: userId, role_key: roleKey } }),
+  revokeRole: (userId: string, roleKey: string) => request<any>("/api/rbac/revoke", { method: "POST", body: { user_id: userId, role_key: roleKey } }),
   billingSubscription: () => request("/api/billing/subscription"),
   billingPlans: () => request<{ plans: any[] }>("/api/billing/plans"),
   billingCheckout: (planKey: string, billingCycle: "monthly" | "yearly" = "monthly", useFreeTrial = false) =>

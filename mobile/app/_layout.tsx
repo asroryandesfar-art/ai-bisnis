@@ -38,6 +38,7 @@ export default function RootLayout() {
         <Stack.Screen name="analytics" />
         <Stack.Screen name="handoff" />
         <Stack.Screen name="channels" />
+        <Stack.Screen name="team" />
       </Stack>
     </>
   );

@@ -92,7 +92,7 @@ export default function Beranda() {
       ]);
       const bots: any[] = pick(botsR, [] as any[]);
       const org: any = pick(orgR, {});
-      const team: any = pick(teamR, {});
+      const team: any = pick(teamR, { team: [] });
       const overview: any = pick(overviewR, {});
       const workforce: any = pick(wfR, {});
 

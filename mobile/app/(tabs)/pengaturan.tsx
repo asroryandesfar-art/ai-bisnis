@@ -254,7 +254,13 @@ export default function Pengaturan() {
           chevron
         />
         <Divider />
-        <Row icon="account-group-outline" label="Kelola Tim" value={`${profile?.memberCount ?? 0} anggota`} />
+        <Row
+          icon="account-group-outline"
+          label="Kelola Tim"
+          value={`${profile?.memberCount ?? 0} anggota`}
+          onPress={() => router.push("/team")}
+          chevron
+        />
       </Card>
 
       {/* Mesin AI */}
