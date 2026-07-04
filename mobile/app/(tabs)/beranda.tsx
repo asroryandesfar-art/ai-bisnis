@@ -53,7 +53,7 @@ const DOMAIN_STATUS_KIND: Record<string, BadgeKind> = {
   Healthy: "success", "Needs Attention": "warning",
 };
 
-type WorkforceDomain = { name: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; status: string; line1: string; line2: string };
+type WorkforceDomain = { name: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; status: string; line1: string; line2: string; route?: string };
 type Opportunity = { title: string; detail: string; owner: string };
 
 type BizHealth = {
@@ -177,11 +177,11 @@ export default function Beranda() {
         opsScore: ops?.health?.score ?? null,
         opsLabel: ops?.health?.label ?? null,
         workforce: [
-          { name: "Finance Agent", icon: "cash-multiple", status: overdueInvoices ? "Needs Attention" : "Healthy", line1: `${num(finance.pending_invoices_count || 0)} invoice pending`, line2: `${idr(finance.revenue_30d_idr || 0)} revenue 30 hari` },
-          { name: "Marketing Agent", icon: "bullhorn-outline", status: contentDueNow ? "Needs Attention" : "Healthy", line1: `${num(marketing.active_campaigns || 0)} campaign aktif`, line2: `${num(marketing.content_published || 0)} konten published` },
-          { name: "HR Agent", icon: "account-group-outline", status: pendingTraining ? "Needs Attention" : "Healthy", line1: `${num(Object.values(hr.candidates_by_status || {}).reduce((s: number, n) => s + Number(n || 0), 0))} kandidat aktif`, line2: `${num(pendingTraining)} rekomendasi training` },
+          { name: "Finance Agent", icon: "cash-multiple", status: overdueInvoices ? "Needs Attention" : "Healthy", line1: `${num(finance.pending_invoices_count || 0)} invoice pending`, line2: `${idr(finance.revenue_30d_idr || 0)} revenue 30 hari`, route: "/finance" },
+          { name: "Marketing Agent", icon: "bullhorn-outline", status: contentDueNow ? "Needs Attention" : "Healthy", line1: `${num(marketing.active_campaigns || 0)} campaign aktif`, line2: `${num(marketing.content_published || 0)} konten published`, route: "/marketing" },
+          { name: "HR Agent", icon: "account-group-outline", status: pendingTraining ? "Needs Attention" : "Healthy", line1: `${num(Object.values(hr.candidates_by_status || {}).reduce((s: number, n) => s + Number(n || 0), 0))} kandidat aktif`, line2: `${num(pendingTraining)} rekomendasi training`, route: "/hr" },
           { name: "Executive Agent", icon: "briefcase-outline", status: health.label === "healthy" ? "Healthy" : "Needs Attention", line1: `Company health ${health.overall ?? "—"}/100`, line2: `${num(Object.keys(health.by_domain || {}).length)} domain dipantau` },
-          { name: "Security Agent", icon: "shield-outline", status: openSecurityAlerts ? "Needs Attention" : "Healthy", line1: `Risk level: ${security.risk_level || "—"}`, line2: `${num(security.suspicious_sessions_count || 0)} sesi mencurigakan` },
+          { name: "Security Agent", icon: "shield-outline", status: openSecurityAlerts ? "Needs Attention" : "Healthy", line1: `Risk level: ${security.risk_level || "—"}`, line2: `${num(security.suspicious_sessions_count || 0)} sesi mencurigakan`, route: "/security" },
         ],
         opportunities,
       });
@@ -353,29 +353,36 @@ export default function Beranda() {
           <Text style={styles.kpiValue}>{biz ? num(biz.handoffQueueLen) : "–"}</Text>
           <Text style={styles.statSub}>menunggu agen manusia</Text>
         </Pressable>
-        <View style={styles.kpiCard}>
+        <Pressable style={styles.kpiCard} onPress={() => router.push("/operations")}>
           <Text style={styles.statLabel}>Ops Health</Text>
           <Text style={styles.kpiValue}>{biz?.opsScore ?? "–"}</Text>
           <Text style={styles.statSub}>{biz?.opsLabel ?? ""}</Text>
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionLabel}>STATUS AI WORKFORCE</Text>
       </View>
-      {(biz?.workforce ?? []).map((w) => (
-        <Card key={w.name} style={styles.domainCard}>
-          <View style={styles.domainHead}>
-            <View style={styles.quickIcon}>
-              <MaterialCommunityIcons name={w.icon} size={18} color={colors.brand.violet400} />
+      {(biz?.workforce ?? []).map((w) => {
+        const card = (
+          <Card style={styles.domainCard}>
+            <View style={styles.domainHead}>
+              <View style={styles.quickIcon}>
+                <MaterialCommunityIcons name={w.icon} size={18} color={colors.brand.violet400} />
+              </View>
+              <Text style={styles.domainName}>{w.name}</Text>
+              <Badge label={w.status === "Healthy" ? "SEHAT" : "PERLU PERHATIAN"} kind={DOMAIN_STATUS_KIND[w.status] || "neutral"} />
             </View>
-            <Text style={styles.domainName}>{w.name}</Text>
-            <Badge label={w.status === "Healthy" ? "SEHAT" : "PERLU PERHATIAN"} kind={DOMAIN_STATUS_KIND[w.status] || "neutral"} />
-          </View>
-          <Text style={styles.domainLine}>{w.line1}</Text>
-          <Text style={styles.domainLine}>{w.line2}</Text>
-        </Card>
-      ))}
+            <Text style={styles.domainLine}>{w.line1}</Text>
+            <Text style={styles.domainLine}>{w.line2}</Text>
+          </Card>
+        );
+        return w.route ? (
+          <Pressable key={w.name} onPress={() => router.push(w.route as any)}>{card}</Pressable>
+        ) : (
+          <View key={w.name}>{card}</View>
+        );
+      })}
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionLabel}>PERLU PERHATIAN</Text>

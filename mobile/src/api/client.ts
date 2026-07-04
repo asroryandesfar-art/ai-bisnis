@@ -168,6 +168,47 @@ export const api = {
   uninstallMarketplaceInstall: (installId: string) =>
     request<any>(`/api/marketplace/installs/${installId}/uninstall`, { method: "POST" }),
 
+  // Finance Center -- mirrors web's renderFinance (frontend/app.js).
+  financeInvoices: (limit = 50) => request<{ invoices: any[] }>(`/api/finance/invoices?limit=${limit}`),
+  financeCreateInvoice: (body: { customer_name: string; amount_idr: number; customer_contact?: string; due_date?: string }) =>
+    request<any>("/api/finance/invoices", { method: "POST", body }),
+  financeUpdateInvoiceStatus: (id: string, status: string) => request<any>(`/api/finance/invoices/${id}/status`, { method: "PATCH", body: { status } }),
+  financeExpenses: (limit = 50) => request<{ expenses: any[] }>(`/api/finance/expenses?limit=${limit}`),
+  financeCreateExpense: (body: { description: string; category?: string; amount_idr: number }) =>
+    request<any>("/api/finance/expenses", { method: "POST", body }),
+  financeApproveExpense: (id: string, approve: boolean) => request<any>(`/api/finance/expenses/${id}/approval`, { method: "PATCH", body: { approve } }),
+
+  // Marketing Center -- mirrors web's renderMarketing.
+  marketingContent: (limit = 50) => request<{ content: any[] }>(`/api/marketing/content?limit=${limit}`),
+  marketingCampaigns: (limit = 50) => request<{ campaigns: any[] }>(`/api/marketing/campaigns?limit=${limit}`),
+  marketingCreateCampaign: (body: { name: string; goal?: string | null }) => request<any>("/api/marketing/campaigns", { method: "POST", body }),
+  marketingGenerateContent: (body: { platform: string; brief: string }) => request<any>("/api/marketing/content/generate", { method: "POST", body }),
+  marketingApproveContent: (id: string) => request<any>(`/api/marketing/content/${id}/approve`, { method: "PATCH" }),
+  marketingPublishContent: (id: string) => request<any>(`/api/marketing/content/${id}/publish`, { method: "PATCH" }),
+  marketingCancelContent: (id: string) => request<any>(`/api/marketing/content/${id}`, { method: "DELETE" }),
+
+  // HR Center -- mirrors web's renderHR.
+  hrCandidates: (limit = 50) => request<{ candidates: any[] }>(`/api/hr/candidates?limit=${limit}`),
+  hrCreateCandidate: (body: { name: string; position_applied?: string | null }) => request<any>("/api/hr/candidates", { method: "POST", body }),
+  hrScoreCandidate: (id: string, body: { position: string }) => request<any>(`/api/hr/candidates/${id}/score`, { method: "POST", body }),
+  hrDeleteCandidate: (id: string) => request<any>(`/api/hr/candidates/${id}`, { method: "DELETE" }),
+  hrEmployees: (limit = 50) => request<{ employees: any[] }>(`/api/hr/employees?limit=${limit}`),
+  hrCreateEmployee: (body: { full_name: string; position?: string | null }) => request<any>("/api/hr/employees", { method: "POST", body }),
+  hrGenerateEvaluation: (employeeId: string, body: { role: string; notes: string }) =>
+    request<any>(`/api/hr/employees/${employeeId}/evaluations/generate`, { method: "POST", body }),
+
+  // Operations Center -- mirrors web's renderOperations.
+  opsAlerts: (params: { status?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    return request<{ alerts: any[] }>(`/api/operations/alerts?${q.toString()}`);
+  },
+  opsUpdateAlert: (id: string, status: string) => request<any>(`/api/operations/alerts/${id}`, { method: "PATCH", body: { status } }),
+  opsScan: () => request<any>("/api/operations/scan", { method: "POST" }),
+  opsReports: (limit = 10) => request<{ reports: any[] }>(`/api/operations/reports?limit=${limit}`),
+  opsGenerateReport: (reportType: string) => request<any>("/api/operations/reports/generate", { method: "POST", body: { report_type: reportType } }),
+
   // Business-command-center dashboards -- same 7 sub-dashboards the web
   // renderDashboard() aggregates. Each is permission-gated (finance.read etc)
   // so callers should tolerate failure (Promise.allSettled), matching the web
