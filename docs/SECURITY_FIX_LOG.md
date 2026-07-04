@@ -49,4 +49,22 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Cara fix:** Kunci rate-limit diambil **server-side, anti-spoof**: prioritas `CF-Connecting-IP` (di-set Cloudflare di depan tunnel), fallback IP koneksi; **X-Forwarded-For leftmost & identitas body sengaja diabaikan**. `user_meta` tetap dipakai untuk identitas percakapan/memory (fitur tak berubah). Layer per-org/plan & per-bot pada RateLimiter dipertahankan. Ukuran input tetap dibatasi `ChatReq.message` max 2000 (server-side).
 - **Test ditambahkan:** kunci pakai CF-Connecting-IP; XFF spoof diabaikan; kunci tak bergantung body userId; IP sama dispam → BLOCKED; IP berbeda dilacak terpisah; pesan >2000 char ditolak.
 - **Hasil test:** `test_chat_rate_limit.py` 6 passed; regresi (public demo + smoke) 21 passed.
+- **Commit:** `c0ba092`
+
+### H-04 — Local Agent command/shell risk (RCE + kebocoran secret)
+- **Severity:** 🟠 High
+- **Masalah:** `botnesia_local_agent.py` menjalankan command via `shell=True` dengan gate hanya heuristik blocklist; `SAFE_READONLY_COMMANDS` meng-auto-run `cat`/`env`/`printenv` (bisa baca `.env`/kunci). Tidak ada hard-block, pembatasan direktori, atau audit.
+- **File diubah:** `botnesia_local_agent.py` (hard denylist, secret-file guard, env-dump guard, cwd restriction, audit log; guard di `tool_run_command`/`tool_read_file`/`tool_write_file`; `cat`/`env`/`printenv` dikeluarkan dari auto-safe), `test_local_agent_command_guard.py` (baru).
+- **Cara fix:**
+  1. **Hard denylist** (`is_forbidden`): rm -rf / ~, sudo/su, mkfs, dd, shutdown/reboot, chmod 777, `curl|bash`/`wget|sh`, fork bomb → diblok TOTAL (tak bisa di-approve).
+  2. **Secret guard** (`references_secret`): blok referensi `.env`/`id_rsa`/`*.pem`/`*.key`/`.ssh`/`.aws`/`credentials`/`service_role`/`.pgpass`/dll; `.env.example` dikecualikan. Diterapkan juga ke read/write file.
+  3. **Env-dump guard**: `env`/`printenv`/`echo $*KEY*` diblok.
+  4. **Working-directory restriction** (`is_within_allowed_dir`): default HOME (override `BOTNESIA_AGENT_ROOTS`); path traversal/keluar area ditolak (setelah `realpath`).
+  5. **Audit log** lokal `~/.botnesia/agent_audit.log` untuk tiap keputusan. Timeout (30s) & output cap (50KB) dipertahankan. `shell=True` dipertahankan (fitur pipe/glob) TAPI kini di belakang hard-guard ketat — keputusan owner: fitur tidak dihapus.
+- **Test ditambahkan:** 39 kasus — destruktif diblok; baca-secret/env-dump diblok; `.env.example` diizinkan; command wajar tetap jalan; cwd di luar root & path traversal ditolak; limit terkonfigurasi.
+- **Hasil test:** `test_local_agent_command_guard.py` 39 passed; regresi `test_local_agent_router.py` total 48 passed.
 - **Commit:** _(diisi setelah commit)_
+
+## Catatan / Risiko Tersisa
+- **C-01 butuh aksi owner:** guard aktif tapi warn-only sampai owner set `SECRET_KEY` kuat (≥32 char) di `.env` lalu `STRICT_SECRETS=1`. Saat rotasi, set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama.
+- **H-04 `shell=True`:** tetap ada sesuai keputusan owner (fitur pipe/glob). Guard mempersempit drastis tapi shell-obfuscation ekstrem tak 100% tertutup; audit log membantu deteksi.
