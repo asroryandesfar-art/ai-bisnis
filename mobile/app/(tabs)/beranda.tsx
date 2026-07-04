@@ -362,6 +362,14 @@ export default function Beranda() {
       </View>
 
       <View style={styles.sectionHead}>
+        <Text style={styles.sectionLabel}>AI COMMAND CENTER</Text>
+      </View>
+      <View style={styles.quickGrid}>
+        <Quick icon="account-hard-hat" title="Workforce Overview" sub="Semua domain AI" onPress={() => router.push("/workforce-overview")} />
+        <Quick icon="link-lock" title="Casper Workflow" sub="Blockchain audit proof" onPress={() => router.push("/casper")} />
+      </View>
+
+      <View style={styles.sectionHead}>
         <Text style={styles.sectionLabel}>STATUS AI WORKFORCE</Text>
       </View>
       {(biz?.workforce ?? []).map((w) => {

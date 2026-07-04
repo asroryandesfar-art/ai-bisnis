@@ -306,6 +306,21 @@ export default function Knowledge() {
               <Text style={styles.kbLinkText}>Buka Knowledge Builder — FAQ & SOP otomatis dari dokumen ini</Text>
               <Ionicons name="chevron-forward" size={16} color={colors.text.faint} />
             </Pressable>
+            <Pressable style={styles.kbLink} onPress={() => router.push("/learning")}>
+              <MaterialCommunityIcons name="thumb-up-outline" size={16} color={colors.brand.violet400} />
+              <Text style={styles.kbLinkText}>Feedback Learning — rating jawaban AI dari pelanggan</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.text.faint} />
+            </Pressable>
+            <Pressable style={styles.kbLink} onPress={() => router.push("/self-learning")}>
+              <MaterialCommunityIcons name="school-outline" size={16} color={colors.brand.violet400} />
+              <Text style={styles.kbLinkText}>Self-Learning Center — insight dari percakapan</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.text.faint} />
+            </Pressable>
+            <Pressable style={styles.kbLink} onPress={() => router.push("/improvement")}>
+              <MaterialCommunityIcons name="auto-fix" size={16} color={colors.brand.violet400} />
+              <Text style={styles.kbLinkText}>Improvement Center — self-evaluation AI</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.text.faint} />
+            </Pressable>
 
             {/* Dokumen Terunggah (document library -- distinct from URL source tracking below) */}
             <Text style={styles.sectionLabel}>DOKUMEN TERUNGGAH ({documents.length})</Text>

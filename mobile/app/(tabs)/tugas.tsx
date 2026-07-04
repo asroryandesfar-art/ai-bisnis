@@ -361,8 +361,26 @@ export default function Tugas() {
             </Card>
           );
         })}
+
+        {/* ── AGENT OS ── */}
+        <Text style={styles.sectionLabel}>AGENT OS</Text>
+        <View style={styles.agentOsGrid}>
+          <AgentOsLink icon="robot-outline" label="Agent Center" onPress={() => router.push("/agent-center")} />
+          <AgentOsLink icon="routes" label="Routing Logs" onPress={() => router.push("/routing-logs")} />
+          <AgentOsLink icon="eye-outline" label="Observability" onPress={() => router.push("/observability")} />
+          <AgentOsLink icon="cash-multiple" label="Cost Intelligence" onPress={() => router.push("/costs")} />
+        </View>
       </ScrollView>
     </View>
+  );
+}
+
+function AgentOsLink({ icon, label, onPress }: { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.agentOsCard} onPress={onPress}>
+      <MaterialCommunityIcons name={icon} size={18} color={colors.brand.violet400} />
+      <Text style={styles.agentOsLabel} numberOfLines={2}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -391,6 +409,13 @@ const styles = StyleSheet.create({
   sectionLabel: { color: colors.text.muted, fontSize: 11, fontWeight: "700", letterSpacing: 0.5, marginTop: spacing.sm },
   wfSectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
   wfAddText: { color: colors.brand.violet400, fontSize: 12, fontWeight: "700" },
+
+  agentOsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  agentOsCard: {
+    width: "47.5%", flexGrow: 1, backgroundColor: colors.bg.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.bg.border,
+    padding: spacing.md, gap: spacing.xs, alignItems: "flex-start",
+  },
+  agentOsLabel: { color: colors.text.body, fontSize: 12, fontWeight: "700" },
 
   wfStatRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   wfStatCard: { flex: 1, backgroundColor: colors.bg.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.bg.border, paddingVertical: spacing.md, alignItems: "center" },
