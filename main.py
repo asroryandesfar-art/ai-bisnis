@@ -1855,6 +1855,9 @@ _PLAN_LIMITS: dict[str, dict[str, int]] = {
     "scale": {"bot_limit": 10, "conv_limit": 10000, "doc_limit": 200},
 }
 
+# Urutan biaya paket (kecil→besar). Dipakai untuk mencegah upgrade tanpa bayar.
+_PLAN_RANK: dict[str, int] = {"starter": 0, "growth": 1, "scale": 2}
+
 
 @app.get("/org")
 async def get_org(
@@ -1928,6 +1931,20 @@ async def update_org_plan(
     plan = (body.plan or "").strip().lower()
     if plan not in _PLAN_LIMITS:
         raise HTTPException(400, "Plan tidak valid (starter/growth/scale)")
+
+    # H-01/H-02: endpoint legacy ini TIDAK boleh dipakai untuk upgrade ke tier
+    # berbayar lebih tinggi tanpa pembayaran. `organizations.plan` hanya bisa
+    # NAIK lewat alur checkout terverifikasi (invoice + webhook Midtrans di
+    # bn_platform/billing.py). Di sini hanya izinkan downgrade / tetap sama;
+    # upgrade diarahkan ke /api/billing/checkout.
+    current_plan = ((await pool.fetchval(
+        "SELECT plan FROM organizations WHERE id=$1", user["org_id"]
+    )) or "starter").strip().lower()
+    if _PLAN_RANK.get(plan, 0) > _PLAN_RANK.get(current_plan, 0):
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "Upgrade paket harus melalui pembayaran. Gunakan /api/billing/checkout.",
+        )
 
     # Cegah downgrade kalau resource sekarang melebihi limit baru.
     active_bots = await pool.fetchval(
