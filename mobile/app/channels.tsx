@@ -70,7 +70,9 @@ export default function Channels() {
           <Ionicons name="chevron-back" size={22} color={colors.text.primary} />
         </Pressable>
         <Text style={styles.topTitle}>Channels</Text>
-        <View style={{ width: 32 }} />
+        <Pressable style={styles.iconBtn} onPress={() => router.push("/communication-center")}>
+          <MaterialCommunityIcons name="chart-line" size={20} color={colors.brand.violet400} />
+        </Pressable>
       </View>
 
       <ScrollView
