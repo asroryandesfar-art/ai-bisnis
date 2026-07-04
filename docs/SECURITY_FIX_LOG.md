@@ -21,4 +21,14 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 
 ## Fixed High
 
-_(menyusul)_
+### H-01 (audit ref H-03) — RBAC privilege escalation (admin bisa jadi owner)
+- **Severity:** 🟠 High
+- **Masalah:** `/rbac/assign` & `/rbac/invite` bergating `team.manage` (dimiliki admin), tapi tak ada plafon privilege → admin bisa assign role `owner`/`admin` ke dirinya sendiri → eskalasi.
+- **File diubah:** `bn_platform/rbac.py` (helper `_role_rank`, `assert_can_grant_role`, `actor_highest_rank` + enforcement di assign/invite/revoke), `test_rbac_privilege_escalation.py` (baru).
+- **Cara fix:**
+  1. Hanya Owner (rank 0) boleh memberikan/mencabut role owner/admin.
+  2. Aktor tak boleh memberi role lebih tinggi dari role tertinggi miliknya (anti self-promote & lateral escalate).
+  3. Tenant isolation sudah ada (assign/revoke cek `org_id`); audit log role_change sudah ada — dipertahankan.
+- **Test ditambahkan:** `test_rbac_privilege_escalation.py` — owner grant apa saja OK; admin gagal grant owner/admin; manager/viewer gagal eskalasi; self-promote admin→owner ditolak 403.
+- **Hasil test:** 12 passed; regresi permission (`test_bot_permission`, `test_org_plan_permission`, smoke) 19 passed.
+- **Commit:** _(diisi setelah commit)_
