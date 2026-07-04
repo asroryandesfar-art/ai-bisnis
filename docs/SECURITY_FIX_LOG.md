@@ -65,6 +65,16 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Hasil test:** `test_local_agent_command_guard.py` 39 passed; regresi `test_local_agent_router.py` total 48 passed.
 - **Commit:** `144253c` (+ `05e6b2f` isolasi rate-limiter e2e untuk H-02)
 
+## Fixed Medium
+
+### M-01 — Kebocoran error internal ke klien
+- **Severity:** 🟡 Medium
+- **Masalah:** `/auth/login`, `/auth/register`, dan `get_pool` mengirim `detail=f"...{e}"` (detail exception DB/skema/DSN) ke klien.
+- **File diubah:** `main.py` (3 handler → pesan generik + `logger.exception/error`), `test_error_no_leak.py` (baru).
+- **Cara fix:** Pesan generik ke user; detail lengkap hanya di log server. CSV-import error (parse file user sendiri) sengaja dipertahankan sebagai UX (bukan info-leak internal).
+- **Test:** paksa error internal → status 500 & detail tidak memuat marker sensitif. 2 passed.
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.

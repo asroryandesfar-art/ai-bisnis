@@ -718,10 +718,12 @@ async def get_pool() -> asyncpg.Pool:
             )
             _pool_loop = loop
         except Exception as e:
-            # Untuk request handler: jangan 500 "misterius" kalau DB down
+            # Untuk request handler: jangan 500 "misterius" kalau DB down.
+            # M-01: detail koneksi (host/DSN) hanya di log server, bukan ke klien.
+            logger.error("Koneksi database gagal: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Database belum terhubung: {e}",
+                detail="Layanan sedang tidak tersedia (database). Coba lagi nanti.",
             )
     return _pool
 
@@ -1752,10 +1754,12 @@ async def register(body: RegisterReq, request: Request, pool=Depends(get_pool)):
     except HTTPException:
         raise
     except Exception as e:
-        # Biasanya: schema belum dibuat / permission CREATE EXTENSION / tabel belum ada
+        # M-01: jangan bocorkan detail exception (skema/DB) ke klien. Log lengkap
+        # di server, kirim pesan generik ke user.
+        logger.exception("Register gagal (org=%s email=%s): %s", body.org_name, email, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Register gagal: {e}",
+            detail="Registrasi gagal karena kesalahan server. Coba lagi nanti.",
         )
 
     session_id = await _start_session(pool, user_id=user_id, org_id=org_id, email=email, request=request)
@@ -1817,9 +1821,11 @@ async def login(body: LoginReq, request: Request, pool=Depends(get_pool)):
     except HTTPException:
         raise
     except Exception as e:
+        # M-01: pesan generik ke klien, detail hanya di log server.
+        logger.exception("Login gagal (email=%s): %s", email, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login gagal: {e}",
+            detail="Login gagal karena kesalahan server. Coba lagi nanti.",
         )
 
 
