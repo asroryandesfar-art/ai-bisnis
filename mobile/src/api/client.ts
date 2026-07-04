@@ -15,7 +15,7 @@ export class APIError extends Error {
   }
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "https://api.botnesia.uk";
+export const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "https://api.botnesia.uk";
 
 type Listener = () => void;
 const unauthorizedListeners = new Set<Listener>();
@@ -208,6 +208,24 @@ export const api = {
   opsScan: () => request<any>("/api/operations/scan", { method: "POST" }),
   opsReports: (limit = 10) => request<{ reports: any[] }>(`/api/operations/reports?limit=${limit}`),
   opsGenerateReport: (reportType: string) => request<any>("/api/operations/reports/generate", { method: "POST", body: { report_type: reportType } }),
+
+  // Multimedia Studio -- mirrors web's renderMultimedia (frontend/app.js).
+  imagesGenerate: (body: { prompt: string; style?: string; size?: string; provider?: string; bot_id?: string | null }) =>
+    request<{ image_url: string; provider: string; generation_time: number }>("/api/images/generate", { method: "POST", body }),
+  imagesHistory: (botId?: string | null, limit = 24) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (botId) q.set("bot_id", botId);
+    return request<{ items: any[] }>(`/api/images/history?${q.toString()}`);
+  },
+  imagesAnalyze: (fileUri: string, fileName: string, mimeType: string, opts: { question?: string; mode?: string; botId?: string | null } = {}) => {
+    const form = new FormData();
+    form.append("file", { uri: fileUri, name: fileName, type: mimeType } as any);
+    const q = new URLSearchParams({ question: opts.question || "", mode: opts.mode || "describe" });
+    if (opts.botId) q.set("bot_id", opts.botId);
+    return request<{ answer: string; mode: string; model: string }>(`/api/images/analyze?${q.toString()}`, { method: "POST", body: form });
+  },
+  documentsGenerate: (body: { format: string; prompt: string; bot_id?: string | null }) =>
+    request<{ file_url: string; format: string; title: string }>("/api/documents/generate", { method: "POST", body }),
 
   // Business-command-center dashboards -- same 7 sub-dashboards the web
   // renderDashboard() aggregates. Each is permission-gated (finance.read etc)

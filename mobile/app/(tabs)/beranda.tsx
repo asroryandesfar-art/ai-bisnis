@@ -305,6 +305,7 @@ export default function Beranda() {
         <Quick icon="lightning-bolt" title="Otomatisasi" sub={`${data?.automationPending ?? "–"} berjalan`} tint={colors.status.warning} bg={colors.status.warningBgStrong} onPress={() => router.push("/tugas")} />
         <Quick icon="monitor-dashboard" title="Computer Agent" sub="Siap digunakan" onPress={() => router.push("/computer")} />
         <Quick icon="book-open-variant" title="Knowledge Base" sub="Dokumen & sumber" onPress={() => router.push("/knowledge")} />
+        <Quick icon="image-multiple-outline" title="Multimedia Studio" sub="Gambar & dokumen AI" onPress={() => router.push("/multimedia")} />
       </View>
 
       <Pressable style={styles.approvalRow} onPress={() => router.push("/antrian")}>

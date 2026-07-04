@@ -46,6 +46,7 @@ export default function RootLayout() {
         <Stack.Screen name="marketing" />
         <Stack.Screen name="hr" />
         <Stack.Screen name="operations" />
+        <Stack.Screen name="multimedia" />
       </Stack>
     </>
   );
