@@ -87,9 +87,14 @@ export default function Agen() {
         title="Agen AI"
         subtitle={`${bots.length} agen terdaftar · ${activeCount} aktif`}
         action={
-          <Pressable style={styles.addButton} onPress={() => router.push("/agent-editor")}>
-            <Ionicons name="add" size={22} color="#fff" />
-          </Pressable>
+          <>
+            <Pressable style={styles.marketplaceBtn} onPress={() => router.push("/marketplace")}>
+              <MaterialCommunityIcons name="storefront-outline" size={18} color={colors.brand.violet400} />
+            </Pressable>
+            <Pressable style={styles.addButton} onPress={() => router.push("/agent-editor")}>
+              <Ionicons name="add" size={22} color="#fff" />
+            </Pressable>
+          </>
         }
       />
 
@@ -191,6 +196,10 @@ export default function Agen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg.base },
+  marketplaceBtn: {
+    width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.bg.border,
+    alignItems: "center", justifyContent: "center",
+  },
   addButton: {
     width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brand.violet600,
     alignItems: "center", justifyContent: "center",

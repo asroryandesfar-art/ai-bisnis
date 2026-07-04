@@ -155,6 +155,19 @@ export const api = {
   wfPublish: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}/publish`, { method: "POST" }),
   wfUnpublish: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}/unpublish`, { method: "POST" }),
 
+  // Marketplace -- mirrors web's renderMarketplace (frontend/app.js).
+  marketplaceTemplates: () => request<{ templates: any[] }>("/api/marketplace/templates"),
+  marketplaceCategories: () => request<{ categories: any[] }>("/api/marketplace/categories"),
+  marketplaceAnalytics: () => request<any>("/api/marketplace/analytics"),
+  marketplaceRecommended: (q = "", limit = 12) => request<{ templates: any[] }>(`/api/marketplace/recommended?q=${encodeURIComponent(q)}&limit=${limit}`),
+  marketplaceInstalls: () => request<{ installs: any[] }>("/api/marketplace/installs"),
+  installMarketplaceTemplate: (templateKey: string, botName?: string | null) =>
+    request<any>("/api/marketplace/install", { method: "POST", body: { template_key: templateKey, bot_name: botName ?? null } }),
+  updateMarketplaceInstall: (installId: string, botName?: string | null) =>
+    request<any>(`/api/marketplace/installs/${installId}/update`, { method: "POST", body: { bot_name: botName ?? null } }),
+  uninstallMarketplaceInstall: (installId: string) =>
+    request<any>(`/api/marketplace/installs/${installId}/uninstall`, { method: "POST" }),
+
   // Business-command-center dashboards -- same 7 sub-dashboards the web
   // renderDashboard() aggregates. Each is permission-gated (finance.read etc)
   // so callers should tolerate failure (Promise.allSettled), matching the web
