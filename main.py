@@ -214,6 +214,11 @@ class Settings(BaseSettings):
     # (fail-closed). Default False -> hanya WARN keras (fail-open sementara)
     # supaya sistem live tidak tiba-tiba mati sebelum operator merotasi key.
     strict_secrets:       bool = False
+    # M-02: bila True, GET /media/{path} WAJIB menyertakan tanda tangan (?sig=)
+    # yang sah. Default False (backward-compat: URL lama tetap terbuka) supaya
+    # bisa diaktifkan bertahap. Endpoint yang mengembalikan URL media selalu
+    # menandatanganinya, jadi mengaktifkan flag ini tidak memutus URL baru.
+    media_require_signature: bool = False
 
     @property
     def effective_encryption_key(self) -> str:
@@ -2668,7 +2673,7 @@ async def _run_image_generation(
         logger.warning("Gagal mencatat cost_records image", exc_info=True)
 
     return {
-        "image_url": url,
+        "image_url": _media_signed_url(url),
         "provider": result.provider,
         "model": result.model,
         "generation_time": generation_time,
@@ -2936,7 +2941,14 @@ async def api_image_history(
                ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
             user["org_id"], limit, offset,
         )
-    return {"items": [dict(r) for r in rows]}
+    items = []
+    for r in rows:
+        item = dict(r)
+        # M-02: tandatangani URL media saat dikirim ke klien (DB tetap simpan
+        # path kanonik tanpa sig).
+        item["image_url"] = _media_signed_url(item.get("image_url"))
+        items.append(item)
+    return {"items": items}
 
 
 _IMAGE_ANALYZE_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
@@ -3069,14 +3081,36 @@ async def api_generate_document(
     except Exception:
         logger.warning("Gagal mencatat generated_documents", exc_info=True)
 
-    return {"file_url": url, "format": body.format, "title": spec["title"]}
+    return {"file_url": _media_signed_url(url), "format": body.format, "title": spec["title"]}
+
+
+def _sign_media_rel(rel: str) -> str:
+    """Tanda tangan HMAC untuk path media relatif (mis. 'generated/abc.png')."""
+    rel = (rel or "").split("?", 1)[0].lstrip("/")
+    return hmac.new(
+        cfg.effective_encryption_key.encode("utf-8"), rel.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+def _media_signed_url(url: str) -> str:
+    """Tambahkan ?sig= ke URL /media/... . Idempoten & aman bila bukan URL media."""
+    if not url or not isinstance(url, str) or not url.startswith("/media/"):
+        return url
+    rel = url[len("/media/"):].split("?", 1)[0]
+    return f"/media/{rel}?sig={_sign_media_rel(rel)}"
 
 
 @app.get("/media/{path:path}", include_in_schema=False)
-async def serve_media(path: str):
+async def serve_media(path: str, sig: str | None = None):
     p = (_MEDIA_DIR / path).resolve()
     if not str(p).startswith(str(_MEDIA_DIR)) or not p.exists() or not p.is_file():
         raise HTTPException(404, "Not found")
+    # M-02: bila enforcement aktif, wajib tanda tangan sah (cegah akses lintas-
+    # tenant via URL tebakan). Default (flag off) tetap melayani URL lama.
+    if cfg.media_require_signature:
+        expected = _sign_media_rel(path)
+        if not (sig and hmac.compare_digest(sig, expected)):
+            raise HTTPException(403, "Tautan media tidak sah atau kedaluwarsa.")
     return FileResponse(p)
 
 

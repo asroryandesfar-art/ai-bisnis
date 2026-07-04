@@ -92,6 +92,15 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** header hadir di `/dashboard` & `/health`; widget.js tetap tersaji. 3 passed.
 - **Commit:** _(diisi setelah commit)_
 
+### M-02 — `GET /media/{path}` publik tanpa cek tenant
+- **Severity:** 🟡 Medium
+- **Masalah:** Media disajikan publik tanpa auth/cek pemilik; hanya mengandalkan UUID acak (obscurity).
+- **File diubah:** `main.py` (`_sign_media_rel`/`_media_signed_url`, enforcement di `serve_media`, sign di image-gen/doc-gen/history), `.env.example`, `test_media_signed_url.py` (baru).
+- **Cara fix (keputusan owner: signed-URL flag default-off):** URL media ditandatangani HMAC (key enkripsi) saat dikirim ke klien; DB tetap simpan path kanonik. `serve_media` menegakkan `?sig=` sah HANYA bila `MEDIA_REQUIRE_SIGNATURE=1` (default 0 = URL lama tetap terbuka, tak ada breakage). Aktifkan flag saat siap; URL baru sudah bertanda tangan. `<img>` tetap jalan (sig di query, bukan header).
+- **Test:** sign deterministik & idempoten; non-media diabaikan; flag off → terbuka; flag on → tanpa/sig-salah 403, sig sah 200. 5 passed; regresi image/doc 55 passed.
+- **Status:** Partially Fixed (mekanisme siap; enforcement penuh saat owner set `MEDIA_REQUIRE_SIGNATURE=1`).
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
