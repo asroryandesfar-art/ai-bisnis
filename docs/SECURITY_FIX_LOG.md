@@ -63,7 +63,13 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
   5. **Audit log** lokal `~/.botnesia/agent_audit.log` untuk tiap keputusan. Timeout (30s) & output cap (50KB) dipertahankan. `shell=True` dipertahankan (fitur pipe/glob) TAPI kini di belakang hard-guard ketat — keputusan owner: fitur tidak dihapus.
 - **Test ditambahkan:** 39 kasus — destruktif diblok; baca-secret/env-dump diblok; `.env.example` diizinkan; command wajar tetap jalan; cwd di luar root & path traversal ditolak; limit terkonfigurasi.
 - **Hasil test:** `test_local_agent_command_guard.py` 39 passed; regresi `test_local_agent_router.py` total 48 passed.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `144253c` (+ `05e6b2f` isolasi rate-limiter e2e untuk H-02)
+
+## Ringkasan & Verifikasi Suite
+- **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
+- **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
+- Collection penuh 1212 tests tanpa import-error.
+- Commit: `ddef3e9` (C-01) · `b6b1cbd` (H-01) · `4af3307` (H-02) · `c0ba092` (H-03) · `144253c` (H-04) · `05e6b2f` (isolasi test e2e).
 
 ## Catatan / Risiko Tersisa
 - **C-01 butuh aksi owner:** guard aktif tapi warn-only sampai owner set `SECRET_KEY` kuat (≥32 char) di `.env` lalu `STRICT_SECRETS=1`. Saat rotasi, set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama.
