@@ -188,8 +188,12 @@ export default function AgentCenter() {
             {logEntries.length === 0 ? (
               <Card><Text style={styles.emptyText}>Belum ada entri execution log.</Text></Card>
             ) : (
-              logEntries.map((e) => (
-                <Card key={e.id} style={{ gap: spacing.xs }}>
+              logEntries.map((e, i) => (
+                // agent_execution_log (backend VIEW, schema_platform.sql) exposes
+                // source_id, not id -- and source_id isn't unique across
+                // source_type (chat_agent/workforce_task/computer_agent/... each
+                // have their own id sequence), so key on both plus index.
+                <Card key={`${e.source_type}-${e.source_id}-${i}`} style={{ gap: spacing.xs }}>
                   <View style={styles.rowBetween}>
                     <Badge label={(e.source_type || "").toUpperCase()} kind="neutral" />
                     <Badge label={(e.status || "").toUpperCase()} kind={LOG_STATUS_KIND[e.status] || "neutral"} />
