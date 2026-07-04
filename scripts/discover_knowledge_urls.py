@@ -78,7 +78,6 @@ SOURCES: dict[str, list[Source]] = {
     "general_ai": [
         src("platform.openai.com", "AI Documentation", max_urls=400),
         src("openai.com", "AI Documentation", max_urls=250),
-        src("docs.anthropic.com", "AI Documentation", max_urls=250),
         src("ai.google.dev", "AI Documentation", max_urls=300),
         src("cloud.google.com", "Cloud & DevOps", max_urls=400),
         src("console.groq.com", "AI Documentation", max_urls=150),

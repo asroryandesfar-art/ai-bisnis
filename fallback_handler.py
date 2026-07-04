@@ -174,8 +174,8 @@ class FallbackHandler:
 
     # Model fallback chain: dari paling canggih ke paling ringan
     MODEL_CHAIN = [
-        "anthropic/claude-sonnet-4-5",
-        "anthropic/claude-haiku-4-5",
+        "openai/gpt-4o",
+        "deepseek/deepseek-r1",
         "groq/llama-3.3-70b-versatile",
         "google/gemini-2.0-flash-001",
         "meta-llama/llama-3.1-8b-instruct",
@@ -183,7 +183,7 @@ class FallbackHandler:
 
     def __init__(
         self,
-        primary_model:  str   = "anthropic/claude-sonnet-4-5",
+        primary_model:  str   = "openai/gpt-4o",
         max_retries:    int   = 3,
         base_delay_s:   float = 1.0,
         cache:          ResponseCache | None = None,
@@ -453,7 +453,7 @@ class FallbackHandler:
 
 _global_fallback: FallbackHandler | None = None
 
-def get_fallback_handler(primary_model: str = "anthropic/claude-sonnet-4-5") -> FallbackHandler:
+def get_fallback_handler(primary_model: str = "openai/gpt-4o") -> FallbackHandler:
     global _global_fallback
     if _global_fallback is None:
         _global_fallback = FallbackHandler(primary_model=primary_model)

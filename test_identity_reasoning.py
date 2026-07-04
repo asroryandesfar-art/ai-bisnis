@@ -5,8 +5,8 @@ Follow Up, dan VerificationAgent.score_meta_answer().
 
 Mencakup 10 pertanyaan wajib dari spesifikasi "BotNesia harus berhenti
 terdengar seperti brosur marketing":
-  1. Apa kelebihanmu dibanding ChatGPT dan Claude?
-  2. Apakah kamu lebih pintar dari Claude?
+  1. Apa kelebihanmu dibanding ChatGPT dan Gemini?
+  2. Apakah kamu lebih pintar dari Gemini?
   3. Kenapa saya harus pilih BotNesia?
   4. Apa kelemahan BotNesia?
   5. Kalau ChatGPT lebih pintar, kenapa saya pakai BotNesia?
@@ -34,8 +34,8 @@ from verification_agent import VerificationAgent
 
 
 MANDATORY_QUESTIONS = [
-    "Apa kelebihanmu dibanding ChatGPT dan Claude?",
-    "Apakah kamu lebih pintar dari Claude?",
+    "Apa kelebihanmu dibanding ChatGPT dan Gemini?",
+    "Apakah kamu lebih pintar dari Gemini?",
     "Kenapa saya harus pilih BotNesia?",
     "Apa kelemahan BotNesia?",
     "Kalau ChatGPT lebih pintar, kenapa saya pakai BotNesia?",
@@ -47,8 +47,8 @@ MANDATORY_QUESTIONS = [
 ]
 
 _PRIOR_HISTORY = [
-    {"role": "user", "content": "Apa bedamu dengan Claude?"},
-    {"role": "assistant", "content": "Untuk reasoning umum Claude lebih kuat..."},
+    {"role": "user", "content": "Apa bedamu dengan Gemini?"},
+    {"role": "assistant", "content": "Untuk reasoning umum Gemini lebih kuat..."},
 ]
 
 
@@ -90,8 +90,8 @@ def test_mandatory_questions_are_meta_or_followup():
 
 def test_comparison_questions_mentioning_competitors():
     comparison_questions = [
-        "Apa kelebihanmu dibanding ChatGPT dan Claude?",
-        "Apakah kamu lebih pintar dari Claude?",
+        "Apa kelebihanmu dibanding ChatGPT dan Gemini?",
+        "Apakah kamu lebih pintar dari Gemini?",
         "Kalau ChatGPT lebih pintar, kenapa saya pakai BotNesia?",
         "Apa bedamu dengan chatbot biasa?",
     ]
@@ -126,7 +126,7 @@ def test_short_followups_are_detected_with_history():
 
 
 def test_bedanya_is_both_followup_and_self_awareness():
-    # "Bedanya?" continues a comparison topic ("Apa bedamu dengan Claude?") AND
+    # "Bedanya?" continues a comparison topic ("Apa bedamu dengan Gemini?") AND
     # itself matches the self-awareness pattern — both flags should be set so
     # the answer gets identity/comparison guidance AND the follow-up note.
     rc = ReasoningController()
@@ -164,11 +164,11 @@ _BAD_ANSWER = (
 )
 
 _GOOD_ANSWER = (
-    "Untuk reasoning umum, coding kompleks, dan pengetahuan luas, ChatGPT dan Claude "
+    "Untuk reasoning umum, coding kompleks, dan pengetahuan luas, ChatGPT dan Gemini "
     "kemungkinan masih lebih kuat dibanding BotNesia. Namun BotNesia punya tujuan "
     "berbeda: terhubung dengan data bisnis Anda seperti paket, billing, channel, dan "
-    "knowledge base. BotNesia bukan pengganti ChatGPT/Claude untuk reasoning umum. "
-    "Jadi jika Anda butuh AI umum, gunakan ChatGPT/Claude; jika Anda butuh AI yang "
+    "knowledge base. BotNesia bukan pengganti ChatGPT/Gemini untuk reasoning umum. "
+    "Jadi jika Anda butuh AI umum, gunakan ChatGPT/Gemini; jika Anda butuh AI yang "
     "terhubung dengan operasional bisnis Anda, BotNesia lebih relevan."
 )
 
@@ -176,11 +176,11 @@ _GOOD_ANSWER = (
 def test_score_meta_answer_flags_marketing_brochure_answer():
     agent = VerificationAgent(api_key="test-key")
     brief = ReasoningController().analyze(
-        {"user_message": "Apa kelebihanmu dibanding ChatGPT dan Claude?", "messages": []}
+        {"user_message": "Apa kelebihanmu dibanding ChatGPT dan Gemini?", "messages": []}
     )
 
     scores = agent.score_meta_answer(
-        "Apa kelebihanmu dibanding ChatGPT dan Claude?", _BAD_ANSWER, brief
+        "Apa kelebihanmu dibanding ChatGPT dan Gemini?", _BAD_ANSWER, brief
     )
 
     assert scores["marketing_bias_score"] >= 50
@@ -191,11 +191,11 @@ def test_score_meta_answer_flags_marketing_brochure_answer():
 def test_score_meta_answer_accepts_honest_comparison_answer():
     agent = VerificationAgent(api_key="test-key")
     brief = ReasoningController().analyze(
-        {"user_message": "Apa kelebihanmu dibanding ChatGPT dan Claude?", "messages": []}
+        {"user_message": "Apa kelebihanmu dibanding ChatGPT dan Gemini?", "messages": []}
     )
 
     scores = agent.score_meta_answer(
-        "Apa kelebihanmu dibanding ChatGPT dan Claude?", _GOOD_ANSWER, brief
+        "Apa kelebihanmu dibanding ChatGPT dan Gemini?", _GOOD_ANSWER, brief
     )
 
     assert scores["marketing_bias_score"] == 0
@@ -235,7 +235,7 @@ def test_standard_mode_rewrites_marketing_brochure_meta_answer(monkeypatch):
         "bot_id": "bot-1",
         "org_id": "org-1",
         "conversation_id": "conv-1",
-        "user_message": "Apa kelebihanmu dibanding ChatGPT dan Claude?",
+        "user_message": "Apa kelebihanmu dibanding ChatGPT dan Gemini?",
         "messages": [],
         "knowledge_base_context": "",
         "reasoning_mode": "standard",
@@ -264,7 +264,7 @@ def test_standard_mode_keeps_already_honest_meta_answer(monkeypatch):
         "bot_id": "bot-1",
         "org_id": "org-1",
         "conversation_id": "conv-1",
-        "user_message": "Apakah kamu lebih pintar dari Claude?",
+        "user_message": "Apakah kamu lebih pintar dari Gemini?",
         "messages": [],
         "knowledge_base_context": "",
         "reasoning_mode": "standard",

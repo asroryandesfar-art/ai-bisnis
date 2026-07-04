@@ -94,7 +94,7 @@ CATEGORY_URLS = {
         "https://www.producthunt.com/stories", "https://www.notion.so/help", "https://www.hubspot.com/startups", "https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights",
     ],
     "Technology": [
-        "https://platform.openai.com/docs", "https://docs.anthropic.com/", "https://ai.google.dev/docs",
+        "https://platform.openai.com/docs", "https://ai.google.dev/docs",
         "https://developer.mozilla.org/en-US/docs/Web", "https://docs.python.org/3/", "https://react.dev/learn",
         "https://nextjs.org/docs", "https://nodejs.org/en/learn", "https://docs.aws.amazon.com/", "https://developers.cloudflare.com/",
         "https://owasp.org/www-project-top-ten/", "https://www.postgresql.org/docs/", "https://docs.github.com/",

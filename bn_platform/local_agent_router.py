@@ -2,7 +2,7 @@
 bn_platform/local_agent_router.py — BotNesia Local Agent
 
 Mengizinkan tenant menginstall agen lokal di PC mereka sehingga AI BotNesia
-bisa mengakses file, terminal, dan browser di komputer user — seperti Claude Code.
+bisa mengakses file, terminal, dan browser di komputer user.
 
 Arsitektur:
   User chat → BotNesia cloud (AI reasoning) → WebSocket → Local Agent (PC user)

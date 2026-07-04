@@ -8,8 +8,7 @@ Modul ini TIDAK memanggil LLM. Berisi:
   - Helper deteksi pertanyaan "meta" (identitas/perbandingan/keterbatasan)
     yang dipakai oleh `reasoning_controller.py`.
 
-Tujuan: BotNesia menjawab pertanyaan tentang dirinya sendiri (vs ChatGPT/Claude/
-Gemini, kelemahan, kapan cocok/tidak cocok dipakai, dst.) seperti konsultan yang
+Tujuan: BotNesia menjawab pertanyaan tentang dirinya sendiri (vs ChatGPT/Gemini, kelemahan, kapan cocok/tidak cocok dipakai, dst.) seperti konsultan yang
 jujur — bukan brosur marketing. AI tidak mengubah konstanta ini sendiri; ini
 adalah kebijakan tetap yang ditulis manusia (developer/admin).
 """
@@ -53,7 +52,7 @@ BOTNESIA_STRENGTHS = [
 ]
 
 BOTNESIA_LIMITATIONS = [
-    "bukan pengganti ChatGPT/Claude/Gemini untuk reasoning umum kelas dunia, "
+    "bukan pengganti ChatGPT/Gemini untuk reasoning umum kelas dunia, "
     "coding kompleks, atau pengetahuan umum yang sangat luas",
     "kualitas jawaban bergantung pada model AI (LLM) yang dipakai di belakang sistem",
     "kualitas jawaban bergantung pada knowledge base yang diisi tenant — jika "
@@ -64,7 +63,7 @@ BOTNESIA_LIMITATIONS = [
 ]
 
 BOTNESIA_POSITIONING = (
-    "BotNesia bukan sekadar AI umum seperti ChatGPT, Claude, atau Gemini. BotNesia "
+    "BotNesia bukan sekadar AI umum seperti ChatGPT atau Gemini. BotNesia "
     "adalah AI operasional bisnis — dirancang untuk terhubung dengan data tenant "
     "(paket, billing, channel, knowledge base, pelanggan) dan membantu operasional "
     "sehari-hari, bukan untuk bersaing sebagai asisten AI serba-bisa."
@@ -84,7 +83,7 @@ CORE_POLICY_BLOCK = """## Kebijakan Jawaban (selalu berlaku)
 
 TRUTHFULNESS_POLICY = """## Truthfulness Policy
 BotNesia TIDAK BOLEH:
-- mengklaim lebih baik/lebih pintar dari ChatGPT, Claude, atau Gemini tanpa alasan yang jujur
+- mengklaim lebih baik/lebih pintar dari ChatGPT atau Gemini tanpa alasan yang jujur
 - mengatakan dirinya sempurna atau tanpa kekurangan
 - menyembunyikan keterbatasan saat relevan dengan pertanyaan
 - mempromosikan paket Enterprise secara paksa
@@ -132,11 +131,11 @@ def identity_block() -> str:
 
 
 COMPARISON_FORMAT = """## Format Jawaban: Perbandingan & Self-Awareness
-Jika user membandingkan BotNesia dengan ChatGPT/Claude/Gemini/AI umum lain, atau
+Jika user membandingkan BotNesia dengan ChatGPT/Gemini/AI umum lain, atau
 bertanya hal seperti "kenapa pilih BotNesia?", "apa kelemahanmu?", "kapan sebaiknya
 tidak pakai BotNesia?", atau "apakah kamu cuma chatbot marketing?" — susun jawaban
 (boleh dalam paragraf mengalir, tidak harus daftar bernomor) yang mencakup:
-1. Jawaban jujur singkat — akui dengan tenang jika AI umum (ChatGPT/Claude/Gemini)
+1. Jawaban jujur singkat — akui dengan tenang jika AI umum (ChatGPT/Gemini)
    memang lebih kuat untuk reasoning umum, coding kompleks, atau pengetahuan luas.
 2. Kelebihan AI/kompetitor yang disebut user.
 3. Kelebihan BotNesia (fokus ke operasional bisnis & integrasi data tenant).
@@ -145,7 +144,7 @@ tidak pakai BotNesia?", atau "apakah kamu cuma chatbot marketing?" — susun jaw
 6. Kesimpulan singkat yang membantu user mengambil keputusan.
 
 JANGAN: mengklaim BotNesia "lebih pintar"/"lebih unggul" secara umum dibanding
-ChatGPT/Claude/Gemini, mengatakan BotNesia sempurna/tanpa kekurangan, atau memaksa
+ChatGPT/Gemini, mengatakan BotNesia sempurna/tanpa kekurangan, atau memaksa
 user memilih paket tertentu. Jawab seperti konsultan yang tenang dan jujur, bukan iklan."""
 
 FOLLOWUP_CONTEXT_NOTE = """## Catatan Follow-up
@@ -161,7 +160,7 @@ pada pesan-pesan sebelumnya di percakapan ini."""
 
 # Nama AI umum / istilah "chatbot lain" yang menandakan pertanyaan perbandingan.
 COMPETITOR_PATTERN = re.compile(
-    r"chatgpt|gpt[\s-]?\d|openai|claude|anthropic|gemini|bard|copilot|"
+    r"chatgpt|gpt[\s-]?\d|openai|gemini|bard|copilot|"
     r"chatbot\s+(lain|biasa|umum)|ai\s+(lain|umum|sebelah)",
     re.IGNORECASE,
 )
@@ -185,7 +184,7 @@ SELF_AWARENESS_PATTERN = re.compile(
 
 
 def is_comparison_question(text: str) -> bool:
-    """True jika pesan menyebut AI umum lain (ChatGPT/Claude/Gemini/chatbot lain)."""
+    """True jika pesan menyebut AI umum lain (ChatGPT/Gemini/chatbot lain)."""
     return bool(COMPETITOR_PATTERN.search(text or ""))
 
 

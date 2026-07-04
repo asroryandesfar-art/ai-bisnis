@@ -2,7 +2,7 @@
 ai_providers/openrouter.py — OpenRouter provider.
 
 OpenRouter (https://openrouter.ai) provides access to 200+ LLMs including
-GPT-4o, Claude 3.5 Sonnet, DeepSeek, Qwen, Mistral, Llama, and more
+GPT-4o, DeepSeek, Qwen, Mistral, Llama, and more
 through a single OpenAI-compatible API endpoint.
 
 Set OPENROUTER_API_KEY in .env to activate.  When the key is present the
@@ -29,18 +29,18 @@ _BASE_URL = "https://openrouter.ai/api/v1"
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
 # Best model per task type — benchmarked capability preferences.
-# PRO / complex tasks → stronger models (Claude, DeepSeek-R1, GPT-4o).
+# PRO / complex tasks → stronger models (DeepSeek-R1, GPT-4o).
 # Standard tasks      → gpt-4o-mini (only used when Gemini is unavailable).
 DEFAULT_TASK_MODELS: dict = {
     # ── Complex / Pro tasks ─────────────────────────────────────────────
     "coding":             "deepseek/deepseek-chat",
     "advanced_coding":    "deepseek/deepseek-chat",
-    "reasoning":          "anthropic/claude-3.5-sonnet",
+    "reasoning":          "deepseek/deepseek-r1",
     "deep_reasoning":     "deepseek/deepseek-r1",
-    "document":           "anthropic/claude-3.5-sonnet",
-    "document_analysis":  "anthropic/claude-3.5-sonnet",
-    "planning":           "anthropic/claude-3.5-sonnet",
-    "business_planning":  "anthropic/claude-3.5-sonnet",
+    "document":           "openai/gpt-4o",
+    "document_analysis":  "openai/gpt-4o",
+    "planning":           "deepseek/deepseek-r1",
+    "business_planning":  "deepseek/deepseek-r1",
     "workflow":           "openai/gpt-4o",
     "complex_workflow":   "openai/gpt-4o",
     # ── Standard tasks (fallback when Gemini unavailable) ───────────────
@@ -87,8 +87,7 @@ def _add_token_usage(model: str, pt: int, ct: int) -> None:
 
 class OpenRouterProvider(AIProvider):
     """
-    OpenRouter — single API key, access to GPT-4o, Claude 3.5 Sonnet,
-    DeepSeek, Qwen, Mistral, Llama, and 200+ models via OpenAI-compatible API.
+    OpenRouter — single API key, access to GPT-4o, DeepSeek, Qwen, Mistral, Llama, and 200+ models via OpenAI-compatible API.
 
     Implements AIProvider so it plugs directly into SmartModelRouter.
     """

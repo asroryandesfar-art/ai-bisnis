@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     groq_cheap_model:     str = "llama-3.1-8b-instant"
     groq_base_url:        str = "https://api.groq.com/openai/v1"
     groq_whisper_model:   str = "whisper-large-v3-turbo"
-    # OpenRouter — single key for GPT-4o, Claude, DeepSeek, Qwen, and 200+ models
+    # OpenRouter — single key for GPT-4o, DeepSeek, Qwen, and 200+ models
     openrouter_api_key:   str = ""
     # DeepSeek direct API — deepseek-chat (V3) and deepseek-reasoner (R1)
     deepseek_api_key:     str = ""
@@ -4777,7 +4777,7 @@ async def chat(
            WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 10""",
         conv_id,
     )
-    messages_for_claude = [
+    messages_for_llm = [
         {"role": r["role"], "content": r["content"]}
         for r in reversed(history)
     ]
@@ -5019,7 +5019,7 @@ async def chat(
             "org_id": str(bot["org_id"]),
             "conversation_id": conv_id,
             "user_message": body.message,
-            "messages": messages_for_claude,
+            "messages": messages_for_llm,
             "knowledge_base_context": system,
             "resolved": False,
             "metadata": safe_user_meta,
@@ -5633,7 +5633,7 @@ def _build_system_prompt(
 
     style_guide = (
         "## Gaya jawaban\n"
-        "Tulis jawaban dengan gaya seperti asisten AI modern (mirip Claude/ChatGPT): jelas, ringkas, "
+        "Tulis jawaban dengan gaya seperti asisten AI modern: jelas, ringkas, "
         "dan langsung ke inti, tapi tetap ramah dan natural - bukan kaku seperti robot.\n"
         "- Buka dengan jawaban atau inti informasi yang dicari user, baru tambahkan detail pendukung.\n"
         "- Gunakan paragraf pendek (1-3 kalimat). Pisahkan ide berbeda dengan baris baru.\n"
@@ -6019,7 +6019,7 @@ async def health():
                 },
                 "openrouter": {
                     "active": bool(cfg.openrouter_api_key),
-                    "note": "GPT-4o, Claude 3.5, DeepSeek, Qwen, and 200+ models",
+                    "note": "GPT-4o, DeepSeek, Qwen, and 200+ models",
                 },
                 "groq": {
                     "active": bool(cfg.groq_api_key),

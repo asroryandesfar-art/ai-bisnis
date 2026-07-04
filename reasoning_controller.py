@@ -12,7 +12,7 @@ menulis jawaban:
    dengan melanjutkan konteks sebelumnya, bukan topik baru?
 3. Apakah pertanyaan ini menyentuh identitas/posisi BotNesia (perlu Self
    Identity Engine + Comparison Engine + Truthfulness/Sales Control Policy)?
-4. Apakah ada risiko overclaim (mis. "lebih pintar dari Claude")?
+4. Apakah ada risiko overclaim (mis. "lebih pintar dari AI umum lain")?
 5. Apakah ini pertanyaan keputusan/strategi bisnis user (mis. "haruskah saya
    menurunkan harga?", "kenapa bisnis saya sepi?") yang perlu Strategic
    Thinking + Business Consultant Mode, dan jika user menyebut beberapa

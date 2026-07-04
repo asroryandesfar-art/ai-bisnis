@@ -28,10 +28,6 @@ DEFAULT_MODEL_PRICING = {
     "openai/gpt-4o":                               {"input": Decimal("2.50"),   "output": Decimal("10.00")},
     "openai/gpt-4o-mini":                          {"input": Decimal("0.15"),   "output": Decimal("0.60")},
     "openai/o1-mini":                              {"input": Decimal("3.00"),   "output": Decimal("12.00")},
-    # OpenRouter — Anthropic via OpenRouter
-    "anthropic/claude-3.5-sonnet":                 {"input": Decimal("3.00"),   "output": Decimal("15.00")},
-    "anthropic/claude-3.5-haiku":                  {"input": Decimal("0.80"),   "output": Decimal("4.00")},
-    "anthropic/claude-3-haiku":                    {"input": Decimal("0.25"),   "output": Decimal("1.25")},
     # OpenRouter — DeepSeek via OpenRouter
     "deepseek/deepseek-chat":                      {"input": Decimal("0.27"),   "output": Decimal("1.10")},
     "deepseek/deepseek-r1":                        {"input": Decimal("0.55"),   "output": Decimal("2.19")},

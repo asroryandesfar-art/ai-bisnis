@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 BotNesia Local Agent — jalankan di komputer Anda agar AI BotNesia bisa
-mengakses file, terminal, dan browser lokal (seperti Claude Code).
+mengakses file, terminal, dan browser lokal.
 
 Tidak perlu install manual — script ini auto-install dependency yang dibutuhkan.
 
@@ -230,6 +230,131 @@ async def tool_get_info(args: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
+async def tool_search_text(args: dict) -> dict:
+    """Cari teks/pattern di dalam file (seperti grep)."""
+    pattern = args.get("pattern", "")
+    search_dir = os.path.expanduser(args.get("dir", "."))
+    file_ext = args.get("file_ext", "")  # e.g. ".py", ".js"
+    if not pattern:
+        return {"success": False, "error": "Parameter 'pattern' diperlukan"}
+    if not os.path.isdir(search_dir):
+        return {"success": False, "error": f"Direktori tidak ditemukan: {search_dir}"}
+    try:
+        results = []
+        for root, dirs, files in os.walk(search_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git", "dist", ".venv")]
+            for fname in files:
+                if file_ext and not fname.endswith(file_ext):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                        for i, line in enumerate(f, 1):
+                            if pattern.lower() in line.lower():
+                                results.append({"file": fpath, "line": i, "text": line.rstrip()})
+                                if len(results) >= 100:
+                                    break
+                except Exception:
+                    pass
+                if len(results) >= 100:
+                    break
+            if len(results) >= 100:
+                break
+        return {"success": True, "pattern": pattern, "dir": search_dir, "matches": results, "total": len(results)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def tool_tree(args: dict) -> dict:
+    """Tampilkan struktur direktori (tree view)."""
+    path = os.path.expanduser(args.get("path", "."))
+    max_depth = min(int(args.get("max_depth", 3)), 5)
+    if not os.path.isdir(path):
+        return {"success": False, "error": f"Direktori tidak ditemukan: {path}"}
+
+    def _build(dir_path, depth, prefix=""):
+        if depth > max_depth:
+            return []
+        lines = []
+        try:
+            entries = sorted(os.listdir(dir_path))
+            entries = [e for e in entries if not e.startswith(".") and e not in ("node_modules", "__pycache__", ".git", "dist", ".venv")]
+            for i, entry in enumerate(entries):
+                is_last = i == len(entries) - 1
+                connector = "└── " if is_last else "├── "
+                full = os.path.join(dir_path, entry)
+                is_dir = os.path.isdir(full)
+                lines.append(f"{prefix}{connector}{entry}{'/' if is_dir else ''}")
+                if is_dir and depth < max_depth:
+                    ext = "    " if is_last else "│   "
+                    lines.extend(_build(full, depth + 1, prefix + ext))
+        except PermissionError:
+            pass
+        return lines
+
+    base = os.path.basename(path.rstrip("/")) or path
+    lines = [base + "/"] + _build(path, 1)
+    return {"success": True, "path": path, "tree": "\n".join(lines), "line_count": len(lines)}
+
+
+async def tool_scan_project(args: dict) -> dict:
+    """Scan direktori project: deteksi jenis project, file kunci, statistik file."""
+    path = os.path.expanduser(args.get("path", "."))
+    if not os.path.isdir(path):
+        return {"success": False, "error": f"Direktori tidak ditemukan: {path}"}
+
+    KEY_FILES = [
+        "package.json", "package-lock.json", "yarn.lock",
+        "requirements.txt", "pyproject.toml", "setup.py",
+        "Cargo.toml", "go.mod", "pom.xml", "build.gradle",
+        "Makefile", "docker-compose.yml", "Dockerfile",
+        ".env.example", "README.md", "readme.md",
+        "main.py", "app.py", "index.js", "index.ts", "main.go",
+    ]
+    found_files = {}
+    for fname in KEY_FILES:
+        full = os.path.join(path, fname)
+        if os.path.isfile(full):
+            try:
+                size = os.path.getsize(full)
+                with open(full, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read(3000)
+                found_files[fname] = {"size": size, "preview": content}
+            except Exception:
+                found_files[fname] = {"size": 0, "preview": ""}
+
+    ext_count: dict = {}
+    total_files = 0
+    for root, dirs, files in os.walk(path):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git", "dist", ".venv")]
+        for fname in files:
+            total_files += 1
+            ext = os.path.splitext(fname)[1].lower()
+            ext_count[ext] = ext_count.get(ext, 0) + 1
+        if total_files > 5000:
+            break
+
+    project_type = "unknown"
+    if "package.json" in found_files:
+        project_type = "node/javascript"
+    elif "requirements.txt" in found_files or "pyproject.toml" in found_files or "main.py" in found_files:
+        project_type = "python"
+    elif "Cargo.toml" in found_files:
+        project_type = "rust"
+    elif "go.mod" in found_files:
+        project_type = "go"
+
+    return {
+        "success": True,
+        "path": path,
+        "project_type": project_type,
+        "total_files": total_files,
+        "key_files": list(found_files.keys()),
+        "key_files_preview": {k: v["preview"][:500] for k, v in found_files.items()},
+        "extensions": dict(sorted(ext_count.items(), key=lambda x: -x[1])[:15]),
+    }
+
+
 TOOLS = {
     "read_file": tool_read_file,
     "write_file": tool_write_file,
@@ -237,6 +362,9 @@ TOOLS = {
     "find_files": tool_find_files,
     "run_command": tool_run_command,
     "get_info": tool_get_info,
+    "search_text": tool_search_text,
+    "tree": tool_tree,
+    "scan_project": tool_scan_project,
 }
 
 

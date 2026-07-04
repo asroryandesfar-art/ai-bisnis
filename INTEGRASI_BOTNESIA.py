@@ -61,7 +61,7 @@ Di dalam async def chat(bot_id, body, pool):
       org_id          = str(bot["org_id"]),
       conversation_id = conv_id,
       user_message    = body.message,
-      messages        = messages_for_claude,  # riwayat percakapan
+      messages        = messages_for_llm,  # riwayat percakapan
       knowledge_base_context = system,        # system prompt termasuk KB chunks
   )
 

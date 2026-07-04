@@ -343,7 +343,7 @@ DEFAULT RESPONSE SHAPE:
 
 Bagian lama yang perlu dianggap **updated**:
 
-- `Anthropic / Claude` in old samples → production app now uses `Groq`
+- `External LLM providers` in old samples → production app now uses `Groq`
 - `NewsAPI-first` approach → production app now relies more on RSS/direct-source retrieval
 - `Always cite sources` → production UX now: cite only when requested
 - `OpenAI image default` → production app now uses Replicate-first

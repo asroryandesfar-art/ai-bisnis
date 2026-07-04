@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role            msg_role    NOT NULL,
     content         TEXT        NOT NULL,
     -- metadata AI response
-    model           TEXT,       -- model yang dipakai, misal 'claude-sonnet-4-6'
+    model           TEXT,       -- model yang dipakai, misal 'gemini-2.5-flash'
     input_tokens    INT,
     output_tokens   INT,
     latency_ms      INT,        -- waktu generate respons

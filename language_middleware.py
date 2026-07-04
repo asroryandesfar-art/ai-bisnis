@@ -327,7 +327,7 @@ def build_system_prompt(
         )
         style_guide = (
             "## Response style\n"
-            "Write answers like a modern AI assistant (similar to Claude/ChatGPT): "
+            "Write answers like a modern AI assistant: "
             "clear, concise, and direct, but friendly and natural — not robotic.\n"
             "- Lead with the answer or key information, then add supporting details.\n"
             "- Use short paragraphs (1–3 sentences). Separate different ideas with a new line.\n"
@@ -363,7 +363,7 @@ def build_system_prompt(
         )
         style_guide = (
             "## Gaya jawaban\n"
-            "Tulis jawaban dengan gaya seperti asisten AI modern (mirip Claude/ChatGPT): jelas, "
+            "Tulis jawaban dengan gaya seperti asisten AI modern: jelas, "
             "ringkas, dan langsung ke inti, tapi tetap ramah dan natural — bukan kaku seperti robot.\n"
             "- Buka dengan jawaban atau inti informasi yang dicari user, baru tambahkan detail pendukung.\n"
             "- Gunakan paragraf pendek (1–3 kalimat). Pisahkan ide berbeda dengan baris baru.\n"
