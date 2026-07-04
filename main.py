@@ -458,6 +458,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── M-04: Security headers (defense-in-depth) ───────────────────────────
+# Set header aman di semua response. Sengaja TIDAK memasang Content-Security-
+# Policy ketat karena dashboard SPA memakai banyak inline script/style dan CSP
+# ketat akan merusaknya (bisa ditambah CSP report-only terpisah nanti).
+# X-Frame-Options SAMEORIGIN aman: widget di situs pelanggan berjalan INLINE
+# (createElement/textContent, bukan iframe halaman BotNesia), API lewat fetch
+# (diatur CORS, bukan framing).
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # HSTS hanya relevan di HTTPS; browser mengabaikannya di HTTP. Tanpa
+    # includeSubDomains/preload agar tidak berdampak ke subdomain non-HTTPS.
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
+
+
 # Serve dashboard static (biar FE dan BE satu origin, minim masalah CORS/mixed-content)
 BASE_DIR = Path(__file__).resolve().parent
 _FRONTEND_DIR = BASE_DIR / "frontend"

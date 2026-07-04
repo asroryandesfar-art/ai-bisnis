@@ -84,6 +84,14 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** JWT round-trip (`test_secret_guard`) + smoke = 28 passed dengan versi terpasang. Deploy/CI harus `pip install -r requirements.txt` agar pin efektif.
 - **Commit:** _(diisi setelah commit)_
 
+### M-04 — Security headers hilang
+- **Severity:** 🟡 Medium
+- **Masalah:** Tak ada `X-Frame-Options`/`X-Content-Type-Options`/`HSTS`/`Referrer-Policy` → clickjacking dashboard & kurang defense-in-depth.
+- **File diubah:** `main.py` (middleware `_security_headers`), `test_security_headers.py` (baru).
+- **Cara fix:** Middleware set `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `HSTS max-age=31536000`. CSP ketat SENGAJA tidak dipasang (SPA pakai inline script/style; akan rusak) — dicatat sebagai residual (bisa CSP report-only nanti). Aman utk widget (inline, bukan iframe halaman BotNesia).
+- **Test:** header hadir di `/dashboard` & `/health`; widget.js tetap tersaji. 3 passed.
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
