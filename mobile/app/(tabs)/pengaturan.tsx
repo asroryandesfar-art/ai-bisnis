@@ -373,6 +373,36 @@ export default function Pengaturan() {
           onPress={() => router.push("/knowledge")}
           chevron
         />
+        <Divider />
+        <Row icon="briefcase-outline" label="Executive Center" value="AI CEO Assistant" onPress={() => router.push("/executive")} chevron />
+        <Divider />
+        <Row icon="account-hard-hat" label="Workforce Overview" value="Semua domain AI" onPress={() => router.push("/workforce-overview")} chevron />
+        <Divider />
+        <Row icon="robot-outline" label="Agent Center" value="Direktori & execution log" onPress={() => router.push("/agent-center")} chevron />
+        <Divider />
+        <Row icon="storefront-outline" label="Marketplace" value="Install agent siap pakai" onPress={() => router.push("/marketplace")} chevron />
+        <Divider />
+        <Row icon="image-multiple-outline" label="Multimedia Studio" value="Gambar & dokumen AI" onPress={() => router.push("/multimedia")} chevron />
+      </Card>
+
+      {/* Monitoring & Learning */}
+      <Text style={styles.sectionLabel}>MONITORING & LEARNING</Text>
+      <Card style={styles.groupCard}>
+        <Row icon="chart-timeline-variant" label="Communication Center" value="Performa lintas channel" onPress={() => router.push("/communication-center")} chevron />
+        <Divider />
+        <Row icon="routes" label="Routing Logs" value="Keputusan Intent Router" onPress={() => router.push("/routing-logs")} chevron />
+        <Divider />
+        <Row icon="eye-outline" label="AI Observability" value="Latency, token, traces" onPress={() => router.push("/observability")} chevron />
+        <Divider />
+        <Row icon="cash-multiple" label="Cost Intelligence" value="Biaya AI & budget" onPress={() => router.push("/costs")} chevron />
+        <Divider />
+        <Row icon="thumb-up-outline" label="Feedback Learning" value="Rating jawaban AI" onPress={() => router.push("/learning")} chevron />
+        <Divider />
+        <Row icon="auto-fix" label="Improvement Center" value="Self-evaluation AI" onPress={() => router.push("/improvement")} chevron />
+        <Divider />
+        <Row icon="school-outline" label="Self-Learning Center" value="Insight dari percakapan" onPress={() => router.push("/self-learning")} chevron />
+        <Divider />
+        <Row icon="link-lock" label="Casper Workflow" value="Blockchain audit proof" onPress={() => router.push("/casper")} chevron />
       </Card>
 
       {/* Aplikasi */}
@@ -387,7 +417,9 @@ export default function Pengaturan() {
           chevron
         />
         <Divider />
-        <Row icon="information-outline" label="Versi Aplikasi" value={`v${appVersion}`} />
+        <Row icon="information-outline" label="Tentang BotNesia" value="Visi, misi & founder" onPress={() => router.push("/about")} chevron />
+        <Divider />
+        <Row icon="cellphone-information" label="Versi Aplikasi" value={`v${appVersion}`} />
       </Card>
 
       <Pressable style={styles.signOut} onPress={confirmSignOut}>

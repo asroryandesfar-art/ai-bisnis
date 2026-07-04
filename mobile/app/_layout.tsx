@@ -47,6 +47,18 @@ export default function RootLayout() {
         <Stack.Screen name="hr" />
         <Stack.Screen name="operations" />
         <Stack.Screen name="multimedia" />
+        <Stack.Screen name="communication-center" />
+        <Stack.Screen name="executive" />
+        <Stack.Screen name="workforce-overview" />
+        <Stack.Screen name="agent-center" />
+        <Stack.Screen name="routing-logs" />
+        <Stack.Screen name="observability" />
+        <Stack.Screen name="costs" />
+        <Stack.Screen name="learning" />
+        <Stack.Screen name="improvement" />
+        <Stack.Screen name="self-learning" />
+        <Stack.Screen name="casper" />
+        <Stack.Screen name="about" />
       </Stack>
     </>
   );

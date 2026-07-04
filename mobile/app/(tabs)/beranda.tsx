@@ -180,7 +180,7 @@ export default function Beranda() {
           { name: "Finance Agent", icon: "cash-multiple", status: overdueInvoices ? "Needs Attention" : "Healthy", line1: `${num(finance.pending_invoices_count || 0)} invoice pending`, line2: `${idr(finance.revenue_30d_idr || 0)} revenue 30 hari`, route: "/finance" },
           { name: "Marketing Agent", icon: "bullhorn-outline", status: contentDueNow ? "Needs Attention" : "Healthy", line1: `${num(marketing.active_campaigns || 0)} campaign aktif`, line2: `${num(marketing.content_published || 0)} konten published`, route: "/marketing" },
           { name: "HR Agent", icon: "account-group-outline", status: pendingTraining ? "Needs Attention" : "Healthy", line1: `${num(Object.values(hr.candidates_by_status || {}).reduce((s: number, n) => s + Number(n || 0), 0))} kandidat aktif`, line2: `${num(pendingTraining)} rekomendasi training`, route: "/hr" },
-          { name: "Executive Agent", icon: "briefcase-outline", status: health.label === "healthy" ? "Healthy" : "Needs Attention", line1: `Company health ${health.overall ?? "—"}/100`, line2: `${num(Object.keys(health.by_domain || {}).length)} domain dipantau` },
+          { name: "Executive Agent", icon: "briefcase-outline", status: health.label === "healthy" ? "Healthy" : "Needs Attention", line1: `Company health ${health.overall ?? "—"}/100`, line2: `${num(Object.keys(health.by_domain || {}).length)} domain dipantau`, route: "/executive" },
           { name: "Security Agent", icon: "shield-outline", status: openSecurityAlerts ? "Needs Attention" : "Healthy", line1: `Risk level: ${security.risk_level || "—"}`, line2: `${num(security.suspicious_sessions_count || 0)} sesi mencurigakan`, route: "/security" },
         ],
         opportunities,

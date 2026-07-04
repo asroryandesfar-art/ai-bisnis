@@ -251,6 +251,7 @@ export const api = {
   // Channels -- mirrors web's renderChannels (frontend/app.js).
   channelStatus: (refresh = false) => request<{ channels: any[]; summary: any }>(`/api/channels/status${refresh ? "?refresh=true" : ""}`),
   channelAnalytics: (days = 30) => request<any>(`/api/channels/analytics?days=${days}`),
+  gmailPoller: () => request<{ enabled: boolean; interval_seconds: number; max_messages: number; running: boolean }>("/integrations/gmail/poller"),
   connectChannel: (body: { bot_id: string; channel_type: string; display_name: string; external_id?: string | null; credentials?: any; config?: any }) =>
     request<{ channel: any }>("/api/channels/connect", { method: "POST", body }),
   disconnectChannel: (connectionId: string) => request<any>("/api/channels/disconnect", { method: "POST", body: { connection_id: connectionId } }),
@@ -345,6 +346,63 @@ export const api = {
   securityDashboard: () => request<any>("/api/security/dashboard"),
   executiveDashboard: () => request<any>("/api/executive/dashboard"),
   workforceDashboard: () => request<any>("/api/workforce/dashboard"),
+
+  // Executive Center -- mirrors web's renderExecutive (frontend/app.js).
+  executiveTrends: (days = 30) => request<any>(`/api/executive/trends?days=${days}`),
+  executiveReports: (limit = 10) => request<{ reports: any[] }>(`/api/executive/reports?limit=${limit}`),
+  executiveReport: (id: string) => request<any>(`/api/executive/reports/${id}`),
+  generateExecutiveReport: (reportType: string) =>
+    request<any>("/api/executive/reports/generate", { method: "POST", body: { report_type: reportType } }),
+  analyzeBusiness: () => request<any>("/api/executive/analyze", { method: "POST" }),
+
+  // Agent Center -- mirrors web's renderAgentCenter.
+  // (agentCenterOverview already defined above for Beranda's approval-count check.)
+  agentCenterAgents: () => request<{ agents: any[] }>("/api/agent-center/agents"),
+  executionLogList: (limit = 20) => request<{ entries: any[] }>(`/api/execution-log?limit=${limit}`),
+  localAgentStatus: () => request<any>("/api/local-agent/status"),
+  financeRunTask: (goal: string) => request<any>("/api/finance/run-task", { method: "POST", body: { goal, bot_id: null } }),
+  marketingRunTask: (goal: string) => request<any>("/api/marketing/run-task", { method: "POST", body: { goal, bot_id: null } }),
+  hrRunTask: (goal: string) => request<any>("/api/hr/run-task", { method: "POST", body: { goal, bot_id: null } }),
+  opsRunTask: (goal: string) => request<any>("/api/operations/run-task", { method: "POST", body: { goal, bot_id: null } }),
+
+  // Routing Logs -- mirrors web's renderRoutingLogs.
+  routingLogs: (botId: string) => request<{ logs: any[] }>(`/bots/${botId}/routing-logs`),
+
+  // AI Observability -- mirrors web's renderObservability.
+  observabilitySummary: (days = 7) => request<any>(`/api/observability/summary?days=${days}`),
+  observabilityTrace: (traceId: string) => request<any>(`/api/observability/traces/${traceId}`),
+
+  // Cost Intelligence -- mirrors web's renderCostIntelligence.
+  costIntelligence: () => request<any>("/api/cost-intelligence/summary"),
+  updateCostBudget: (monthlyBudgetUsd: number) =>
+    request<any>("/api/cost-intelligence/budget", { method: "PUT", body: { monthly_budget_usd: monthlyBudgetUsd } }),
+
+  // Feedback Learning -- mirrors web's renderFeedbackLearning.
+  feedbackSummary: (days = 30) => request<any>(`/api/feedback-learning/summary?days=${days}`),
+  feedbackQueue: () => request<{ queue: any[] }>("/api/feedback-learning/queue"),
+  updateFeedbackQueue: (id: string, status: string) =>
+    request<any>(`/api/feedback-learning/queue/${id}`, { method: "PATCH", body: { status, resolution_note: null } }),
+
+  // AI Improvement Center -- mirrors web's renderImprovement.
+  improvementDashboard: (days = 30) => request<any>(`/api/improvement/dashboard?days=${days}`),
+  improvementScan: (days = 30) => request<any>(`/api/improvement/scan?days=${days}`, { method: "POST" }),
+  updateImprovementRecommendation: (id: string, status: string) =>
+    request<any>(`/api/improvement/recommendations/${id}`, { method: "PATCH", body: { status } }),
+
+  // Self-Learning Center -- mirrors web's renderLearning.
+  learningDashboard: () => request<any>("/api/learning/dashboard"),
+  learningInsights: (limit = 50) => request<{ insights: any[] }>(`/api/learning/insights?limit=${limit}`),
+  learningScan: (days = 90) => request<any>(`/api/learning/scan?days=${days}`, { method: "POST" }),
+  updateLearningInsight: (id: string, status: string) =>
+    request<any>(`/api/learning/insights/${id}`, { method: "PATCH", body: { status } }),
+
+  // Casper Agentic Workflow -- mirrors web's renderCasperWorkflow.
+  casperStats: () => request<any>("/api/casper/workflow/stats"),
+  casperActions: (limit = 20) => request<any[]>(`/api/casper/workflow/actions?limit=${limit}`),
+  casperConfig: () => request<any>("/api/casper/workflow/config"),
+  casperCreateAction: (body: { user_message: string; action_type: string; agent_name: string }) =>
+    request<any>("/api/casper/workflow/action", { method: "POST", body }),
+  casperDemo: () => request<any>("/api/casper/workflow/demo", { method: "POST" }),
 
   // Security Dashboard -- mirrors web's renderSecurity (frontend/app.js).
   securityScanAndAlert: () => request<any>("/api/security/scan-and-alert", { method: "POST" }),
