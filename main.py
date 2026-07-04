@@ -4159,6 +4159,21 @@ def _real_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _rate_limit_client_key(request: Request) -> str:
+    """Kunci rate-limit ANTI-SPOOF untuk endpoint publik (H-02).
+
+    Berbeda dari `_real_client_ip`: sengaja TIDAK memakai `X-Forwarded-For`
+    leftmost (entri pertama bisa disuntik klien). Prioritas `CF-Connecting-IP`
+    (di-set/overwrite oleh Cloudflare di depan tunnel, tak bisa dipalsukan
+    klien selama origin hanya dijangkau via tunnel), fallback ke IP koneksi
+    nyata. TIDAK memakai identitas dari body (mis. user_meta.userId) yang
+    sepenuhnya dikontrol klien dan bisa dirotasi untuk melewati limit."""
+    ip = (request.headers.get("CF-Connecting-IP") or "").strip()
+    if not ip and request.client:
+        ip = request.client.host
+    return f"ip:{ip or 'unknown'}"
+
+
 @app.post("/api/public/investor-demo", include_in_schema=False)
 async def public_investor_demo(request: Request):
     """Investor Demo Mode publik, TANPA login -- untuk link demo yang dibagikan ke
@@ -4716,6 +4731,7 @@ async def rag_reindex_embeddings(
 async def chat(
     bot_id: str,
     body:   ChatReq,
+    request: Request,
     pool=Depends(get_pool),
 ):
     """
@@ -4735,19 +4751,18 @@ async def chat(
     if not bot:
         raise HTTPException(404, "Bot tidak aktif")
 
-    # Rate limit (endpoint public). Key: userId/email kalau ada, fallback anonymous.
+    # Rate limit (endpoint public). H-02: kunci rate-limit DIAMBIL DARI SERVER
+    # (IP anti-spoof via CF-Connecting-IP), BUKAN dari user_meta.userId yang
+    # dikontrol klien -- sebelumnya attacker cukup merotasi `userId` tiap
+    # request untuk melewati limit per-user dan menguras kuota/biaya AI tenant.
+    # user_meta tetap dipakai untuk identitas percakapan/memory, bukan limit.
     user_meta = body.user_meta or {}
     internal_channel = str(user_meta.get("_channel") or user_meta.get("channel") or "widget")
     safe_user_meta = {key: value for key, value in user_meta.items() if key not in {"channel", "_channel"}}
-    user_key = (
-        user_meta.get("userId")
-        or user_meta.get("email")
-        or user_meta.get("name")
-        or "anonymous"
-    )
+    rl_user_key = _rate_limit_client_key(request)
     try:
         rl = await _rate_limiter.check(
-            user_id=str(user_key),
+            user_id=rl_user_key,
             bot_id=str(bot_id),
             org_id=str(bot["org_id"]),
             plan=str(bot["plan"] or "starter"),

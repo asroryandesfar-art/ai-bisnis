@@ -40,4 +40,13 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Cara fix:** Endpoint legacy hanya boleh **downgrade / tetap sama tier**. Upgrade ke tier lebih mahal ditolak `402` dan diarahkan ke `/api/billing/checkout` (invoice + webhook Midtrans terverifikasi = satu-satunya jalur menaikkan plan). Guard independen dari wiring RBAC. Permission `billing.manage` tetap wajib. Fitur downgrade & sinkronisasi limit dipertahankan.
 - **Test ditambahkan/diperbarui:** downgrade & same-tier sukses; upgrade (starter→scale/growth) ditolak 402; upgrade tetap 402 walau platform RBAC unavailable; validasi limit downgrade (409) dipertahankan; permission deny (403).
 - **Hasil test:** `test_org_plan_permission.py` 6 passed; `test_billing_checkout_transaction`, `test_billing_webhook_race` 4 passed.
+- **Commit:** `4af3307`
+
+### H-03 (audit ref H-02) — Rate limit chat publik di-bypass via `user_meta.userId`
+- **Severity:** 🟠 High
+- **Masalah:** `POST /chat/{bot_id}` mengunci rate limit pada `user_meta.userId`/email/name dari body (dikontrol klien). Rotasi `userId` per request melewati limit → kuras kuota percakapan + biaya AI tenant korban (financial DoS).
+- **File diubah:** `main.py` (`_rate_limit_client_key`, `chat` menerima `request: Request`, kunci limiter dari IP server), `test_chat_rate_limit.py` (baru).
+- **Cara fix:** Kunci rate-limit diambil **server-side, anti-spoof**: prioritas `CF-Connecting-IP` (di-set Cloudflare di depan tunnel), fallback IP koneksi; **X-Forwarded-For leftmost & identitas body sengaja diabaikan**. `user_meta` tetap dipakai untuk identitas percakapan/memory (fitur tak berubah). Layer per-org/plan & per-bot pada RateLimiter dipertahankan. Ukuran input tetap dibatasi `ChatReq.message` max 2000 (server-side).
+- **Test ditambahkan:** kunci pakai CF-Connecting-IP; XFF spoof diabaikan; kunci tak bergantung body userId; IP sama dispam → BLOCKED; IP berbeda dilacak terpisah; pesan >2000 char ditolak.
+- **Hasil test:** `test_chat_rate_limit.py` 6 passed; regresi (public demo + smoke) 21 passed.
 - **Commit:** _(diisi setelah commit)_
