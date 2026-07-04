@@ -76,6 +76,7 @@ export default function Tugas() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [wfBusyId, setWfBusyId] = useState<string | null>(null);
+  const [newWfPickerOpen, setNewWfPickerOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async (status?: string) => {
@@ -212,11 +213,38 @@ export default function Tugas() {
             <Text style={styles.wfStatLabel}>Draft/nonaktif</Text>
           </View>
         </View>
-        <Text style={styles.sectionLabel}>OTOMATISASI</Text>
+        <View style={styles.wfSectionHead}>
+          <Text style={styles.sectionLabel}>OTOMATISASI</Text>
+          <Pressable
+            onPress={() => {
+              const botIds = Object.keys(botNames);
+              if (botIds.length === 1) router.push({ pathname: "/workflow-editor", params: { botId: botIds[0] } });
+              else setNewWfPickerOpen((v) => !v);
+            }}
+          >
+            <Text style={styles.wfAddText}>+ Baru</Text>
+          </Pressable>
+        </View>
+        {newWfPickerOpen ? (
+          <Card style={{ gap: spacing.sm }}>
+            <Text style={styles.wfAgent}>Pilih agen untuk otomatisasi baru:</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              {Object.entries(botNames).map(([id, botName]) => (
+                <Pressable
+                  key={id}
+                  style={styles.filterPill}
+                  onPress={() => { setNewWfPickerOpen(false); router.push({ pathname: "/workflow-editor", params: { botId: id } }); }}
+                >
+                  <Text style={styles.filterLabel}>{botName}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Card>
+        ) : null}
         {workflows.length === 0 ? (
           <Card>
             <Text style={{ color: colors.text.muted, fontSize: 12, textAlign: "center" }}>
-              Belum ada otomatisasi. Buat workflow lewat dashboard web (Workflow Builder).
+              Belum ada otomatisasi. Tap "+ Baru" di atas untuk membuat.
             </Text>
           </Card>
         ) : (
@@ -235,6 +263,9 @@ export default function Tugas() {
                     <Text style={styles.wfAgent} numberOfLines={1}>{agentName}</Text>
                   </View>
                   <Badge label={st.label} kind={st.kind} />
+                  <Pressable onPress={() => router.push({ pathname: "/workflow-editor", params: { id: w.id, botId: w.bot_id || "" } })} hitSlop={6}>
+                    <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.text.faint} />
+                  </Pressable>
                 </View>
                 <Text style={styles.wfTrigger}>
                   Pemicu: {w.trigger_type ? TRIGGER_LABEL[w.trigger_type] || w.trigger_type : "belum diatur"}
@@ -358,6 +389,8 @@ const styles = StyleSheet.create({
   addButton: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brand.violet600, alignItems: "center", justifyContent: "center" },
   list: { padding: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: spacing.xxl },
   sectionLabel: { color: colors.text.muted, fontSize: 11, fontWeight: "700", letterSpacing: 0.5, marginTop: spacing.sm },
+  wfSectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
+  wfAddText: { color: colors.brand.violet400, fontSize: 12, fontWeight: "700" },
 
   wfStatRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   wfStatCard: { flex: 1, backgroundColor: colors.bg.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.bg.border, paddingVertical: spacing.md, alignItems: "center" },

@@ -145,6 +145,15 @@ export const api = {
   wfList: (botId: string) => request<any>(`/api/workflow-builder/bots/${botId}/workflows`),
   wfTest: (workflowId: string) =>
     request<any>(`/api/workflow-builder/workflows/${workflowId}/test`, { method: "POST", body: { payload: {} } }),
+  wfNodeCatalog: () => request<{ categories: Record<string, Record<string, any>> }>("/api/workflow-builder/node-catalog"),
+  wfGet: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}`),
+  wfCreate: (botId: string, body: { name: string; description?: string | null; trigger_type: string; nodes: any[]; edges: any[] }) =>
+    request<any>(`/api/workflow-builder/bots/${botId}/workflows`, { method: "POST", body }),
+  wfUpdate: (workflowId: string, body: Partial<{ name: string; description: string | null; trigger_type: string; nodes: any[]; edges: any[] }>) =>
+    request<any>(`/api/workflow-builder/workflows/${workflowId}`, { method: "PATCH", body }),
+  wfDelete: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}`, { method: "DELETE" }),
+  wfPublish: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}/publish`, { method: "POST" }),
+  wfUnpublish: (workflowId: string) => request<any>(`/api/workflow-builder/workflows/${workflowId}/unpublish`, { method: "POST" }),
 
   // Business-command-center dashboards -- same 7 sub-dashboards the web
   // renderDashboard() aggregates. Each is permission-gated (finance.read etc)

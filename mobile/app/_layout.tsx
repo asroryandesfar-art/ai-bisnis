@@ -28,6 +28,7 @@ export default function RootLayout() {
         <Stack.Screen name="antrian" />
         <Stack.Screen name="agent-editor" options={{ presentation: "modal" }} />
         <Stack.Screen name="task-create" options={{ presentation: "modal" }} />
+        <Stack.Screen name="workflow-editor" options={{ presentation: "modal" }} />
         <Stack.Screen name="chat" />
         <Stack.Screen name="knowledge" />
         <Stack.Screen name="computer" />
