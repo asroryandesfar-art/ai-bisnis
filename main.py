@@ -203,12 +203,84 @@ class Settings(BaseSettings):
     app_name:             str = "BotNesia"
     app_url:              str = "https://botnesia.uk"
     cors_allowed_origins: str = "*"  # comma-separated, "*" = allow semua (default lama)
+    # ── Secret hardening (C-01) ─────────────────────────────────
+    # Key TERPISAH untuk mengenkripsi kredensial integrasi tersimpan
+    # (Gmail/WhatsApp/Meta). Default kosong -> fallback ke secret_key demi
+    # backward-compat (data lama tetap bisa didekripsi). Saat merotasi
+    # SECRET_KEY (JWT), SET INTEGRATION_ENCRYPTION_KEY = nilai SECRET_KEY LAMA
+    # supaya integrasi yang sudah terenkripsi tetap terbaca.
+    integration_encryption_key: str = ""
+    # strict_secrets=True -> server MENOLAK boot bila SECRET_KEY lemah/default
+    # (fail-closed). Default False -> hanya WARN keras (fail-open sementara)
+    # supaya sistem live tidak tiba-tiba mati sebelum operator merotasi key.
+    strict_secrets:       bool = False
+
+    @property
+    def effective_encryption_key(self) -> str:
+        """Key untuk enkripsi kredensial integrasi (bukan JWT signing)."""
+        return (self.integration_encryption_key or "").strip() or self.secret_key
 
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 cfg = Settings()
+
+# ── C-01: Validasi kekuatan secret produksi ─────────────────────
+# Daftar nilai secret lemah/known-default yang TIDAK BOLEH dipakai di produksi.
+_WEAK_SECRETS = {
+    "", "change-me-in-production", "changeme", "change-me", "default",
+    "development-secret", "dev-secret", "test-secret", "testing",
+    "secret", "password", "passwd", "123456", "admin", "botnesia",
+}
+_MIN_SECRET_LEN = 32
+
+
+def audit_secret_key(secret: str | None) -> list[str]:
+    """Kembalikan daftar masalah keamanan pada `secret` (kosong = aman).
+
+    Dipakai oleh guard startup (validate_startup_secrets) DAN unit test.
+    Pure function tanpa side-effect supaya mudah diuji.
+    """
+    issues: list[str] = []
+    value = (secret or "").strip()
+    if value.lower() in _WEAK_SECRETS:
+        issues.append("SECRET_KEY memakai nilai default/lemah yang diketahui publik.")
+    if len(value) < _MIN_SECRET_LEN:
+        issues.append(
+            f"SECRET_KEY terlalu pendek ({len(value)} char); minimal {_MIN_SECRET_LEN} char acak."
+        )
+    if value and len(set(value)) < 5:
+        issues.append("SECRET_KEY entropinya sangat rendah (karakter berulang).")
+    return issues
+
+
+def validate_startup_secrets(settings: "Settings" = None) -> list[str]:
+    """Periksa secret saat startup. WARN keras selalu; RAISE bila strict_secrets.
+
+    Return daftar issue (utk test). Menghormati keputusan owner:
+    fail-closed HANYA jika STRICT_SECRETS=1, selain itu warn-only agar
+    sistem live tidak mati mendadak sebelum key dirotasi.
+    """
+    s = settings or cfg
+    issues = audit_secret_key(s.secret_key)
+    if not issues:
+        return []
+    banner = "SECRET_KEY produksi LEMAH — " + " ".join(issues)
+    if s.strict_secrets:
+        logger.critical("%s (STRICT_SECRETS aktif: menolak boot)", banner)
+        raise RuntimeError(
+            banner + " Set SECRET_KEY kuat (mis. `python -c \"import secrets;"
+            "print(secrets.token_urlsafe(48))\"`) lalu restart. "
+            "Saat merotasi, set INTEGRATION_ENCRYPTION_KEY=<SECRET_KEY lama> "
+            "agar kredensial integrasi tetap terbaca."
+        )
+    logger.error(
+        "%s — server tetap berjalan (STRICT_SECRETS belum aktif). "
+        "SEGERA rotasi SECRET_KEY; aktifkan STRICT_SECRETS=1 setelah beres.",
+        banner,
+    )
+    return issues
 _rate_limiter = RateLimiter()
 logger = logging.getLogger("botnesia")
 
@@ -667,6 +739,9 @@ async def startup():
     global _intelligence_learning_task, _intelligence_learning_stop
     global _meta_refresh_task, _meta_refresh_stop
 
+    # C-01: guard kekuatan secret (warn-only kecuali STRICT_SECRETS=1).
+    validate_startup_secrets(cfg)
+
     if cfg.meta_app_id and not (cfg.meta_app_secret or "").strip():
         print("[WARN] META_APP_ID terisi tapi META_APP_SECRET kosong -- "
               "webhook /webhooks/meta akan menolak SEMUA request (fail-closed) "
@@ -813,7 +888,7 @@ async def _gmail_poll_loop() -> None:
             if _gmail_poll_stop is not None and _gmail_poll_stop.is_set():
                 return
             org_id = str(r["org_id"])
-            gmail = decrypt_dict(cfg.secret_key, r["data_enc"] or "")
+            gmail = decrypt_dict(cfg.effective_encryption_key, r["data_enc"] or "")
             bot_id = (gmail.get("bot_id") or "").strip()
             if not bot_id:
                 continue
@@ -901,7 +976,7 @@ async def _migrate_integrations_file_to_db(pool: asyncpg.Pool) -> None:
             if not isinstance(v, dict):
                 continue
             try:
-                await db_set_integration(pool, org_id=str(org_id), key=k, value=v, secret_key=cfg.secret_key)
+                await db_set_integration(pool, org_id=str(org_id), key=k, value=v, secret_key=cfg.effective_encryption_key)
             except Exception:
                 pass
         # Also migrate meta_map into fast lookup table
@@ -1901,20 +1976,20 @@ def _mask_secret(s: str | None) -> str | None:
 
 async def _get_integrations_auto(pool: asyncpg.Pool | None, org_id: str) -> dict:
     if pool:
-        return await db_get_integrations(pool, org_id=org_id, secret_key=cfg.secret_key)
+        return await db_get_integrations(pool, org_id=org_id, secret_key=cfg.effective_encryption_key)
     return get_integrations(org_id)
 
 
 async def _get_integration_auto(pool: asyncpg.Pool | None, org_id: str, key: str) -> dict:
     if pool:
-        return await db_get_integration(pool, org_id=org_id, key=key, secret_key=cfg.secret_key)
+        return await db_get_integration(pool, org_id=org_id, key=key, secret_key=cfg.effective_encryption_key)
     integ = get_integrations(org_id)
     return dict(integ.get(key) or {})
 
 
 async def _set_integration_auto(pool: asyncpg.Pool | None, org_id: str, key: str, value: dict) -> None:
     if pool:
-        await db_set_integration(pool, org_id=org_id, key=key, value=value, secret_key=cfg.secret_key)
+        await db_set_integration(pool, org_id=org_id, key=key, value=value, secret_key=cfg.effective_encryption_key)
     else:
         set_integration(org_id, key, value)
 
@@ -2223,7 +2298,7 @@ async def whatsapp_embedded_callback(
             pool, org_id=org_id, bot_id=bot_id,
             waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
             customer_access_token="", token_expires_at=None, connection_status="error",
-            secret_key=cfg.secret_key,
+            secret_key=cfg.effective_encryption_key,
         )
         raise HTTPException(400, f"Tukar code dengan Meta gagal: {token_res.get('error')}")
 
@@ -2259,7 +2334,7 @@ async def whatsapp_embedded_callback(
         pool, org_id=org_id, bot_id=bot_id,
         waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
         customer_access_token=access_token, token_expires_at=token_expires_at,
-        connection_status=connection_status, secret_key=cfg.secret_key,
+        connection_status=connection_status, secret_key=cfg.effective_encryption_key,
     )
 
     if connection_status != "connected":
@@ -2293,7 +2368,7 @@ async def whatsapp_embedded_status(
         bot = await pool.fetchrow("SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, org_id)
         if not bot:
             raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
-        acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=bot_id, secret_key=cfg.secret_key)
+        acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=bot_id, secret_key=cfg.effective_encryption_key)
         if not acc:
             return {
                 "tenant_id": org_id, "bot_id": str(bot_id),
@@ -2301,7 +2376,7 @@ async def whatsapp_embedded_status(
             }
         return _whatsapp_account_public(acc)
 
-    accounts = await db_get_whatsapp_accounts(pool, org_id=org_id, secret_key=cfg.secret_key)
+    accounts = await db_get_whatsapp_accounts(pool, org_id=org_id, secret_key=cfg.effective_encryption_key)
     return {"accounts": [_whatsapp_account_public(a) for a in accounts]}
 
 
@@ -2320,7 +2395,7 @@ async def whatsapp_embedded_disconnect(
     if not bot:
         raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
 
-    acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id, secret_key=cfg.secret_key)
+    acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id, secret_key=cfg.effective_encryption_key)
     if not acc:
         raise HTTPException(404, "WhatsApp belum terhubung untuk bot ini")
 
@@ -3513,7 +3588,7 @@ async def _meta_route_and_reply_whatsapp(
     if bot_id and org_id and not wa_token:
         try:
             acc = await db_get_whatsapp_account(
-                pool, org_id=str(org_id), bot_id=str(bot_id), secret_key=cfg.secret_key,
+                pool, org_id=str(org_id), bot_id=str(bot_id), secret_key=cfg.effective_encryption_key,
             )
             if acc and acc.get("connection_status") == "connected":
                 wa_token = (acc.get("customer_access_token") or "").strip()
