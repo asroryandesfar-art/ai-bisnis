@@ -75,6 +75,15 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** paksa error internal → status 500 & detail tidak memuat marker sensitif. 2 passed.
 - **Commit:** _(diisi setelah commit)_
 
+### M-05 — Dependency ber-CVE (`python-jose`, `python-multipart`)
+- **Severity:** 🟡 Medium
+- **Masalah:** `requirements.txt` mem-pin `python-jose==3.3.0` (CVE algorithm-confusion/DoS) & `python-multipart==0.0.9` (CVE DoS multipart) di jalur auth/upload.
+- **Temuan:** environment yang berjalan SUDAH memakai versi lebih baru & aman (`python-jose 3.5.0`, `python-multipart 0.0.30`) — hanya pin di `requirements.txt` yang usang.
+- **File diubah:** `requirements.txt` (pin → 3.5.0 & 0.0.30, versi terpasang & teruji).
+- **Cara fix:** Selaraskan pin dengan versi patched yang sudah terpasang; hindari force-downgrade.
+- **Test:** JWT round-trip (`test_secret_guard`) + smoke = 28 passed dengan versi terpasang. Deploy/CI harus `pip install -r requirements.txt` agar pin efektif.
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
