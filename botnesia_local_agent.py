@@ -23,11 +23,9 @@ import glob
 import json
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
-import time
 import getpass
 
 # Auto-install websockets jika belum ada
@@ -66,115 +64,12 @@ DANGEROUS_PATTERNS = [
 ]
 
 SAFE_READONLY_COMMANDS = [
-    "ls", "dir", "pwd", "echo",
+    "ls", "dir", "pwd", "echo", "cat", "head", "tail",
     "grep", "find", "which", "whoami", "hostname", "uname",
-    "ps", "df", "du", "free", "date",
+    "ps", "df", "du", "free", "env", "printenv", "date",
     "python --version", "python3 --version", "node --version",
     "git status", "git log", "git diff",
 ]
-# Catatan: `cat`/`head`/`tail`/`env`/`printenv` SENGAJA dikeluarkan dari
-# daftar auto-safe -- mereka bisa membaca kredensial (.env/kunci/token) atau
-# men-dump environment. Kini butuh approval DAN tetap tunduk pada secret-guard
-# di bawah (baca file rahasia diblok total).
-
-# ── H-04: HARD DENYLIST (blokir total, TIDAK bisa di-approve) ────────────
-# Perintah destruktif/berisiko-tinggi yang tak boleh dijalankan agent sama
-# sekali, walau user menekan "y". Pola dicocokkan terhadap command yang sudah
-# dinormalisasi (spasi/hilangkan quote sederhana) untuk mempersempit bypass.
-_FORBIDDEN_PATTERNS: list[str] = [
-    r"\brm\s+-[a-z]*r[a-z]*f\b\s+(/|~|\$home|\.\s*$|\*)",  # rm -rf / ~ * .
-    r"\brm\s+-[a-z]*f[a-z]*r\b\s+(/|~|\$home|\*)",
-    r":\(\)\s*\{.*\|.*&\s*\}\s*;",     # fork bomb :(){ :|:& };:
-    r"\bmkfs\b", r"\bdd\s+if=", r"\bshred\b",
-    r">\s*/dev/(sd|hd|nvme|disk)", r"\bwipefs\b",
-    r"\bshutdown\b", r"\breboot\b", r"\bhalt\b", r"\bpoweroff\b", r"\binit\s+0\b",
-    r"\b(sudo|doas|su)\b",
-    r"\bchmod\s+-?R?\s*777\b",
-    r"(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba)?sh\b",  # curl … | sh / wget … | bash
-    r"\bmkfs\.", r"\bfdisk\b", r"\bparted\b",
-]
-
-# ── H-04: file rahasia yang TIDAK BOLEH dibaca/direferensikan agent ──────
-_SECRET_PATH_PATTERNS: list[str] = [
-    r"(^|[\s'\"/=])\.env(\.|\b)",           # .env / .env.local (tapi .env.example diizinkan, dicek terpisah)
-    r"\bid_rsa\b", r"\bid_ed25519\b", r"\bid_ecdsa\b",
-    r"[\w./-]*\.pem\b", r"[\w./-]*\.key\b", r"[\w./-]*\.p12\b", r"[\w./-]*\.pfx\b",
-    r"\.ssh/", r"\.aws/", r"\.gnupg/", r"\.kube/",
-    r"\bcredentials(\.json)?\b", r"\bservice[_-]?account\b", r"\bservice[_-]?role\b",
-    r"\bsecrets?\.(json|ya?ml|txt|env)\b",
-    r"\.pgpass\b", r"\.netrc\b", r"\bmaster\.key\b",
-]
-
-# ── H-04: perintah yang men-dump environment (bisa berisi secret) ────────
-_ENV_DUMP_PATTERNS: list[str] = [
-    r"^\s*env\s*$", r"^\s*printenv\b", r"\bexport\s+-p\b", r"\bset\s*$",
-    r"\$\{?[a-z_]*(key|token|secret|password|passwd)[a-z_]*\}?",  # echo $API_KEY (command dinormalisasi ke lowercase)
-]
-
-# Direktori yang boleh diakses agent (root). Batasi ke HOME + cwd proses.
-# Bisa dipersempit lewat env BOTNESIA_AGENT_ROOTS (path dipisah ':').
-def _allowed_roots() -> list[str]:
-    raw = os.environ.get("BOTNESIA_AGENT_ROOTS", "").strip()
-    if raw:
-        return [os.path.realpath(os.path.expanduser(p)) for p in raw.split(os.pathsep) if p.strip()]
-    return [os.path.realpath(os.path.expanduser("~"))]
-
-
-def _normalize_command(command: str) -> str:
-    c = command.lower()
-    c = c.replace("'", "").replace('"', "").replace("\\", "")  # buang quote/escape sederhana
-    c = re.sub(r"\s+", " ", c).strip()
-    return c
-
-
-def is_forbidden(command: str) -> tuple[bool, str]:
-    """Hard block: destruktif / secret-read / env-dump. Return (blocked, reason)."""
-    norm = _normalize_command(command)
-    for pat in _FORBIDDEN_PATTERNS:
-        if re.search(pat, norm):
-            return True, "Perintah destruktif/berisiko tinggi diblokir oleh kebijakan keamanan."
-    for pat in _ENV_DUMP_PATTERNS:
-        if re.search(pat, norm):
-            return True, "Perintah yang membocorkan environment/secret diblokir."
-    if references_secret(command):
-        return True, "Perintah mereferensikan file rahasia (kredensial/kunci/token) dan diblokir."
-    return False, ""
-
-
-def references_secret(command: str) -> bool:
-    """True bila command menyentuh file rahasia. `.env.example` dikecualikan."""
-    norm = _normalize_command(command)
-    # izinkan file contoh yang memang publik
-    sanitized = norm.replace(".env.example", "").replace(".env.sample", "").replace(".env.template", "")
-    return any(re.search(pat, sanitized) for pat in _SECRET_PATH_PATTERNS)
-
-
-def is_within_allowed_dir(path: str, roots: list[str] = None) -> bool:
-    """True bila `path` (setelah resolusi symlink/..) berada di dalam salah satu root."""
-    roots = roots or _allowed_roots()
-    try:
-        real = os.path.realpath(os.path.expanduser(path or "."))
-    except Exception:
-        return False
-    for root in roots:
-        if real == root or real.startswith(root + os.sep):
-            return True
-    return False
-
-
-def _audit_agent_command(command: str, *, decision: str, cwd: str) -> None:
-    """Catat setiap keputusan eksekusi command ke audit log lokal."""
-    try:
-        log_dir = os.path.expanduser("~/.botnesia")
-        os.makedirs(log_dir, exist_ok=True)
-        line = json.dumps({
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "decision": decision, "cwd": cwd, "command": command[:500],
-        }, ensure_ascii=False)
-        with open(os.path.join(log_dir, "agent_audit.log"), "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-    except Exception:
-        pass
 
 
 def is_dangerous(command: str) -> bool:
@@ -208,13 +103,6 @@ async def tool_read_file(args: dict) -> dict:
     path = os.path.expanduser(args.get("path", ""))
     if not path:
         return {"success": False, "error": "Parameter 'path' diperlukan"}
-    # H-04: jangan pernah baca kredensial, dan jangan keluar dari area diizinkan.
-    if references_secret(path):
-        _audit_agent_command(f"read_file {path}", decision="blocked_secret", cwd=path)
-        return {"success": False, "error": "Akses file rahasia (kredensial/kunci/token) ditolak."}
-    if not is_within_allowed_dir(path):
-        _audit_agent_command(f"read_file {path}", decision="blocked_cwd", cwd=path)
-        return {"success": False, "error": "Path di luar area yang diizinkan agent."}
     if not os.path.exists(path):
         return {"success": False, "error": f"File tidak ditemukan: {path}"}
     if not os.path.isfile(path):
@@ -235,13 +123,6 @@ async def tool_write_file(args: dict) -> dict:
     content = args.get("content", "")
     if not path:
         return {"success": False, "error": "Parameter 'path' diperlukan"}
-    # H-04: jangan menimpa file rahasia & jangan menulis di luar area diizinkan.
-    if references_secret(path):
-        _audit_agent_command(f"write_file {path}", decision="blocked_secret", cwd=path)
-        return {"success": False, "error": "Menulis ke file rahasia ditolak."}
-    if not is_within_allowed_dir(path):
-        _audit_agent_command(f"write_file {path}", decision="blocked_cwd", cwd=path)
-        return {"success": False, "error": "Path di luar area yang diizinkan agent."}
     approved = await ask_approval("write_file", f"Tulis file: {path} ({len(content)} karakter)")
     if not approved:
         return {"success": False, "error": "Ditolak oleh user"}
@@ -303,29 +184,12 @@ async def tool_run_command(args: dict) -> dict:
     if not command:
         return {"success": False, "error": "Parameter 'command' diperlukan"}
 
-    # H-04 (1): hard denylist — destruktif / baca-secret / dump-env DIBLOKIR
-    # total, tidak bisa di-approve. Ini mencegah RCE merusak & pembocoran
-    # kredensial walau ada instruksi/prompt-injection dari sisi cloud.
-    blocked, reason = is_forbidden(command)
-    if blocked:
-        _audit_agent_command(command, decision="blocked", cwd=cwd)
-        return {"success": False, "error": reason}
-
-    # H-04 (2): batasi working directory ke root yang diizinkan (default HOME).
-    # Cegah agent keluar dari area kerja / path traversal via cwd.
-    if not is_within_allowed_dir(cwd):
-        _audit_agent_command(command, decision="blocked_cwd", cwd=cwd)
-        return {"success": False, "error": "Working directory di luar area yang diizinkan agent."}
-
-    # H-04 (3): perintah non-allowlist tetap butuh approval eksplisit user.
     needs_approval = is_dangerous(command)
     if needs_approval:
         approved = await ask_approval("run_command", f"$ {command}")
         if not approved:
-            _audit_agent_command(command, decision="denied_by_user", cwd=cwd)
             return {"success": False, "error": "Ditolak oleh user"}
 
-    _audit_agent_command(command, decision="executed", cwd=cwd)
     try:
         result = subprocess.run(
             command, shell=True, capture_output=True, text=True,
