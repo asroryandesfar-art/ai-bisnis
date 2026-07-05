@@ -1,6 +1,9 @@
 .env
 .env.local
 .env.*.local
+# Abaikan SEMUA varian/backup .env (berisi secret), kecuali .env.example.
+.env*
+!.env.example
 
 __pycache__/
 *.py[cod]
