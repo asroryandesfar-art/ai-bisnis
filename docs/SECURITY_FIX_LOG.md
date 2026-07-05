@@ -118,6 +118,13 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Status:** Partially Fixed (artefak siap-apply).
 - **Commit:** _(diisi setelah commit)_
 
+### M-06 — JWT web di localStorage — DITUNDA (accepted)
+- **Severity:** 🟡 Medium
+- **Keputusan owner:** Tunda. Pindah ke cookie httpOnly = refactor auth besar (web + mobile), berisiko memutus sesi.
+- **Mitigasi yang sudah ada:** XSS sudah dimitigasi kuat (markdown di-`esc()` sebelum transform, link `http(s)://` saja), sehingga jalur pencurian token via XSS sangat sempit.
+- **Rekomendasi:** Saat ada slot refactor, pindahkan sesi web ke cookie httpOnly+SameSite atau token in-memory + refresh; mobile tetap Bearer/SecureStore.
+- **Status:** Deferred (risiko diterima sementara). Tidak ada perubahan kode.
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
