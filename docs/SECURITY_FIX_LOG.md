@@ -109,6 +109,15 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** path publik echo origin apa pun; path app tolak origin asing, terima origin terkonfigurasi; preflight /chat 200. 6 passed; regresi headers+smoke 13 passed.
 - **Commit:** _(diisi setelah commit)_
 
+### M-07 — Tidak ada RLS/DB-level tenant isolation (defense-in-depth)
+- **Severity:** 🟡 Medium
+- **Masalah:** Isolasi tenant hanya app-layer `WHERE org_id`; tak ada jaring pengaman DB.
+- **File ditambah:** `migrations/2026-07-05_row_level_security.sql` (idempoten, dinamis: enable+FORCE RLS + policy `tenant_isolation` pada semua tabel ber-`org_id`/`tenant_id` + `organizations`), `migrations/README_RLS_ROLLOUT.md` (urutan rollout aman, role non-owner, GUC `app.current_org`, rollback).
+- **Cara fix (keputusan owner: siapkan migration, JANGAN apply):** Migration disiapkan lengkap namun **tidak dijalankan** ke DB produksi. Penerapan penuh butuh (a) kode set `SET LOCAL app.current_org` per-request, (b) role DB non-owner, (c) maintenance window. Policy fail-closed (GUC kosong → 0 baris).
+- **Test:** tidak dijalankan ke DB (sesuai keputusan). SQL memakai dollar-quoting bersarang valid; idempoten.
+- **Status:** Partially Fixed (artefak siap-apply).
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
