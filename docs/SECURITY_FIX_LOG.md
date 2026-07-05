@@ -177,14 +177,16 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).
 - 🟡 **Medium (7):** M-01 Fixed · M-04 Fixed · M-05 Fixed · M-02 Fixed(Partial, flag off) · M-03 Fixed · M-07 Fixed(Partial, migration belum di-apply) · M-06 Deferred(accepted).
-- 🔵 **Low (6) & ⚪ Info (2):** belum dikerjakan (di luar scope permintaan).
+- 🔵 **Low (6):** L-01 Fixed · L-02 Fixed · L-03 Fixed · L-04 Fixed(via C-01) · L-05 Deferred · L-06 Deferred(perlu bump Expo SDK).
+- ⚪ **Info (2):** I-01 Fixed · I-02 Acknowledged.
 
-## Ringkasan & Verifikasi Suite (setelah semua Critical+High+Medium)
+## Ringkasan & Verifikasi Suite (setelah semua Critical+High+Medium+Low+Info)
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope).
-- **Branch `security/critical-high-fixes`:** 20 failed — **set kegagalan IDENTIK dengan `main` → 0 regresi baru**; +~91 test keamanan baru.
+- **Branch `security/critical-high-fixes`:** 20 failed — **set kegagalan IDENTIK dengan `main` → 0 regresi baru** di seluruh sesi (Critical+High+Medium+Low+Info).
 - Collection penuh 1212+ tests tanpa import-error.
-- **Commit High/Critical:** `ddef3e9` C-01 · `b6b1cbd` H-01 · `4af3307` H-02 · `c0ba092` H-03 · `144253c` H-04 · `05e6b2f` e2e-isolasi.
+- **Commit Critical/High:** `ddef3e9` C-01 · `b6b1cbd` H-01 · `4af3307` H-02 · `c0ba092` H-03 · `144253c` H-04 · `05e6b2f` e2e-isolasi.
 - **Commit Medium:** `5579fda` M-01 · `1bb4c53` M-05 · `74809f6` M-04 · `40d2999` M-02 · `68d9ffc` M-03 · `2b79706` M-07 · `c1a75e3` M-06(deferred).
+- **Commit Low/Info:** `3eac372` L-01 · `779b013` L-02 · `02c9adc` L-03 · `1350c82` I-01 · `ded4845` L-04/L-05/L-06/I-02-status.
 
 ## Catatan / Risiko Tersisa & Aksi Owner
 - **C-01:** guard warn-only sampai owner set `SECRET_KEY` kuat (≥32 char) + `STRICT_SECRETS=1`; saat rotasi set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama.
@@ -192,5 +194,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **M-03:** default kini membatasi origin ke `APP_URL`+localhost; tambah origin lain via `CORS_ALLOWED_ORIGINS` bila ada klien browser cross-origin lain.
 - **M-05:** deploy/CI harus `pip install -r requirements.txt` agar pin efektif.
 - **M-07:** jalankan migration RLS mengikuti `migrations/README_RLS_ROLLOUT.md` (butuh kode GUC + role non-owner + maintenance window).
-- **M-06 & Low/Info:** belum ditangani; rekomendasi ada di audit.
+- **L-02:** `/docs` kini default off; set `ENABLE_API_DOCS=1` hanya di dev.
+- **L-05 (SSRF DNS-rebinding) & L-06 (npm Expo):** ditunda — rekomendasi di atas.
+- **M-06:** ditunda (cookie httpOnly) — accepted, XSS ter-mitigasi.
 - **H-04 `shell=True`:** dipertahankan per keputusan owner; guard mempersempit drastis, audit log membantu deteksi.
