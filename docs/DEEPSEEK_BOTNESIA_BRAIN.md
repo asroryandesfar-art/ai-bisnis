@@ -116,23 +116,28 @@ sed -i 's/^DEEPSEEK_MODEL_FAST=.*/DEEPSEEK_MODEL_FAST=deepseek-v5-flash/' .env
 systemctl --user restart botnesia-api.service
 ```
 
-## Integrasi (opsional, belum diaktifkan di jalur chat live)
+## Integrasi ke `/chat` — OPT-IN via flag (default OFF)
 
-Router tersedia via `main.get_deepseek_brain()`. Untuk merutekan chat lewat
-otak ini (contoh, plan diambil dari DB):
+Sudah di-wire ke endpoint `POST /chat/{bot_id}`, tapi **default nonaktif**
+sehingga produksi TIDAK berubah sampai Anda mengaktifkannya:
 
-```python
-brain = get_deepseek_brain()
-res = await brain.answer(
-    message=body.message,
-    plan=org["plan"],                      # dari DB, bukan request
-    org_id=str(bot["org_id"]),
-    retrieve_fn=lambda org_id, query: _retrieve_chunks(pool, org_id, query, bot_id=bot_id),
-    signals=Signals(fast_confidence=..., kb_confidence=...),
-    secrets=[cfg.secret_key, cfg.deepseek_api_key],  # untuk output redaksi
-)
-# res.answer, res.tier, res.escalate, res.injection_blocked, res.output_redacted
+```bash
+DEEPSEEK_BRAIN_ENABLED=1   # + DEEPSEEK_API_KEY harus ada
 ```
 
-Belum di-wire ke endpoint `/chat` live agar pipeline supervisor existing tidak
-berubah tanpa persetujuan. Aktifkan saat siap.
+Saat aktif, alur `/chat`:
+- `plan` diambil dari DB (`bot["plan"]`) — klien tak bisa memaksa PRO.
+- RAG lewat `_retrieve_chunks(pool, org_id, ...)` (tenant-isolated).
+- `secrets=[SECRET_KEY, DEEPSEEK_API_KEY, INTEGRATION_ENCRYPTION_KEY]` untuk redaksi output.
+- Bila brain error → **fallback otomatis ke pipeline lama** (chat tidak pernah mati).
+- Bila flag OFF **atau** `DEEPSEEK_API_KEY` kosong → langsung pakai pipeline lama.
+
+> Catatan: task-routing internal di `ai_providers/deepseek.py` tetap memakai
+> `deepseek-chat`/`deepseek-reasoner` yang terbukti (bukan nama env `v4`), agar
+> pipeline lama stabil. Nama model "3 otak" yang env-driven hanya dipakai oleh
+> router ini (`deepseek_brain.py`).
+
+Cara mengaktifkan penuh (setelah verifikasi model ID & API key siap):
+1. Pastikan `DEEPSEEK_MODEL_FAST/THINKING/PRO` valid di DeepSeek API.
+2. Set `DEEPSEEK_BRAIN_ENABLED=1`.
+3. `systemctl --user restart botnesia-api.service`.
