@@ -13,6 +13,23 @@ if PROJECT_ROOT not in sys.path:
 import main  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """H-02: /chat rate-limit sekarang di-key pada IP klien (server-derived,
+    anti-spoof) — bukan lagi user_meta.userId. Di bawah TestClient session-scoped
+    semua request berbagi satu IP sintetis, jadi bucket bersama akan menumpuk
+    lintas-test dan akhirnya memblok. Reset state in-memory limiter sebelum tiap
+    e2e test untuk memulihkan isolasi per-test (produksi memakai IP nyata yang
+    berbeda-beda). Tidak melemahkan enforcement produksi."""
+    rl = getattr(main, "_rate_limiter", None)
+    if rl is not None:
+        for attr in ("_windows", "_blocked", "_timestamps", "_buckets", "_audit", "_log"):
+            obj = getattr(rl, attr, None)
+            if hasattr(obj, "clear"):
+                obj.clear()
+    yield
+
+
 @pytest.fixture(scope="session")
 def client():
     """Real FastAPI app + real DB (same TestClient(main.app) pattern as
