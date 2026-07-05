@@ -159,6 +159,15 @@ class Settings(BaseSettings):
     openrouter_api_key:   str = ""
     # DeepSeek direct API — deepseek-chat (V3) and deepseek-reasoner (R1)
     deepseek_api_key:     str = ""
+    # DeepSeek "3 otak" — nama model per-tier, semua bisa diganti lewat env
+    # (lihat docs/DEEPSEEK_BOTNESIA_BRAIN.md). Default mempertahankan perilaku
+    # lama: THINKING = deepseek-reasoner (R1). Satu API key untuk ketiganya.
+    deepseek_model_fast:     str = "deepseek-chat"
+    deepseek_model_thinking: str = "deepseek-reasoner"
+    deepseek_model_pro:      str = ""   # kosong -> ikut THINKING (fallback aman)
+    # Routing /chat lewat DeepSeek 3-otak. Default OFF: pipeline lama tak berubah.
+    # Set DEEPSEEK_BRAIN_ENABLED=1 untuk mengaktifkan (butuh DEEPSEEK_API_KEY).
+    deepseek_brain_enabled:  bool = False
 
     @property
     def effective_gemini_api_key(self) -> str:
@@ -450,6 +459,33 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             deepseek_api_key=cfg.deepseek_api_key,
         )
     return _knowledge_builder_agent
+
+
+# ── DeepSeek "3 otak" router (env-driven) ───────────────────────────────
+_deepseek_brain = None
+
+
+def deepseek_models():
+    """DeepSeekModels dari config (env-driven). Sumber kebenaran tunggal nama model."""
+    from deepseek_brain import DeepSeekModels
+    thinking = (cfg.deepseek_model_thinking or "deepseek-reasoner").strip()
+    return DeepSeekModels(
+        fast=(cfg.deepseek_model_fast or "deepseek-chat").strip(),
+        thinking=thinking,
+        pro=(cfg.deepseek_model_pro or "").strip() or thinking,  # PRO kosong -> ikut THINKING
+    )
+
+
+def get_deepseek_brain():
+    """Singleton DeepSeekBrain. API key hanya di server (tak pernah ke frontend/log)."""
+    global _deepseek_brain
+    if _deepseek_brain is None:
+        from deepseek_brain import DeepSeekBrain, make_default_call_fn
+        _deepseek_brain = DeepSeekBrain(
+            call_fn=make_default_call_fn(cfg.deepseek_api_key),
+            models=deepseek_models(),
+        )
+    return _deepseek_brain
 
 # ─── APP ─────────────────────────────────────────────────────
 
@@ -5006,6 +5042,53 @@ async def chat(
             "confidence": None, "handoff_offered": True,
             "sources": [], "follow_up_questions": [],
         }
+
+    # 4b. (OPT-IN) Routing lewat DeepSeek 3-otak. Default OFF -> lewati blok ini
+    # dan pakai pipeline lama. Aktif hanya bila DEEPSEEK_BRAIN_ENABLED=1 dan ada
+    # DEEPSEEK_API_KEY. Plan diambil dari DB (bot["plan"]) -> klien tak bisa paksa PRO.
+    if cfg.deepseek_brain_enabled and cfg.deepseek_api_key:
+        _brain_started = time.perf_counter()
+        try:
+            from deepseek_brain import Signals as _DSSignals
+            brain = get_deepseek_brain()
+
+            async def _brain_retrieve(org_id: str, query: str) -> str:
+                chunks = await _retrieve_chunks(pool, org_id, query, bot_id=bot_id)  # tenant-isolated
+                return "\n\n".join((c.get("content") or "")[:800] for c in (chunks or []))[:6000]
+
+            br = await brain.answer(
+                body.message,
+                plan=str(bot["plan"] or "free"),
+                org_id=str(bot["org_id"]),
+                retrieve_fn=_brain_retrieve,
+                signals=_DSSignals(),
+                system_prompt=bot["system_prompt"],
+                secrets=[cfg.secret_key, cfg.deepseek_api_key, cfg.effective_encryption_key],
+            )
+            _brain_ms = int((time.perf_counter() - _brain_started) * 1000)
+            brain_msg_id = str(uuid.uuid4())
+            await pool.execute(
+                """INSERT INTO messages
+                   (id, conversation_id, role, content, model, latency_ms, intent,
+                    selected_agent, allow_human_handoff)
+                   VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8)""",
+                brain_msg_id, conv_id, br.answer, br.model, _brain_ms,
+                f"deepseek_{br.tier.name.lower()}", f"DeepSeek {br.tier.name}", bool(br.escalate),
+            )
+            await pool.execute(
+                "UPDATE conversations SET msg_count=msg_count+2, last_msg_at=NOW() WHERE id=$1", conv_id,
+            )
+            return {
+                "answer": br.answer, "session_id": conv_id, "message_id": brain_msg_id,
+                "latency_ms": _brain_ms, "intent": f"deepseek_{br.tier.name.lower()}",
+                "selected_agent": f"DeepSeek {br.tier.name}", "confidence": None,
+                "handoff_offered": bool(br.escalate), "sources": [], "follow_up_questions": [],
+                "image_url": None, "image_provider": None,
+                "computer_agent_screenshot_url": None,
+            }
+        except Exception:
+            # Jangan sampai brain error mematikan chat -- jatuh ke pipeline lama.
+            logger.exception("DeepSeek brain gagal, fallback ke pipeline lama conv=%s", conv_id)
 
     # 5. Ambil riwayat percakapan (max 10 pesan terakhir)
     history = await pool.fetch(

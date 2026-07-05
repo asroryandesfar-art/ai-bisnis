@@ -26,6 +26,10 @@ _BASE_URL = "https://api.deepseek.com"
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
 # Default model per task type when routing through DeepSeek directly.
+# CATATAN: task-routing internal ini SENGAJA memakai model DeepSeek yang sudah
+# terbukti (deepseek-chat/deepseek-reasoner) agar pipeline lama tetap stabil.
+# Nama model per-tier "3 otak" yang env-driven ditangani terpisah di
+# deepseek_brain.py (lihat docs/DEEPSEEK_BOTNESIA_BRAIN.md).
 DEEPSEEK_TASK_MODELS: dict = {
     "coding":          "deepseek-chat",
     "advanced_coding": "deepseek-chat",
