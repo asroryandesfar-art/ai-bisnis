@@ -142,6 +142,52 @@ def _legacy_role_key(legacy_role: str | None) -> str:
 
 
 # ============================================================
+# H-01 — GUARD ESKALASI PRIVILEGE (assign/invite/revoke role)
+# ============================================================
+
+_PRIVILEGED_ROLES = {"owner", "admin"}
+
+
+def _role_rank(role_key: str) -> int:
+    """Peringkat role di ROLE_ORDER; makin kecil makin tinggi privilege.
+    Role tak dikenal / custom tenant dianggap paling rendah (aman)."""
+    try:
+        return ROLE_ORDER.index((role_key or "").strip().lower())
+    except ValueError:
+        return len(ROLE_ORDER)
+
+
+def assert_can_grant_role(actor_rank: int, role_key: str) -> None:
+    """Cegah eskalasi privilege lewat pemberian role. Raise HTTPException(403).
+
+    Aturan:
+      1. Hanya Owner (rank 0) yang boleh memberikan role owner/admin.
+      2. Aktor tidak boleh memberikan role yang lebih tinggi dari role
+         tertinggi yang dimilikinya (mencegah self-promote & lateral-escalate).
+    Pure function -> mudah diuji tanpa DB.
+    """
+    key = (role_key or "").strip().lower()
+    if key in _PRIVILEGED_ROLES and actor_rank != 0:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Hanya Owner yang boleh memberikan atau mencabut role owner/admin.",
+        )
+    if actor_rank > _role_rank(key):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Anda tidak boleh memberikan role yang lebih tinggi dari role Anda sendiri.",
+        )
+
+
+async def actor_highest_rank(pool: asyncpg.Pool, user: dict) -> int:
+    """Peringkat privilege TERTINGGI yang dimiliki aktor (rank terkecil).
+    Baca dari user_roles (dgn lazy-migration), fallback ke users.role legacy."""
+    roles = await get_user_roles(pool, user["id"], user["org_id"])
+    keys = [r["key"] for r in roles] or [_legacy_role_key(user.get("role"))]
+    return min((_role_rank(k) for k in keys), default=len(ROLE_ORDER))
+
+
+# ============================================================
 # REPOSITORY — akses data RBAC
 # ============================================================
 
@@ -384,6 +430,8 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
         email = body.email.strip().lower()
         if body.role_key not in SYSTEM_ROLE_PERMISSIONS:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Role tidak valid")
+        # H-01: cegah undang anggota dengan role owner/admin oleh non-owner.
+        assert_can_grant_role(await actor_highest_rank(pool, user), body.role_key)
         if check_limit:
             ok, detail = await check_limit(pool, user["org_id"], "users")
             if not ok:
@@ -419,6 +467,9 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
         target = await pool.fetchrow("SELECT id FROM users WHERE id=$1 AND org_id=$2", body.user_id, user["org_id"])
         if not target:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "User tidak ditemukan di organisasi ini")
+        # H-01: cegah eskalasi privilege — hanya Owner boleh grant owner/admin,
+        # dan aktor tak boleh memberi role di atas role tertingginya sendiri.
+        assert_can_grant_role(await actor_highest_rank(pool, user), body.role_key)
         ok = await assign_role(pool, user_id=body.user_id, org_id=user["org_id"], role_key=body.role_key)
         if not ok:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Role '{body.role_key}' tidak ditemukan")
@@ -426,7 +477,7 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
             """INSERT INTO audit_logs (org_id, actor_user_id, actor_email, action, resource_type, resource_id, metadata)
                VALUES ($1,$2,$3,'role_change','user',$4,$5)""",
             user["org_id"], user["id"], user.get("email"), body.user_id,
-            f'{{"granted_role": "{body.role_key}"}}',
+            json.dumps({"granted_role": body.role_key}),
         )
         return {"ok": True, "user_id": body.user_id, "role_key": body.role_key}
 
@@ -438,6 +489,10 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
     ):
         if body.user_id == user["id"] and body.role_key == "owner":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tidak bisa mencabut role Owner dari diri sendiri")
+        # H-01: hanya Owner yang boleh mencabut role owner/admin milik anggota lain.
+        if body.role_key.strip().lower() in _PRIVILEGED_ROLES:
+            if await actor_highest_rank(pool, user) != 0:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Hanya Owner yang boleh mencabut role owner/admin.")
         ok = await revoke_role(pool, user_id=body.user_id, org_id=user["org_id"], role_key=body.role_key)
         if not ok:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Penugasan role tidak ditemukan")
@@ -445,7 +500,7 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
             """INSERT INTO audit_logs (org_id, actor_user_id, actor_email, action, resource_type, resource_id, metadata)
                VALUES ($1,$2,$3,'role_change','user',$4,$5)""",
             user["org_id"], user["id"], user.get("email"), body.user_id,
-            f'{{"revoked_role": "{body.role_key}"}}',
+            json.dumps({"revoked_role": body.role_key}),
         )
         return {"ok": True, "user_id": body.user_id, "role_key": body.role_key}
 
