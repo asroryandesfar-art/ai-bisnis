@@ -57,7 +57,6 @@ from fastapi import (
     Depends, FastAPI, File, HTTPException, Request,
     UploadFile, status,
 )
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -202,13 +201,96 @@ class Settings(BaseSettings):
     storage_bucket:       str = "botnesia-docs"
     app_name:             str = "BotNesia"
     app_url:              str = "https://botnesia.uk"
-    cors_allowed_origins: str = "*"  # comma-separated, "*" = allow semua (default lama)
+    # M-03: comma-separated daftar origin dashboard yang diizinkan cross-origin.
+    # Kosong = default aman (app_url + localhost dev). "*" = allow semua
+    # (escape hatch eksplisit). Endpoint publik widget SELALU dibuka terpisah.
+    cors_allowed_origins: str = ""
+    # ── Secret hardening (C-01) ─────────────────────────────────
+    # Key TERPISAH untuk mengenkripsi kredensial integrasi tersimpan
+    # (Gmail/WhatsApp/Meta). Default kosong -> fallback ke secret_key demi
+    # backward-compat (data lama tetap bisa didekripsi). Saat merotasi
+    # SECRET_KEY (JWT), SET INTEGRATION_ENCRYPTION_KEY = nilai SECRET_KEY LAMA
+    # supaya integrasi yang sudah terenkripsi tetap terbaca.
+    integration_encryption_key: str = ""
+    # strict_secrets=True -> server MENOLAK boot bila SECRET_KEY lemah/default
+    # (fail-closed). Default False -> hanya WARN keras (fail-open sementara)
+    # supaya sistem live tidak tiba-tiba mati sebelum operator merotasi key.
+    strict_secrets:       bool = False
+    # M-02: bila True, GET /media/{path} WAJIB menyertakan tanda tangan (?sig=)
+    # yang sah. Default False (backward-compat: URL lama tetap terbuka) supaya
+    # bisa diaktifkan bertahap. Endpoint yang mengembalikan URL media selalu
+    # menandatanganinya, jadi mengaktifkan flag ini tidak memutus URL baru.
+    media_require_signature: bool = False
+    # L-02: expose Swagger /docs, /redoc, /openapi.json. Default False (produksi
+    # tak membocorkan skema API). Set ENABLE_API_DOCS=1 di dev bila perlu.
+    enable_api_docs:      bool = False
+
+    @property
+    def effective_encryption_key(self) -> str:
+        """Key untuk enkripsi kredensial integrasi (bukan JWT signing)."""
+        return (self.integration_encryption_key or "").strip() or self.secret_key
 
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 cfg = Settings()
+
+# ── C-01: Validasi kekuatan secret produksi ─────────────────────
+# Daftar nilai secret lemah/known-default yang TIDAK BOLEH dipakai di produksi.
+_WEAK_SECRETS = {
+    "", "change-me-in-production", "changeme", "change-me", "default",
+    "development-secret", "dev-secret", "test-secret", "testing",
+    "secret", "password", "passwd", "123456", "admin", "botnesia",
+}
+_MIN_SECRET_LEN = 32
+
+
+def audit_secret_key(secret: str | None) -> list[str]:
+    """Kembalikan daftar masalah keamanan pada `secret` (kosong = aman).
+
+    Dipakai oleh guard startup (validate_startup_secrets) DAN unit test.
+    Pure function tanpa side-effect supaya mudah diuji.
+    """
+    issues: list[str] = []
+    value = (secret or "").strip()
+    if value.lower() in _WEAK_SECRETS:
+        issues.append("SECRET_KEY memakai nilai default/lemah yang diketahui publik.")
+    if len(value) < _MIN_SECRET_LEN:
+        issues.append(
+            f"SECRET_KEY terlalu pendek ({len(value)} char); minimal {_MIN_SECRET_LEN} char acak."
+        )
+    if value and len(set(value)) < 5:
+        issues.append("SECRET_KEY entropinya sangat rendah (karakter berulang).")
+    return issues
+
+
+def validate_startup_secrets(settings: "Settings" = None) -> list[str]:
+    """Periksa secret saat startup. WARN keras selalu; RAISE bila strict_secrets.
+
+    Return daftar issue (utk test). Menghormati keputusan owner:
+    fail-closed HANYA jika STRICT_SECRETS=1, selain itu warn-only agar
+    sistem live tidak mati mendadak sebelum key dirotasi.
+    """
+    s = settings or cfg
+    issues = audit_secret_key(s.secret_key)
+    if not issues:
+        return []
+    banner = "SECRET_KEY produksi LEMAH — " + " ".join(issues)
+    if s.strict_secrets:
+        logger.critical("%s (STRICT_SECRETS aktif: menolak boot)", banner)
+        raise RuntimeError(
+            banner + " Set SECRET_KEY kuat (mis. `python -c \"import secrets;"
+            "print(secrets.token_urlsafe(48))\"`) lalu restart. "
+            "Saat merotasi, set INTEGRATION_ENCRYPTION_KEY=<SECRET_KEY lama> "
+            "agar kredensial integrasi tetap terbaca."
+        )
+    logger.error(
+        "%s — server tetap berjalan (STRICT_SECRETS belum aktif). "
+        "SEGERA rotasi SECRET_KEY; aktifkan STRICT_SECRETS=1 setelah beres.",
+        banner,
+    )
+    return issues
 _rate_limiter = RateLimiter()
 logger = logging.getLogger("botnesia")
 
@@ -371,20 +453,91 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
 
 # ─── APP ─────────────────────────────────────────────────────
 
+# L-02: Swagger UI / OpenAPI schema mengekspos seluruh permukaan API.
+# Default NONAKTIF (aman utk produksi); aktifkan di dev dengan ENABLE_API_DOCS=1.
 app = FastAPI(
     title="BotNesia API",
     version="1.0.0",
-    docs_url="/docs",
+    docs_url="/docs" if cfg.enable_api_docs else None,
+    redoc_url="/redoc" if cfg.enable_api_docs else None,
+    openapi_url="/openapi.json" if cfg.enable_api_docs else None,
 )
 
-_cors_origins_raw = (cfg.cors_allowed_origins or "*").strip()
-_cors_origins = ["*"] if _cors_origins_raw == "*" else [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── M-03: CORS — batasi origin dashboard, buka endpoint publik widget ───
+# Auth memakai Bearer header (bukan cookie, allow_credentials=False), jadi
+# wildcard tidak memungkinkan session-riding; tetap kita batasi sebagai
+# defense-in-depth. Widget di situs pelanggan WAJIB cross-origin ke /chat &
+# /bots/{id}/config → endpoint itu selalu dibuka untuk semua origin.
+_cors_origins_raw = (cfg.cors_allowed_origins or "").strip()
+if _cors_origins_raw == "*":
+    _CORS_ALLOW_ALL_APP = True
+    _CORS_APP_ORIGINS: set[str] = set()
+elif _cors_origins_raw:
+    _CORS_ALLOW_ALL_APP = False
+    _CORS_APP_ORIGINS = {o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()}
+else:
+    _CORS_ALLOW_ALL_APP = False
+    _CORS_APP_ORIGINS = {
+        (cfg.app_url or "").rstrip("/"),
+        "http://localhost:8000", "http://127.0.0.1:8000",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    } - {""}
+
+# Endpoint publik yang harus bisa dipanggil widget dari domain pelanggan mana pun.
+_PUBLIC_CORS_RE = re.compile(r"^/(health|ready|chat/[^/]+|bots/[^/]+/config)$")
+
+
+def _cors_allow_origin_for(path: str, origin: str) -> str | None:
+    """Nilai Access-Control-Allow-Origin untuk (path, origin), atau None jika ditolak."""
+    if _PUBLIC_CORS_RE.match(path):
+        return origin or "*"
+    if _CORS_ALLOW_ALL_APP:
+        return origin or "*"
+    if origin and origin.rstrip("/") in _CORS_APP_ORIGINS:
+        return origin
+    return None
+
+
+@app.middleware("http")
+async def _cors_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    allow = _cors_allow_origin_for(request.url.path, origin) if origin else None
+    if request.method == "OPTIONS" and origin is not None:
+        resp = Response(status_code=200)
+        if allow:
+            resp.headers["Access-Control-Allow-Origin"] = allow
+            resp.headers["Access-Control-Allow-Methods"] = request.headers.get(
+                "access-control-request-method", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+            resp.headers["Access-Control-Allow-Headers"] = request.headers.get(
+                "access-control-request-headers", "Authorization, Content-Type")
+            resp.headers["Access-Control-Max-Age"] = "600"
+            resp.headers["Vary"] = "Origin"
+        return resp
+    response = await call_next(request)
+    if allow:
+        response.headers["Access-Control-Allow-Origin"] = allow
+        response.headers.setdefault("Vary", "Origin")
+    return response
+
+
+# ── M-04: Security headers (defense-in-depth) ───────────────────────────
+# Set header aman di semua response. Sengaja TIDAK memasang Content-Security-
+# Policy ketat karena dashboard SPA memakai banyak inline script/style dan CSP
+# ketat akan merusaknya (bisa ditambah CSP report-only terpisah nanti).
+# X-Frame-Options SAMEORIGIN aman: widget di situs pelanggan berjalan INLINE
+# (createElement/textContent, bukan iframe halaman BotNesia), API lewat fetch
+# (diatur CORS, bukan framing).
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # HSTS hanya relevan di HTTPS; browser mengabaikannya di HTTP. Tanpa
+    # includeSubDomains/preload agar tidak berdampak ke subdomain non-HTTPS.
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
+
 
 # Serve dashboard static (biar FE dan BE satu origin, minim masalah CORS/mixed-content)
 BASE_DIR = Path(__file__).resolve().parent
@@ -646,10 +799,12 @@ async def get_pool() -> asyncpg.Pool:
             )
             _pool_loop = loop
         except Exception as e:
-            # Untuk request handler: jangan 500 "misterius" kalau DB down
+            # Untuk request handler: jangan 500 "misterius" kalau DB down.
+            # M-01: detail koneksi (host/DSN) hanya di log server, bukan ke klien.
+            logger.error("Koneksi database gagal: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Database belum terhubung: {e}",
+                detail="Layanan sedang tidak tersedia (database). Coba lagi nanti.",
             )
     return _pool
 
@@ -666,6 +821,9 @@ async def startup():
     global _gmail_poll_task, _gmail_poll_stop
     global _intelligence_learning_task, _intelligence_learning_stop
     global _meta_refresh_task, _meta_refresh_stop
+
+    # C-01: guard kekuatan secret (warn-only kecuali STRICT_SECRETS=1).
+    validate_startup_secrets(cfg)
 
     if cfg.meta_app_id and not (cfg.meta_app_secret or "").strip():
         print("[WARN] META_APP_ID terisi tapi META_APP_SECRET kosong -- "
@@ -813,7 +971,7 @@ async def _gmail_poll_loop() -> None:
             if _gmail_poll_stop is not None and _gmail_poll_stop.is_set():
                 return
             org_id = str(r["org_id"])
-            gmail = decrypt_dict(cfg.secret_key, r["data_enc"] or "")
+            gmail = decrypt_dict(cfg.effective_encryption_key, r["data_enc"] or "")
             bot_id = (gmail.get("bot_id") or "").strip()
             if not bot_id:
                 continue
@@ -901,7 +1059,7 @@ async def _migrate_integrations_file_to_db(pool: asyncpg.Pool) -> None:
             if not isinstance(v, dict):
                 continue
             try:
-                await db_set_integration(pool, org_id=str(org_id), key=k, value=v, secret_key=cfg.secret_key)
+                await db_set_integration(pool, org_id=str(org_id), key=k, value=v, secret_key=cfg.effective_encryption_key)
             except Exception:
                 pass
         # Also migrate meta_map into fast lookup table
@@ -1513,6 +1671,11 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_ctx.verify(plain, hashed)
 
+# L-01: hash dummy untuk menyamakan waktu respons login saat email TIDAK
+# ditemukan (cegah timing oracle enumerasi user). Selalu lakukan satu verify
+# terhadap hash valid ini agar durasi setara dengan kasus email ada.
+_DUMMY_PWD_HASH = pwd_ctx.hash("timing-equalization-not-a-real-password")
+
 def is_supported_password_hash(hashed: str) -> bool:
     try:
         pwd_ctx.identify(hashed)
@@ -1677,10 +1840,12 @@ async def register(body: RegisterReq, request: Request, pool=Depends(get_pool)):
     except HTTPException:
         raise
     except Exception as e:
-        # Biasanya: schema belum dibuat / permission CREATE EXTENSION / tabel belum ada
+        # M-01: jangan bocorkan detail exception (skema/DB) ke klien. Log lengkap
+        # di server, kirim pesan generik ke user.
+        logger.exception("Register gagal (org=%s email=%s): %s", body.org_name, email, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Register gagal: {e}",
+            detail="Registrasi gagal karena kesalahan server. Coba lagi nanti.",
         )
 
     session_id = await _start_session(pool, user_id=user_id, org_id=org_id, email=email, request=request)
@@ -1717,6 +1882,12 @@ async def login(body: LoginReq, request: Request, pool=Depends(get_pool)):
             email,
         )
         if not row:
+            # L-01: samakan waktu respons dgn kasus email ada (verify dummy),
+            # supaya durasi tidak membocorkan apakah email terdaftar.
+            try:
+                verify_password(body.password, _DUMMY_PWD_HASH)
+            except Exception:
+                pass
             await _log_failed(None, None, email, "not_found")
             raise HTTPException(401, "Email atau password salah")
 
@@ -1742,9 +1913,11 @@ async def login(body: LoginReq, request: Request, pool=Depends(get_pool)):
     except HTTPException:
         raise
     except Exception as e:
+        # M-01: pesan generik ke klien, detail hanya di log server.
+        logger.exception("Login gagal (email=%s): %s", email, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login gagal: {e}",
+            detail="Login gagal karena kesalahan server. Coba lagi nanti.",
         )
 
 
@@ -1779,6 +1952,9 @@ _PLAN_LIMITS: dict[str, dict[str, int]] = {
     "growth": {"bot_limit": 3, "conv_limit": 2000, "doc_limit": 50},
     "scale": {"bot_limit": 10, "conv_limit": 10000, "doc_limit": 200},
 }
+
+# Urutan biaya paket (kecil→besar). Dipakai untuk mencegah upgrade tanpa bayar.
+_PLAN_RANK: dict[str, int] = {"starter": 0, "growth": 1, "scale": 2}
 
 
 @app.get("/org")
@@ -1854,6 +2030,20 @@ async def update_org_plan(
     if plan not in _PLAN_LIMITS:
         raise HTTPException(400, "Plan tidak valid (starter/growth/scale)")
 
+    # H-01/H-02: endpoint legacy ini TIDAK boleh dipakai untuk upgrade ke tier
+    # berbayar lebih tinggi tanpa pembayaran. `organizations.plan` hanya bisa
+    # NAIK lewat alur checkout terverifikasi (invoice + webhook Midtrans di
+    # bn_platform/billing.py). Di sini hanya izinkan downgrade / tetap sama;
+    # upgrade diarahkan ke /api/billing/checkout.
+    current_plan = ((await pool.fetchval(
+        "SELECT plan FROM organizations WHERE id=$1", user["org_id"]
+    )) or "starter").strip().lower()
+    if _PLAN_RANK.get(plan, 0) > _PLAN_RANK.get(current_plan, 0):
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "Upgrade paket harus melalui pembayaran. Gunakan /api/billing/checkout.",
+        )
+
     # Cegah downgrade kalau resource sekarang melebihi limit baru.
     active_bots = await pool.fetchval(
         "SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive'",
@@ -1901,20 +2091,20 @@ def _mask_secret(s: str | None) -> str | None:
 
 async def _get_integrations_auto(pool: asyncpg.Pool | None, org_id: str) -> dict:
     if pool:
-        return await db_get_integrations(pool, org_id=org_id, secret_key=cfg.secret_key)
+        return await db_get_integrations(pool, org_id=org_id, secret_key=cfg.effective_encryption_key)
     return get_integrations(org_id)
 
 
 async def _get_integration_auto(pool: asyncpg.Pool | None, org_id: str, key: str) -> dict:
     if pool:
-        return await db_get_integration(pool, org_id=org_id, key=key, secret_key=cfg.secret_key)
+        return await db_get_integration(pool, org_id=org_id, key=key, secret_key=cfg.effective_encryption_key)
     integ = get_integrations(org_id)
     return dict(integ.get(key) or {})
 
 
 async def _set_integration_auto(pool: asyncpg.Pool | None, org_id: str, key: str, value: dict) -> None:
     if pool:
-        await db_set_integration(pool, org_id=org_id, key=key, value=value, secret_key=cfg.secret_key)
+        await db_set_integration(pool, org_id=org_id, key=key, value=value, secret_key=cfg.effective_encryption_key)
     else:
         set_integration(org_id, key, value)
 
@@ -2223,7 +2413,7 @@ async def whatsapp_embedded_callback(
             pool, org_id=org_id, bot_id=bot_id,
             waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
             customer_access_token="", token_expires_at=None, connection_status="error",
-            secret_key=cfg.secret_key,
+            secret_key=cfg.effective_encryption_key,
         )
         raise HTTPException(400, f"Tukar code dengan Meta gagal: {token_res.get('error')}")
 
@@ -2259,7 +2449,7 @@ async def whatsapp_embedded_callback(
         pool, org_id=org_id, bot_id=bot_id,
         waba_id=body.waba_id, phone_number_id=body.phone_number_id, business_id=body.business_id or "",
         customer_access_token=access_token, token_expires_at=token_expires_at,
-        connection_status=connection_status, secret_key=cfg.secret_key,
+        connection_status=connection_status, secret_key=cfg.effective_encryption_key,
     )
 
     if connection_status != "connected":
@@ -2293,7 +2483,7 @@ async def whatsapp_embedded_status(
         bot = await pool.fetchrow("SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, org_id)
         if not bot:
             raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
-        acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=bot_id, secret_key=cfg.secret_key)
+        acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=bot_id, secret_key=cfg.effective_encryption_key)
         if not acc:
             return {
                 "tenant_id": org_id, "bot_id": str(bot_id),
@@ -2301,7 +2491,7 @@ async def whatsapp_embedded_status(
             }
         return _whatsapp_account_public(acc)
 
-    accounts = await db_get_whatsapp_accounts(pool, org_id=org_id, secret_key=cfg.secret_key)
+    accounts = await db_get_whatsapp_accounts(pool, org_id=org_id, secret_key=cfg.effective_encryption_key)
     return {"accounts": [_whatsapp_account_public(a) for a in accounts]}
 
 
@@ -2320,7 +2510,7 @@ async def whatsapp_embedded_disconnect(
     if not bot:
         raise HTTPException(404, "Bot tidak ditemukan untuk org ini")
 
-    acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id, secret_key=cfg.secret_key)
+    acc = await db_get_whatsapp_account(pool, org_id=org_id, bot_id=body.bot_id, secret_key=cfg.effective_encryption_key)
     if not acc:
         raise HTTPException(404, "WhatsApp belum terhubung untuk bot ini")
 
@@ -2550,7 +2740,7 @@ async def _run_image_generation(
         logger.warning("Gagal mencatat cost_records image", exc_info=True)
 
     return {
-        "image_url": url,
+        "image_url": _media_signed_url(url),
         "provider": result.provider,
         "model": result.model,
         "generation_time": generation_time,
@@ -2818,7 +3008,14 @@ async def api_image_history(
                ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
             user["org_id"], limit, offset,
         )
-    return {"items": [dict(r) for r in rows]}
+    items = []
+    for r in rows:
+        item = dict(r)
+        # M-02: tandatangani URL media saat dikirim ke klien (DB tetap simpan
+        # path kanonik tanpa sig).
+        item["image_url"] = _media_signed_url(item.get("image_url"))
+        items.append(item)
+    return {"items": items}
 
 
 _IMAGE_ANALYZE_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
@@ -2951,14 +3148,38 @@ async def api_generate_document(
     except Exception:
         logger.warning("Gagal mencatat generated_documents", exc_info=True)
 
-    return {"file_url": url, "format": body.format, "title": spec["title"]}
+    return {"file_url": _media_signed_url(url), "format": body.format, "title": spec["title"]}
+
+
+def _sign_media_rel(rel: str) -> str:
+    """Tanda tangan HMAC untuk path media relatif (mis. 'generated/abc.png')."""
+    rel = (rel or "").split("?", 1)[0].lstrip("/")
+    return hmac.new(
+        cfg.effective_encryption_key.encode("utf-8"), rel.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+def _media_signed_url(url: str) -> str:
+    """Tambahkan ?sig= ke URL /media/... . Idempoten & aman bila bukan URL media."""
+    if not url or not isinstance(url, str) or not url.startswith("/media/"):
+        return url
+    rel = url[len("/media/"):].split("?", 1)[0]
+    return f"/media/{rel}?sig={_sign_media_rel(rel)}"
 
 
 @app.get("/media/{path:path}", include_in_schema=False)
-async def serve_media(path: str):
+async def serve_media(path: str, sig: str | None = None):
     p = (_MEDIA_DIR / path).resolve()
-    if not str(p).startswith(str(_MEDIA_DIR)) or not p.exists() or not p.is_file():
+    # L-03: pakai is_relative_to (bukan startswith string) agar direktori
+    # sibling berprefix sama (mis. data/media-rahasia) tidak lolos.
+    if not p.is_relative_to(_MEDIA_DIR) or not p.exists() or not p.is_file():
         raise HTTPException(404, "Not found")
+    # M-02: bila enforcement aktif, wajib tanda tangan sah (cegah akses lintas-
+    # tenant via URL tebakan). Default (flag off) tetap melayani URL lama.
+    if cfg.media_require_signature:
+        expected = _sign_media_rel(path)
+        if not (sig and hmac.compare_digest(sig, expected)):
+            raise HTTPException(403, "Tautan media tidak sah atau kedaluwarsa.")
     return FileResponse(p)
 
 
@@ -3513,7 +3734,7 @@ async def _meta_route_and_reply_whatsapp(
     if bot_id and org_id and not wa_token:
         try:
             acc = await db_get_whatsapp_account(
-                pool, org_id=str(org_id), bot_id=str(bot_id), secret_key=cfg.secret_key,
+                pool, org_id=str(org_id), bot_id=str(bot_id), secret_key=cfg.effective_encryption_key,
             )
             if acc and acc.get("connection_status") == "connected":
                 wa_token = (acc.get("customer_access_token") or "").strip()
@@ -4065,6 +4286,21 @@ def _real_client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+def _rate_limit_client_key(request: Request) -> str:
+    """Kunci rate-limit ANTI-SPOOF untuk endpoint publik (H-02).
+
+    Berbeda dari `_real_client_ip`: sengaja TIDAK memakai `X-Forwarded-For`
+    leftmost (entri pertama bisa disuntik klien). Prioritas `CF-Connecting-IP`
+    (di-set/overwrite oleh Cloudflare di depan tunnel, tak bisa dipalsukan
+    klien selama origin hanya dijangkau via tunnel), fallback ke IP koneksi
+    nyata. TIDAK memakai identitas dari body (mis. user_meta.userId) yang
+    sepenuhnya dikontrol klien dan bisa dirotasi untuk melewati limit."""
+    ip = (request.headers.get("CF-Connecting-IP") or "").strip()
+    if not ip and request.client:
+        ip = request.client.host
+    return f"ip:{ip or 'unknown'}"
 
 
 @app.post("/api/public/investor-demo", include_in_schema=False)
@@ -4624,6 +4860,7 @@ async def rag_reindex_embeddings(
 async def chat(
     bot_id: str,
     body:   ChatReq,
+    request: Request,
     pool=Depends(get_pool),
 ):
     """
@@ -4643,19 +4880,18 @@ async def chat(
     if not bot:
         raise HTTPException(404, "Bot tidak aktif")
 
-    # Rate limit (endpoint public). Key: userId/email kalau ada, fallback anonymous.
+    # Rate limit (endpoint public). H-02: kunci rate-limit DIAMBIL DARI SERVER
+    # (IP anti-spoof via CF-Connecting-IP), BUKAN dari user_meta.userId yang
+    # dikontrol klien -- sebelumnya attacker cukup merotasi `userId` tiap
+    # request untuk melewati limit per-user dan menguras kuota/biaya AI tenant.
+    # user_meta tetap dipakai untuk identitas percakapan/memory, bukan limit.
     user_meta = body.user_meta or {}
     internal_channel = str(user_meta.get("_channel") or user_meta.get("channel") or "widget")
     safe_user_meta = {key: value for key, value in user_meta.items() if key not in {"channel", "_channel"}}
-    user_key = (
-        user_meta.get("userId")
-        or user_meta.get("email")
-        or user_meta.get("name")
-        or "anonymous"
-    )
+    rl_user_key = _rate_limit_client_key(request)
     try:
         rl = await _rate_limiter.check(
-            user_id=str(user_key),
+            user_id=rl_user_key,
             bot_id=str(bot_id),
             org_id=str(bot["org_id"]),
             plan=str(bot["plan"] or "starter"),
