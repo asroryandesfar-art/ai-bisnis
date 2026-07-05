@@ -101,6 +101,14 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Status:** Partially Fixed (mekanisme siap; enforcement penuh saat owner set `MEDIA_REQUIRE_SIGNATURE=1`).
 - **Commit:** _(diisi setelah commit)_
 
+### M-03 — CORS terlalu terbuka (`*`)
+- **Severity:** 🟡 Medium
+- **Masalah:** Default `allow_origins=*` untuk semua route.
+- **File diubah:** `main.py` (ganti `CORSMiddleware` dgn middleware kustom `_cors_middleware` + `_cors_allow_origin_for`; default origin diubah dari `*`), `.env.example`, `test_cors_policy.py` (baru).
+- **Cara fix (keputusan owner: restrict app / buka widget):** Origin app dibatasi ke `CORS_ALLOWED_ORIGINS` (default aman = `APP_URL` + localhost dev; `*` = escape hatch eksplisit). Endpoint publik widget (`/chat/*`, `/bots/{id}/config`, `/health`, `/ready`) SELALU dibuka untuk semua origin (widget pelanggan tetap jalan). Preflight OPTIONS ditangani. `allow_credentials` tetap off (Bearer). Dashboard same-origin & mobile (non-browser) tak terpengaruh.
+- **Test:** path publik echo origin apa pun; path app tolak origin asing, terima origin terkonfigurasi; preflight /chat 200. 6 passed; regresi headers+smoke 13 passed.
+- **Commit:** _(diisi setelah commit)_
+
 ## Ringkasan & Verifikasi Suite
 - **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
 - **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.

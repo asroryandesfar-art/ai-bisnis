@@ -57,7 +57,6 @@ from fastapi import (
     Depends, FastAPI, File, HTTPException, Request,
     UploadFile, status,
 )
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -202,7 +201,10 @@ class Settings(BaseSettings):
     storage_bucket:       str = "botnesia-docs"
     app_name:             str = "BotNesia"
     app_url:              str = "https://botnesia.uk"
-    cors_allowed_origins: str = "*"  # comma-separated, "*" = allow semua (default lama)
+    # M-03: comma-separated daftar origin dashboard yang diizinkan cross-origin.
+    # Kosong = default aman (app_url + localhost dev). "*" = allow semua
+    # (escape hatch eksplisit). Endpoint publik widget SELALU dibuka terpisah.
+    cors_allowed_origins: str = ""
     # ── Secret hardening (C-01) ─────────────────────────────────
     # Key TERPISAH untuk mengenkripsi kredensial integrasi tersimpan
     # (Gmail/WhatsApp/Meta). Default kosong -> fallback ke secret_key demi
@@ -454,14 +456,61 @@ app = FastAPI(
     docs_url="/docs",
 )
 
-_cors_origins_raw = (cfg.cors_allowed_origins or "*").strip()
-_cors_origins = ["*"] if _cors_origins_raw == "*" else [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── M-03: CORS — batasi origin dashboard, buka endpoint publik widget ───
+# Auth memakai Bearer header (bukan cookie, allow_credentials=False), jadi
+# wildcard tidak memungkinkan session-riding; tetap kita batasi sebagai
+# defense-in-depth. Widget di situs pelanggan WAJIB cross-origin ke /chat &
+# /bots/{id}/config → endpoint itu selalu dibuka untuk semua origin.
+_cors_origins_raw = (cfg.cors_allowed_origins or "").strip()
+if _cors_origins_raw == "*":
+    _CORS_ALLOW_ALL_APP = True
+    _CORS_APP_ORIGINS: set[str] = set()
+elif _cors_origins_raw:
+    _CORS_ALLOW_ALL_APP = False
+    _CORS_APP_ORIGINS = {o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()}
+else:
+    _CORS_ALLOW_ALL_APP = False
+    _CORS_APP_ORIGINS = {
+        (cfg.app_url or "").rstrip("/"),
+        "http://localhost:8000", "http://127.0.0.1:8000",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    } - {""}
+
+# Endpoint publik yang harus bisa dipanggil widget dari domain pelanggan mana pun.
+_PUBLIC_CORS_RE = re.compile(r"^/(health|ready|chat/[^/]+|bots/[^/]+/config)$")
+
+
+def _cors_allow_origin_for(path: str, origin: str) -> str | None:
+    """Nilai Access-Control-Allow-Origin untuk (path, origin), atau None jika ditolak."""
+    if _PUBLIC_CORS_RE.match(path):
+        return origin or "*"
+    if _CORS_ALLOW_ALL_APP:
+        return origin or "*"
+    if origin and origin.rstrip("/") in _CORS_APP_ORIGINS:
+        return origin
+    return None
+
+
+@app.middleware("http")
+async def _cors_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    allow = _cors_allow_origin_for(request.url.path, origin) if origin else None
+    if request.method == "OPTIONS" and origin is not None:
+        resp = Response(status_code=200)
+        if allow:
+            resp.headers["Access-Control-Allow-Origin"] = allow
+            resp.headers["Access-Control-Allow-Methods"] = request.headers.get(
+                "access-control-request-method", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+            resp.headers["Access-Control-Allow-Headers"] = request.headers.get(
+                "access-control-request-headers", "Authorization, Content-Type")
+            resp.headers["Access-Control-Max-Age"] = "600"
+            resp.headers["Vary"] = "Origin"
+        return resp
+    response = await call_next(request)
+    if allow:
+        response.headers["Access-Control-Allow-Origin"] = allow
+        response.headers.setdefault("Vary", "Origin")
+    return response
 
 
 # ── M-04: Security headers (defense-in-depth) ───────────────────────────
