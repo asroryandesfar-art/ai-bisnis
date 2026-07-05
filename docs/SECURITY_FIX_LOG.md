@@ -17,7 +17,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test ditambahkan:** `test_secret_guard.py` — default/empty/short/low-entropy ditolak; strong diterima; strict raise; warn-mode tidak raise tapi melaporkan; fallback & pemisahan encryption key.
 - **Hasil test:** `test_secret_guard.py` + `test_app_smoke.py` = 28 passed. Integrasi (meta/whatsapp/channel/omnichannel) = 65 passed. Tidak ada regresi.
 - **Tindakan owner yang diperlukan (di luar kode):** set `SECRET_KEY` kuat (≥32 char acak) di `.env`, set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama saat rotasi, lalu `STRICT_SECRETS=1`.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `ddef3e9`
 
 ## Fixed High
 
@@ -73,7 +73,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **File diubah:** `main.py` (3 handler → pesan generik + `logger.exception/error`), `test_error_no_leak.py` (baru).
 - **Cara fix:** Pesan generik ke user; detail lengkap hanya di log server. CSV-import error (parse file user sendiri) sengaja dipertahankan sebagai UX (bukan info-leak internal).
 - **Test:** paksa error internal → status 500 & detail tidak memuat marker sensitif. 2 passed.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `5579fda`
 
 ### M-05 — Dependency ber-CVE (`python-jose`, `python-multipart`)
 - **Severity:** 🟡 Medium
@@ -82,7 +82,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **File diubah:** `requirements.txt` (pin → 3.5.0 & 0.0.30, versi terpasang & teruji).
 - **Cara fix:** Selaraskan pin dengan versi patched yang sudah terpasang; hindari force-downgrade.
 - **Test:** JWT round-trip (`test_secret_guard`) + smoke = 28 passed dengan versi terpasang. Deploy/CI harus `pip install -r requirements.txt` agar pin efektif.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `1bb4c53`
 
 ### M-04 — Security headers hilang
 - **Severity:** 🟡 Medium
@@ -90,7 +90,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **File diubah:** `main.py` (middleware `_security_headers`), `test_security_headers.py` (baru).
 - **Cara fix:** Middleware set `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `HSTS max-age=31536000`. CSP ketat SENGAJA tidak dipasang (SPA pakai inline script/style; akan rusak) — dicatat sebagai residual (bisa CSP report-only nanti). Aman utk widget (inline, bukan iframe halaman BotNesia).
 - **Test:** header hadir di `/dashboard` & `/health`; widget.js tetap tersaji. 3 passed.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `74809f6`
 
 ### M-02 — `GET /media/{path}` publik tanpa cek tenant
 - **Severity:** 🟡 Medium
@@ -99,7 +99,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Cara fix (keputusan owner: signed-URL flag default-off):** URL media ditandatangani HMAC (key enkripsi) saat dikirim ke klien; DB tetap simpan path kanonik. `serve_media` menegakkan `?sig=` sah HANYA bila `MEDIA_REQUIRE_SIGNATURE=1` (default 0 = URL lama tetap terbuka, tak ada breakage). Aktifkan flag saat siap; URL baru sudah bertanda tangan. `<img>` tetap jalan (sig di query, bukan header).
 - **Test:** sign deterministik & idempoten; non-media diabaikan; flag off → terbuka; flag on → tanpa/sig-salah 403, sig sah 200. 5 passed; regresi image/doc 55 passed.
 - **Status:** Partially Fixed (mekanisme siap; enforcement penuh saat owner set `MEDIA_REQUIRE_SIGNATURE=1`).
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `40d2999`
 
 ### M-03 — CORS terlalu terbuka (`*`)
 - **Severity:** 🟡 Medium
@@ -107,7 +107,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **File diubah:** `main.py` (ganti `CORSMiddleware` dgn middleware kustom `_cors_middleware` + `_cors_allow_origin_for`; default origin diubah dari `*`), `.env.example`, `test_cors_policy.py` (baru).
 - **Cara fix (keputusan owner: restrict app / buka widget):** Origin app dibatasi ke `CORS_ALLOWED_ORIGINS` (default aman = `APP_URL` + localhost dev; `*` = escape hatch eksplisit). Endpoint publik widget (`/chat/*`, `/bots/{id}/config`, `/health`, `/ready`) SELALU dibuka untuk semua origin (widget pelanggan tetap jalan). Preflight OPTIONS ditangani. `allow_credentials` tetap off (Bearer). Dashboard same-origin & mobile (non-browser) tak terpengaruh.
 - **Test:** path publik echo origin apa pun; path app tolak origin asing, terima origin terkonfigurasi; preflight /chat 200. 6 passed; regresi headers+smoke 13 passed.
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `68d9ffc`
 
 ### M-07 — Tidak ada RLS/DB-level tenant isolation (defense-in-depth)
 - **Severity:** 🟡 Medium
@@ -116,7 +116,7 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Cara fix (keputusan owner: siapkan migration, JANGAN apply):** Migration disiapkan lengkap namun **tidak dijalankan** ke DB produksi. Penerapan penuh butuh (a) kode set `SET LOCAL app.current_org` per-request, (b) role DB non-owner, (c) maintenance window. Policy fail-closed (GUC kosong → 0 baris).
 - **Test:** tidak dijalankan ke DB (sesuai keputusan). SQL memakai dollar-quoting bersarang valid; idempoten.
 - **Status:** Partially Fixed (artefak siap-apply).
-- **Commit:** _(diisi setelah commit)_
+- **Commit:** `2b79706`
 
 ### M-06 — JWT web di localStorage — DITUNDA (accepted)
 - **Severity:** 🟡 Medium
@@ -125,12 +125,24 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Rekomendasi:** Saat ada slot refactor, pindahkan sesi web ke cookie httpOnly+SameSite atau token in-memory + refresh; mobile tetap Bearer/SecureStore.
 - **Status:** Deferred (risiko diterima sementara). Tidak ada perubahan kode.
 
-## Ringkasan & Verifikasi Suite
-- **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope perbaikan ini).
-- **Branch `security/critical-high-fixes`:** 20 failed, 1189 passed — **0 regresi baru** (set kegagalan identik dengan baseline `main`), +75 test keamanan baru.
-- Collection penuh 1212 tests tanpa import-error.
-- Commit: `ddef3e9` (C-01) · `b6b1cbd` (H-01) · `4af3307` (H-02) · `c0ba092` (H-03) · `144253c` (H-04) · `05e6b2f` (isolasi test e2e).
+## Status Akhir per Severity
+- 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
+- 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).
+- 🟡 **Medium (7):** M-01 Fixed · M-04 Fixed · M-05 Fixed · M-02 Fixed(Partial, flag off) · M-03 Fixed · M-07 Fixed(Partial, migration belum di-apply) · M-06 Deferred(accepted).
+- 🔵 **Low (6) & ⚪ Info (2):** belum dikerjakan (di luar scope permintaan).
 
-## Catatan / Risiko Tersisa
-- **C-01 butuh aksi owner:** guard aktif tapi warn-only sampai owner set `SECRET_KEY` kuat (≥32 char) di `.env` lalu `STRICT_SECRETS=1`. Saat rotasi, set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama.
-- **H-04 `shell=True`:** tetap ada sesuai keputusan owner (fitur pipe/glob). Guard mempersempit drastis tapi shell-obfuscation ekstrem tak 100% tertutup; audit log membantu deteksi.
+## Ringkasan & Verifikasi Suite (setelah semua Critical+High+Medium)
+- **Baseline `main`:** 20 failed, 1112 passed (kegagalan pra-ada: tes AI/prompt/reasoning/e2e yang butuh provider AI live — di luar scope).
+- **Branch `security/critical-high-fixes`:** 20 failed — **set kegagalan IDENTIK dengan `main` → 0 regresi baru**; +~91 test keamanan baru.
+- Collection penuh 1212+ tests tanpa import-error.
+- **Commit High/Critical:** `ddef3e9` C-01 · `b6b1cbd` H-01 · `4af3307` H-02 · `c0ba092` H-03 · `144253c` H-04 · `05e6b2f` e2e-isolasi.
+- **Commit Medium:** `5579fda` M-01 · `1bb4c53` M-05 · `74809f6` M-04 · `40d2999` M-02 · `68d9ffc` M-03 · `2b79706` M-07 · `c1a75e3` M-06(deferred).
+
+## Catatan / Risiko Tersisa & Aksi Owner
+- **C-01:** guard warn-only sampai owner set `SECRET_KEY` kuat (≥32 char) + `STRICT_SECRETS=1`; saat rotasi set `INTEGRATION_ENCRYPTION_KEY`=SECRET_KEY lama.
+- **M-02:** aktifkan `MEDIA_REQUIRE_SIGNATURE=1` saat siap (URL baru sudah bertanda tangan).
+- **M-03:** default kini membatasi origin ke `APP_URL`+localhost; tambah origin lain via `CORS_ALLOWED_ORIGINS` bila ada klien browser cross-origin lain.
+- **M-05:** deploy/CI harus `pip install -r requirements.txt` agar pin efektif.
+- **M-07:** jalankan migration RLS mengikuti `migrations/README_RLS_ROLLOUT.md` (butuh kode GUC + role non-owner + maintenance window).
+- **M-06 & Low/Info:** belum ditangani; rekomendasi ada di audit.
+- **H-04 `shell=True`:** dipertahankan per keputusan owner; guard mempersempit drastis, audit log membantu deteksi.

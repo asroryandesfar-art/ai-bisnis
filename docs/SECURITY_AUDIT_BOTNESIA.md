@@ -22,6 +22,8 @@ Temuan tersisa terpusat pada: **konfigurasi rahasia default tanpa guard**, **byp
 | 🔵 Low | 6 |
 | ⚪ Info | 2 |
 
+**Status remediasi (per 2026-07-05, branch `security/critical-high-fixes`):** Critical 1/1 Fixed · High 4/4 Fixed (H-04 partial) · Medium: M-01/M-03/M-04/M-05 Fixed, M-02/M-07 Fixed-partial, M-06 Deferred · Low/Info belum. Detail & commit di `docs/SECURITY_FIX_LOG.md`. 0 regresi test vs baseline `main`.
+
 **Catatan arsitektur penting:** aplikasi memakai **asyncpg langsung ke PostgreSQL, bukan Supabase client + RLS**. Artinya isolasi tenant sepenuhnya bergantung pada klausa `WHERE org_id=$1` di application-layer. Tidak ada Row-Level Security sebagai defense-in-depth: **satu endpoint yang lupa filter `org_id` = kebocoran lintas-tenant langsung.** (lihat H-ARCH / M-07).
 
 ---
