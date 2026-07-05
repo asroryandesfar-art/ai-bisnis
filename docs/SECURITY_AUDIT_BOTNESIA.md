@@ -22,7 +22,7 @@ Temuan tersisa terpusat pada: **konfigurasi rahasia default tanpa guard**, **byp
 | 🔵 Low | 6 |
 | ⚪ Info | 2 |
 
-**Status remediasi (per 2026-07-05, branch `security/critical-high-fixes`):** Critical 1/1 Fixed · High 4/4 Fixed (H-04 partial) · Medium: M-01/M-03/M-04/M-05 Fixed, M-02/M-07 Fixed-partial, M-06 Deferred · Low/Info belum. Detail & commit di `docs/SECURITY_FIX_LOG.md`. 0 regresi test vs baseline `main`.
+**Status remediasi (per 2026-07-05, branch `security/critical-high-fixes`):** Critical 1/1 Fixed · High 4/4 Fixed (H-04 partial) · Medium: M-01/M-03/M-04/M-05 Fixed, M-02/M-07 Fixed-partial, M-06 Deferred · Low: L-01/L-02/L-03/L-04 Fixed, L-05/L-06 Deferred · Info: I-01 Fixed, I-02 Ack. Detail & commit di `docs/SECURITY_FIX_LOG.md`. 0 regresi test vs baseline `main`.
 
 **Catatan arsitektur penting:** aplikasi memakai **asyncpg langsung ke PostgreSQL, bukan Supabase client + RLS**. Artinya isolasi tenant sepenuhnya bergantung pada klausa `WHERE org_id=$1` di application-layer. Tidak ada Row-Level Security sebagai defense-in-depth: **satu endpoint yang lupa filter `org_id` = kebocoran lintas-tenant langsung.** (lihat H-ARCH / M-07).
 
@@ -47,11 +47,11 @@ Temuan tersisa terpusat pada: **konfigurasi rahasia default tanpa guard**, **byp
 | L-01 | 🔵 Low | Auth | Enumerasi user (register 400 "sudah terdaftar"; login skip-hash saat user tak ada → timing) | Attacker validasi email terdaftar | `main.py:1651-1652,1719-1731` | **Fixed** (timing login; register dicatat) | Pesan seragam; dummy-verify utk timing konstan |
 | L-02 | 🔵 Low | Deployment | Swagger `/docs` terbuka publik | Enumerasi seluruh skema API | `main.py:377` | **Fixed** (default off, ENABLE_API_DOCS) | Nonaktif/proteksi di produksi |
 | L-03 | 🔵 Low | Path | `serve_media`/`frontend_asset` pakai `startswith(str(dir))` tanpa separator | Edge-case akses sibling-dir berprefix sama | `main.py:2960,458-460` | **Fixed** (is_relative_to) | Bandingkan pakai `Path.is_relative_to()` |
-| L-04 | 🔵 Low | Crypto | Satu `secret_key` dipakai untuk sign JWT + enkripsi integration secret | Kompromi satu fungsi = kompromi keduanya | `main.py:1528,816,904` | Open | Pisahkan `JWT_SECRET` vs `ENCRYPTION_KEY` |
-| L-05 | 🔵 Low | SSRF | DNS-rebinding TOCTOU pada URL ingestion (sudah didokumentasikan) | Fetch host internal via rebinding (celah sempit) | `tool_registry.py:362`, `main.py:5506` | Open | Resolve→pin IP→validasi→connect ke IP tsb |
-| L-06 | 🔵 Low | Dependency | `npm audit`: 12 moderate (transitive Expo) | Kerentanan moderate di rantai build mobile | `mobile/package-lock.json` | Open | `npm audit fix`; pantau advisory Expo |
+| L-04 | 🔵 Low | Crypto | Satu `secret_key` dipakai untuk sign JWT + enkripsi integration secret | Kompromi satu fungsi = kompromi keduanya | `main.py:1528,816,904` | **Fixed** (via C-01 INTEGRATION_ENCRYPTION_KEY) | Pisahkan `JWT_SECRET` vs `ENCRYPTION_KEY` |
+| L-05 | 🔵 Low | SSRF | DNS-rebinding TOCTOU pada URL ingestion (sudah didokumentasikan) | Fetch host internal via rebinding (celah sempit) | `tool_registry.py:362`, `main.py:5506` | **Deferred** (accepted) | Resolve→pin IP→validasi→connect ke IP tsb |
+| L-06 | 🔵 Low | Dependency | `npm audit`: 12 moderate (transitive Expo) | Kerentanan moderate di rantai build mobile | `mobile/package-lock.json` | **Deferred** (perlu bump Expo SDK) | `npm audit fix`; pantau advisory Expo |
 | I-01 | ⚪ Info | RBAC | Audit metadata dibangun via f-string JSON (`role_key`) | Brittle; injeksi JSON tercegah krn role divalidasi dulu | `bn_platform/rbac.py:429,447` | **Fixed** (json.dumps) | Pakai `json.dumps()` konsisten |
-| I-02 | ⚪ Info | Supply chain | Dependency di-vendor (`vendor/`, `.tts_vendor/`) di luar `requirements.txt` | Salinan lib tak terpantau tool audit/patch | `vendor/`, `.tts_vendor/` | Open | Pin & audit vendored deps, atau kembali ke pip-managed |
+| I-02 | ⚪ Info | Supply chain | Dependency di-vendor (`vendor/`, `.tts_vendor/`) di luar `requirements.txt` | Salinan lib tak terpantau tool audit/patch | `vendor/`, `.tts_vendor/` | **Acknowledged** | Pin & audit vendored deps, atau kembali ke pip-managed |
 
 ---
 

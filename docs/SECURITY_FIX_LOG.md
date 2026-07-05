@@ -157,6 +157,22 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** `test_rbac_privilege_escalation.py` 12 passed; syntax OK.
 - **Commit:** `e7c19c4`
 
+### L-04 — Satu secret untuk JWT + enkripsi — SUDAH via C-01
+- **Severity:** 🔵 Low → **Fixed** (mekanisme di C-01)
+- Pemisahan tersedia: `INTEGRATION_ENCRYPTION_KEY` untuk enkripsi kredensial integrasi, `SECRET_KEY` untuk JWT. Default fallback ke SECRET_KEY (backward-compat). Owner tinggal set key terpisah untuk memisahkan penuh.
+
+### L-05 — SSRF DNS-rebinding TOCTOU — DITUNDA (accepted)
+- **Severity:** 🔵 Low → **Deferred**
+- Celah sempit & sudah didokumentasikan di kode; validasi host publik + re-validasi redirect sudah memblok target umum (localhost/privat/metadata). IP-pinning (resolve→pin→connect ke IP) kompleks di httpx & berisiko regresi. Rekomendasi: implement saat ada slot; sementara risiko rendah diterima.
+
+### L-06 — npm audit 12 moderate (transitive Expo) — DITUNDA (accepted)
+- **Severity:** 🔵 Low → **Deferred**
+- Dikonfirmasi via dry-run: `npm audit fix` (non-force) TIDAK menyelesaikannya; perbaikan penuh butuh `--force` = bump Expo SDK (breaking, perlu uji build mobile menyeluruh). Rekomendasi: rencanakan upgrade Expo SDK terkontrol; jangan `--force` sembarangan.
+
+### I-02 — Dependency di-vendor di luar requirements — ACK (Info)
+- **Severity:** ⚪ Info → **Acknowledged**
+- `vendor/` & `.tts_vendor/` tak terpantau `pip-audit`. Rekomendasi: catat/pin versi vendored + audit manual berkala, atau kembali ke pip-managed dengan lockfile.
+
 ## Status Akhir per Severity
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).
