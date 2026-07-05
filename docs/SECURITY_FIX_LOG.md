@@ -125,6 +125,16 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Rekomendasi:** Saat ada slot refactor, pindahkan sesi web ke cookie httpOnly+SameSite atau token in-memory + refresh; mobile tetap Bearer/SecureStore.
 - **Status:** Deferred (risiko diterima sementara). Tidak ada perubahan kode.
 
+## Fixed Low / Info
+
+### L-01 — Enumerasi user via timing login
+- **Severity:** 🔵 Low
+- **Masalah:** Saat email tak ditemukan, login melewati verifikasi password → beda waktu respons membocorkan email terdaftar/tidak.
+- **File diubah:** `main.py` (`_DUMMY_PWD_HASH` + verify dummy pada cabang not-found), `test_login_enumeration.py` (baru).
+- **Cara fix:** Selalu jalankan `verify_password` terhadap hash dummy valid saat email tak ada → durasi setara. Pesan sudah seragam ("Email atau password salah"). Catatan: register masih memberi tahu "email sudah terdaftar" (kebutuhan UX tanpa email-verification) — risiko rendah, dicatat.
+- **Test:** dummy hash valid; cabang not-found tetap memanggil verify dgn dummy hash; status 401. 2 passed.
+- **Commit:** `b22a233`
+
 ## Status Akhir per Severity
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).

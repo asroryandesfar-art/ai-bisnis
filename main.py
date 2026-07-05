@@ -1664,6 +1664,11 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_ctx.verify(plain, hashed)
 
+# L-01: hash dummy untuk menyamakan waktu respons login saat email TIDAK
+# ditemukan (cegah timing oracle enumerasi user). Selalu lakukan satu verify
+# terhadap hash valid ini agar durasi setara dengan kasus email ada.
+_DUMMY_PWD_HASH = pwd_ctx.hash("timing-equalization-not-a-real-password")
+
 def is_supported_password_hash(hashed: str) -> bool:
     try:
         pwd_ctx.identify(hashed)
@@ -1870,6 +1875,12 @@ async def login(body: LoginReq, request: Request, pool=Depends(get_pool)):
             email,
         )
         if not row:
+            # L-01: samakan waktu respons dgn kasus email ada (verify dummy),
+            # supaya durasi tidak membocorkan apakah email terdaftar.
+            try:
+                verify_password(body.password, _DUMMY_PWD_HASH)
+            except Exception:
+                pass
             await _log_failed(None, None, email, "not_found")
             raise HTTPException(401, "Email atau password salah")
 
