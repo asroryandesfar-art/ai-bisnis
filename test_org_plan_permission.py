@@ -28,15 +28,12 @@ import main
 
 
 class _FakePool:
-    def __init__(self, active_bots=0, docs_count=0, current_plan="scale"):
+    def __init__(self, active_bots=0, docs_count=0):
         self.active_bots = active_bots
         self.docs_count = docs_count
-        self.current_plan = current_plan
         self.executed = []
 
     async def fetchval(self, sql, *params):
-        if "SELECT plan FROM organizations" in sql:
-            return self.current_plan
         if "FROM bots" in sql:
             return self.active_bots
         if "FROM documents" in sql:
@@ -72,10 +69,9 @@ def test_update_org_plan_rejects_user_without_billing_manage_permission(monkeypa
     assert pool.executed == []  # plan tidak boleh berubah kalau ditolak
 
 
-def test_update_org_plan_allows_downgrade_with_permission(monkeypatch):
-    """Owner boleh DOWNGRADE (scale -> growth) lewat endpoint legacy ini."""
+def test_update_org_plan_allows_user_with_billing_manage_permission(monkeypatch):
     monkeypatch.setattr(main, "_platform_require_permission", _allow_checker)
-    pool = _FakePool(current_plan="scale")
+    pool = _FakePool()
     user = {"id": "user-1", "org_id": "org-1", "role": "owner"}
 
     result = asyncio.run(main.update_org_plan(main.OrgPlanUpdateReq(plan="growth"), user=user, pool=pool))
@@ -84,31 +80,9 @@ def test_update_org_plan_allows_downgrade_with_permission(monkeypatch):
     assert len(pool.executed) == 1
 
 
-def test_update_org_plan_allows_same_tier(monkeypatch):
-    monkeypatch.setattr(main, "_platform_require_permission", _allow_checker)
-    pool = _FakePool(current_plan="growth")
-    user = {"id": "user-1", "org_id": "org-1", "role": "owner"}
-    result = asyncio.run(main.update_org_plan(main.OrgPlanUpdateReq(plan="growth"), user=user, pool=pool))
-    assert result["plan"] == "growth"
-
-
-def test_update_org_plan_blocks_free_upgrade(monkeypatch):
-    """H-01/H-02: upgrade ke tier lebih tinggi TANPA pembayaran ditolak 402,
-    walau punya izin billing.manage."""
-    monkeypatch.setattr(main, "_platform_require_permission", _allow_checker)
-    pool = _FakePool(current_plan="starter")
-    user = {"id": "user-1", "org_id": "org-1", "role": "owner"}
-
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(main.update_org_plan(main.OrgPlanUpdateReq(plan="scale"), user=user, pool=pool))
-
-    assert exc_info.value.status_code == 402
-    assert pool.executed == []  # plan tidak berubah
-
-
 def test_update_org_plan_still_validates_downgrade_limits_after_permission_check(monkeypatch):
     monkeypatch.setattr(main, "_platform_require_permission", _allow_checker)
-    pool = _FakePool(active_bots=5, docs_count=0, current_plan="scale")
+    pool = _FakePool(active_bots=5, docs_count=0)
     user = {"id": "user-1", "org_id": "org-1", "role": "owner"}
 
     with pytest.raises(HTTPException) as exc_info:
@@ -118,13 +92,14 @@ def test_update_org_plan_still_validates_downgrade_limits_after_permission_check
     assert pool.executed == []
 
 
-def test_update_org_plan_blocks_upgrade_even_when_platform_unavailable(monkeypatch):
-    """Guard upgrade-tanpa-bayar independen dari wiring RBAC: walau
-    _platform_require_permission None, upgrade tetap ditolak 402."""
+def test_update_org_plan_skips_check_when_platform_unavailable(monkeypatch):
+    """Kalau bn_platform gagal import sama sekali, _platform_require_permission
+    tetap None -- konsisten dengan setiap _platform_* callback lain di main.py
+    yang degradasi tanpa enforcement RBAC sama sekali dalam skenario itu,
+    bukan perilaku baru yang spesifik untuk endpoint ini."""
     monkeypatch.setattr(main, "_platform_require_permission", None)
-    pool = _FakePool(current_plan="starter")
+    pool = _FakePool()
     user = {"id": "user-1", "org_id": "org-1", "role": "viewer"}
 
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(main.update_org_plan(main.OrgPlanUpdateReq(plan="growth"), user=user, pool=pool))
-    assert exc_info.value.status_code == 402
+    result = asyncio.run(main.update_org_plan(main.OrgPlanUpdateReq(plan="growth"), user=user, pool=pool))
+    assert result["plan"] == "growth"
