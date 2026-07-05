@@ -221,6 +221,9 @@ class Settings(BaseSettings):
     # bisa diaktifkan bertahap. Endpoint yang mengembalikan URL media selalu
     # menandatanganinya, jadi mengaktifkan flag ini tidak memutus URL baru.
     media_require_signature: bool = False
+    # L-02: expose Swagger /docs, /redoc, /openapi.json. Default False (produksi
+    # tak membocorkan skema API). Set ENABLE_API_DOCS=1 di dev bila perlu.
+    enable_api_docs:      bool = False
 
     @property
     def effective_encryption_key(self) -> str:
@@ -450,10 +453,14 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
 
 # ─── APP ─────────────────────────────────────────────────────
 
+# L-02: Swagger UI / OpenAPI schema mengekspos seluruh permukaan API.
+# Default NONAKTIF (aman utk produksi); aktifkan di dev dengan ENABLE_API_DOCS=1.
 app = FastAPI(
     title="BotNesia API",
     version="1.0.0",
-    docs_url="/docs",
+    docs_url="/docs" if cfg.enable_api_docs else None,
+    redoc_url="/redoc" if cfg.enable_api_docs else None,
+    openapi_url="/openapi.json" if cfg.enable_api_docs else None,
 )
 
 # ── M-03: CORS — batasi origin dashboard, buka endpoint publik widget ───

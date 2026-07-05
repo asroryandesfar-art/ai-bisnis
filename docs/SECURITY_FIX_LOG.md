@@ -135,6 +135,14 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** dummy hash valid; cabang not-found tetap memanggil verify dgn dummy hash; status 401. 2 passed.
 - **Commit:** `b22a233`
 
+### L-02 — Swagger `/docs` terbuka publik
+- **Severity:** 🔵 Low
+- **Masalah:** `/docs` (+ `/openapi.json`) mengekspos seluruh skema API tanpa auth.
+- **File diubah:** `main.py` (`enable_api_docs` + docs/redoc/openapi conditional), `.env.example`, `test_docs_disabled.py` (baru).
+- **Cara fix:** Default nonaktif (`docs_url=redoc_url=openapi_url=None`); aktifkan di dev via `ENABLE_API_DOCS=1`.
+- **Test:** default → /docs, /redoc, /openapi.json 404. 1 passed; smoke 10 passed.
+- **Commit:** `b2f3186`
+
 ## Status Akhir per Severity
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).
