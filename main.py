@@ -159,6 +159,12 @@ class Settings(BaseSettings):
     openrouter_api_key:   str = ""
     # DeepSeek direct API — deepseek-chat (V3) and deepseek-reasoner (R1)
     deepseek_api_key:     str = ""
+    # DeepSeek "3 otak" — nama model per-tier, semua bisa diganti lewat env
+    # (lihat docs/DEEPSEEK_BOTNESIA_BRAIN.md). Default mempertahankan perilaku
+    # lama: THINKING = deepseek-reasoner (R1). Satu API key untuk ketiganya.
+    deepseek_model_fast:     str = "deepseek-chat"
+    deepseek_model_thinking: str = "deepseek-reasoner"
+    deepseek_model_pro:      str = ""   # kosong -> ikut THINKING (fallback aman)
 
     @property
     def effective_gemini_api_key(self) -> str:
@@ -450,6 +456,33 @@ def get_knowledge_builder_agent() -> KnowledgeBuilderAgent:
             deepseek_api_key=cfg.deepseek_api_key,
         )
     return _knowledge_builder_agent
+
+
+# ── DeepSeek "3 otak" router (env-driven) ───────────────────────────────
+_deepseek_brain = None
+
+
+def deepseek_models():
+    """DeepSeekModels dari config (env-driven). Sumber kebenaran tunggal nama model."""
+    from deepseek_brain import DeepSeekModels
+    thinking = (cfg.deepseek_model_thinking or "deepseek-reasoner").strip()
+    return DeepSeekModels(
+        fast=(cfg.deepseek_model_fast or "deepseek-chat").strip(),
+        thinking=thinking,
+        pro=(cfg.deepseek_model_pro or "").strip() or thinking,  # PRO kosong -> ikut THINKING
+    )
+
+
+def get_deepseek_brain():
+    """Singleton DeepSeekBrain. API key hanya di server (tak pernah ke frontend/log)."""
+    global _deepseek_brain
+    if _deepseek_brain is None:
+        from deepseek_brain import DeepSeekBrain, make_default_call_fn
+        _deepseek_brain = DeepSeekBrain(
+            call_fn=make_default_call_fn(cfg.deepseek_api_key),
+            models=deepseek_models(),
+        )
+    return _deepseek_brain
 
 # ─── APP ─────────────────────────────────────────────────────
 

@@ -25,15 +25,23 @@ logger = logging.getLogger("botnesia.deepseek")
 _BASE_URL = "https://api.deepseek.com"
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
+import os as _os
+
+# Nama model per-tier dibaca dari ENV supaya tidak ada hardcode yang tersebar
+# (lihat docs/DEEPSEEK_BOTNESIA_BRAIN.md). Default mempertahankan perilaku lama:
+# THINKING = deepseek-reasoner (R1).
+_FAST_MODEL = (_os.environ.get("DEEPSEEK_MODEL_FAST") or "").strip() or "deepseek-chat"
+_THINKING_MODEL = (_os.environ.get("DEEPSEEK_MODEL_THINKING") or "").strip() or "deepseek-reasoner"
+
 # Default model per task type when routing through DeepSeek directly.
 DEEPSEEK_TASK_MODELS: dict = {
-    "coding":          "deepseek-chat",
-    "advanced_coding": "deepseek-chat",
-    "reasoning":       "deepseek-reasoner",
-    "deep_reasoning":  "deepseek-reasoner",
-    "planning":        "deepseek-chat",
-    "document":        "deepseek-chat",
-    "document_analysis": "deepseek-chat",
+    "coding":          _FAST_MODEL,
+    "advanced_coding": _FAST_MODEL,
+    "reasoning":       _THINKING_MODEL,
+    "deep_reasoning":  _THINKING_MODEL,
+    "planning":        _FAST_MODEL,
+    "document":        _FAST_MODEL,
+    "document_analysis": _FAST_MODEL,
 }
 
 # Tasks where DeepSeek should NOT be the primary (let Gemini handle these)
