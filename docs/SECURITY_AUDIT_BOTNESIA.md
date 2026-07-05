@@ -50,7 +50,7 @@ Temuan tersisa terpusat pada: **konfigurasi rahasia default tanpa guard**, **byp
 | L-04 | 🔵 Low | Crypto | Satu `secret_key` dipakai untuk sign JWT + enkripsi integration secret | Kompromi satu fungsi = kompromi keduanya | `main.py:1528,816,904` | Open | Pisahkan `JWT_SECRET` vs `ENCRYPTION_KEY` |
 | L-05 | 🔵 Low | SSRF | DNS-rebinding TOCTOU pada URL ingestion (sudah didokumentasikan) | Fetch host internal via rebinding (celah sempit) | `tool_registry.py:362`, `main.py:5506` | Open | Resolve→pin IP→validasi→connect ke IP tsb |
 | L-06 | 🔵 Low | Dependency | `npm audit`: 12 moderate (transitive Expo) | Kerentanan moderate di rantai build mobile | `mobile/package-lock.json` | Open | `npm audit fix`; pantau advisory Expo |
-| I-01 | ⚪ Info | RBAC | Audit metadata dibangun via f-string JSON (`role_key`) | Brittle; injeksi JSON tercegah krn role divalidasi dulu | `bn_platform/rbac.py:429,447` | Open | Pakai `json.dumps()` konsisten |
+| I-01 | ⚪ Info | RBAC | Audit metadata dibangun via f-string JSON (`role_key`) | Brittle; injeksi JSON tercegah krn role divalidasi dulu | `bn_platform/rbac.py:429,447` | **Fixed** (json.dumps) | Pakai `json.dumps()` konsisten |
 | I-02 | ⚪ Info | Supply chain | Dependency di-vendor (`vendor/`, `.tts_vendor/`) di luar `requirements.txt` | Salinan lib tak terpantau tool audit/patch | `vendor/`, `.tts_vendor/` | Open | Pin & audit vendored deps, atau kembali ke pip-managed |
 
 ---

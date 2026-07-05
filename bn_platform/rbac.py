@@ -477,7 +477,7 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
             """INSERT INTO audit_logs (org_id, actor_user_id, actor_email, action, resource_type, resource_id, metadata)
                VALUES ($1,$2,$3,'role_change','user',$4,$5)""",
             user["org_id"], user["id"], user.get("email"), body.user_id,
-            f'{{"granted_role": "{body.role_key}"}}',
+            json.dumps({"granted_role": body.role_key}),
         )
         return {"ok": True, "user_id": body.user_id, "role_key": body.role_key}
 
@@ -500,7 +500,7 @@ def build_rbac_router(*, get_pool: GetPool, get_current_user: GetCurrentUser, ha
             """INSERT INTO audit_logs (org_id, actor_user_id, actor_email, action, resource_type, resource_id, metadata)
                VALUES ($1,$2,$3,'role_change','user',$4,$5)""",
             user["org_id"], user["id"], user.get("email"), body.user_id,
-            f'{{"revoked_role": "{body.role_key}"}}',
+            json.dumps({"revoked_role": body.role_key}),
         )
         return {"ok": True, "user_id": body.user_id, "role_key": body.role_key}
 

@@ -150,6 +150,13 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** containment menolak sibling `data/media-evil`; media valid tetap tersaji. 6 passed.
 - **Commit:** `827bcc8`
 
+### I-01 — Audit metadata via f-string JSON
+- **Severity:** ⚪ Info
+- **File diubah:** `bn_platform/rbac.py` (assign/revoke audit → `json.dumps(...)`).
+- **Cara fix:** Ganti pembentukan JSON manual dengan `json.dumps` (escaping benar & tidak rapuh). Injeksi sebelumnya sudah tercegah (role divalidasi), ini kebersihan/keandalan.
+- **Test:** `test_rbac_privilege_escalation.py` 12 passed; syntax OK.
+- **Commit:** `e7c19c4`
+
 ## Status Akhir per Severity
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).
