@@ -143,6 +143,13 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Test:** default → /docs, /redoc, /openapi.json 404. 1 passed; smoke 10 passed.
 - **Commit:** `b2f3186`
 
+### L-03 — Cek path pakai startswith tanpa separator
+- **Severity:** 🔵 Low
+- **Masalah:** `serve_media` memakai `str(p).startswith(str(_MEDIA_DIR))` → sibling dir berprefix sama bisa lolos.
+- **File diubah:** `main.py` (`p.is_relative_to(_MEDIA_DIR)`), `test_media_signed_url.py` (+ test sibling). (frontend_asset/assets sudah pakai `.parents` — aman.)
+- **Test:** containment menolak sibling `data/media-evil`; media valid tetap tersaji. 6 passed.
+- **Commit:** `827bcc8`
+
 ## Status Akhir per Severity
 - 🔴 **Critical (1/1):** C-01 Fixed (warn-mode; owner aktifkan STRICT_SECRETS=1).
 - 🟠 **High (4/4):** H-01, H-02, H-03 Fixed; H-04 Fixed (Partial — shell=True dipertahankan per keputusan owner).

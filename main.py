@@ -3170,7 +3170,9 @@ def _media_signed_url(url: str) -> str:
 @app.get("/media/{path:path}", include_in_schema=False)
 async def serve_media(path: str, sig: str | None = None):
     p = (_MEDIA_DIR / path).resolve()
-    if not str(p).startswith(str(_MEDIA_DIR)) or not p.exists() or not p.is_file():
+    # L-03: pakai is_relative_to (bukan startswith string) agar direktori
+    # sibling berprefix sama (mis. data/media-rahasia) tidak lolos.
+    if not p.is_relative_to(_MEDIA_DIR) or not p.exists() or not p.is_file():
         raise HTTPException(404, "Not found")
     # M-02: bila enforcement aktif, wajib tanda tangan sah (cegah akses lintas-
     # tenant via URL tebakan). Default (flag off) tetap melayani URL lama.

@@ -64,3 +64,18 @@ def test_signed_url_from_helper_passes_enforcement(media_file, monkeypatch):
     with TestClient(main.app) as client:
         r = client.get(signed)
     assert r.status_code == 200
+
+
+def test_sibling_dir_prefix_not_served(tmp_path, monkeypatch):
+    # L-03: direktori sibling berprefix sama tidak boleh lolos containment.
+    evil = main._MEDIA_DIR.parent / (main._MEDIA_DIR.name + "-evil")
+    evil.mkdir(parents=True, exist_ok=True)
+    secret = evil / "secret.txt"
+    secret.write_text("top-secret")
+    try:
+        # path yang me-resolve ke sibling dir harus 404 (bukan diserve)
+        p = (main._MEDIA_DIR / f"../{evil.name}/secret.txt").resolve()
+        assert not p.is_relative_to(main._MEDIA_DIR)  # containment menolak
+    finally:
+        secret.unlink(missing_ok=True)
+        evil.rmdir()
