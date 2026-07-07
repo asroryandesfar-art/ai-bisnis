@@ -148,7 +148,7 @@ def build_omnichannel_router(*, get_pool: GetPool, get_current_user: GetCurrentU
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
         except Exception as exc:
             logger.exception("Channel connect failed tenant=%s channel=%s", user["org_id"], body.channel_type.value)
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Gagal menghubungkan {body.channel_type.value}: {exc}") from exc
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Gagal menghubungkan {body.channel_type.value}. Coba lagi nanti.") from exc
         await write_audit_log(pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"), action="create", resource_type="channel_connection", resource_id=connection["id"], metadata={"channel_type": body.channel_type.value, "display_name": body.display_name})
         return {"channel": connection}
 

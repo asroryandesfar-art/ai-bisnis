@@ -10,6 +10,17 @@ internal AI Workforce that operates the business itself.
 Live at **[botnesia.uk](https://botnesia.uk)**. Built and run by one founder,
 serving real tenants today — not a demo shell.
 
+> **One-liner:** Trusted AI agents for business — every important AI decision is
+> **anchored on Casper** as an immutable, independently verifiable proof.
+> Verify a real one now:
+> [deploy `fbb4b7e7…7b4e`](https://testnet.cspr.live/deploy/fbb4b7e766c0275980074d070d446d8e64703c2c2eb81be84637dfa531aa7b4e)
+> · [contract `897c4bd6…a9f0`](https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0).
+>
+> **Why now / why Casper:** businesses increasingly let AI make real decisions,
+> but those decisions live in editable logs — unauditable and disputable. Casper
+> turns each decision into a permanent, third-party-verifiable proof, making AI
+> accountable by design.
+
 > Submitted to **Casper Agentic Buildathon 2026**.
 > 🎤 [Pitch Deck](docs/hackathon/PITCH_DECK.md) · [60s Elevator Pitch](docs/hackathon/ELEVATOR_PITCH.md) · [3-Min Demo Script](docs/hackathon/DEMO_SCRIPT.md) · [Architecture Diagrams](docs/hackathon/DIAGRAMS.md) · [Feature List](docs/hackathon/FEATURES.md) · [Roadmap](docs/hackathon/ROADMAP.md)
 
@@ -306,6 +317,31 @@ ai bisnis/
 ├── test_*.py                 # 1126 backend tests, one file per module/feature
 └── requirements.txt
 ```
+
+## Security
+
+- Secrets are never committed: `.env*` (except `.env.example`) is git-ignored.
+  Strong `SECRET_KEY` is enforced by a startup guard (`STRICT_SECRETS=1` in prod).
+- Multi-tenant isolation (`org_id` on every query), RBAC with server-side plan
+  gating, signed media URLs, security headers, and IP-based rate limiting.
+- CodeQL + Dependabot run on the repo; the AI model router redacts secret-like
+  patterns from output and blocks prompt-injection attempts.
+- Full policy: [`SECURITY.md`](SECURITY.md). Latest white-box audit and fixes:
+  [`docs/SECURITY_AUDIT_BOTNESIA.md`](docs/SECURITY_AUDIT_BOTNESIA.md),
+  [`docs/SECURITY_FIX_LOG.md`](docs/SECURITY_FIX_LOG.md).
+
+## Buildathon submission (Casper Agentic Buildathon 2026)
+
+- **Testing playbook (for reviewers):** [`docs/CASPER_FINAL_SUBMISSION_PLAYBOOK.md`](docs/CASPER_FINAL_SUBMISSION_PLAYBOOK.md)
+- **Casper Testnet proofs** (contract package hash + sample confirmed transactions):
+  [`docs/CASPER_TESTNET_PROOFS.md`](docs/CASPER_TESTNET_PROOFS.md)
+- **Final-round checklist & manual steps:** [`docs/FINAL_ROUND_CHECKLIST.md`](docs/FINAL_ROUND_CHECKLIST.md)
+
+Quick facts:
+- Network: **Casper Testnet** (`casper-test`)
+- Contract package hash: `897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0`
+  ([explorer](https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0))
+- Sample confirmed tx: `fbb4b7e766c0275980074d070d446d8e64703c2c2eb81be84637dfa531aa7b4e`
 
 ## License
 
