@@ -22,7 +22,7 @@ redis==5.0.7
 
 # --- Business Platform Phase 2 (RBAC, Billing, Omnichannel, Security, Observability) ---
 cryptography==43.0.1
-prometheus-client==0.20.0
+prometheus-client==0.25.0
 
 # --- Phase 3 Multimodal (Document Generation) ---
 python-docx==1.1.2
