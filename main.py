@@ -75,7 +75,6 @@ from rate_limiter import RateLimiter, LimitStatus
 from integrations_store import (
     get_integrations,
     set_integration,
-    merge_integration,
     clear_integration,
     db_get_integrations,
     db_get_integration,
@@ -100,7 +99,6 @@ from whatsapp_embedded_signup import (
 )
 from media_gen import (
     ReplicateRateLimitError,
-    generate_image_replicate,
 )
 import image_providers
 import vision_engine
@@ -114,7 +112,6 @@ from finance_fetcher import (
     combine_market_answers,
     fetch_crypto_quotes,
     fetch_stock_quotes,
-    format_crypto_market_answer,
     looks_like_market_price_query,
 )
 from news_fetcher import build_news_context
@@ -6455,7 +6452,7 @@ try:
         revoke_session as _platform_revoke_session_fn,
         _check_rate_limit as _platform_check_rate_limit_fn,
     )
-    from bn_platform.observability import instrument_app, record_db_pool_stats
+    from bn_platform.observability import instrument_app
     from bn_platform.ai_observability import build_ai_observability_router
     from bn_platform.cost_intelligence import build_cost_intelligence_router
     from bn_platform.feedback_learning import build_feedback_learning_router
@@ -6749,7 +6746,7 @@ try:
         ),
         prefix="/api",
     )
-    from bn_platform.local_agent_router import build_local_agent_router, ensure_schema as _la_ensure_schema
+    from bn_platform.local_agent_router import build_local_agent_router
 
     async def _computer_agent_llm(prompt: str) -> str:
         """Minimal LLM caller untuk Computer Agent planner — pakai provider yang tersedia."""

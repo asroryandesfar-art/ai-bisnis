@@ -107,7 +107,8 @@ def build_action_executor_router(
             )
             return {"grants": [dict(r) for r in rows]}
         except Exception as e:
-            raise HTTPException(500, f"Gagal mengambil grants: {e}")
+            logger.exception("Gagal mengambil grants: %s", e)
+            raise HTTPException(500, "Gagal mengambil daftar grant. Coba lagi nanti.")
 
     @router.post("/permission/grants", status_code=201)
     async def create_permission_grant(
@@ -137,7 +138,8 @@ def build_action_executor_router(
             )
             return {"success": True, "grant_id": grant_id, "permission": body.permission, "mode": body.mode}
         except Exception as e:
-            raise HTTPException(400, f"Gagal membuat grant: {e}")
+            logger.exception("Gagal membuat grant: %s", e)
+            raise HTTPException(400, "Gagal membuat grant. Periksa input lalu coba lagi.")
 
     @router.delete("/permission/grants/{grant_id}", status_code=200)
     async def revoke_permission_grant(
@@ -162,7 +164,8 @@ def build_action_executor_router(
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(500, f"Gagal mencabut grant: {e}")
+            logger.exception("Gagal mencabut grant: %s", e)
+            raise HTTPException(500, "Gagal mencabut grant. Coba lagi nanti.")
 
     # ════════════════════════════════════════════════════════════════════════
     # TERMINAL
@@ -364,7 +367,8 @@ def build_action_executor_router(
             )
             return {"executions": [dict(r) for r in rows], "total": len(rows)}
         except Exception as e:
-            raise HTTPException(500, f"Gagal mengambil executions: {e}")
+            logger.exception("Gagal mengambil executions: %s", e)
+            raise HTTPException(500, "Gagal mengambil daftar eksekusi. Coba lagi nanti.")
 
     @router.get("/agent/executions/{execution_id}")
     async def get_agent_execution(
