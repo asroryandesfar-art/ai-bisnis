@@ -5824,7 +5824,10 @@ async def _fetch_website_text(url: str, timeout_s: float = 15.0) -> str:
     (termasuk tujuan redirect) divalidasi via tool_registry._validate_url()
     (tolak host privat/loopback/link-local/metadata cloud) sebelum di-fetch
     — sebelumnya endpoint ini fetch URL apa pun yang dikirim tenant tanpa
-    validasi sama sekali (follow_redirects=True tanpa cek ulang tujuan)."""
+    validasi sama sekali (follow_redirects=True tanpa cek ulang tujuan).
+
+    L-05: koneksi fisik diarahkan ke IP ter-pin hasil resolusi (bukan
+    re-resolve DNS saat connect) sehingga DNS-rebinding TOCTOU tertutup."""
     url = (url or "").strip()
     if not url:
         return ""
@@ -5836,7 +5839,12 @@ async def _fetch_website_text(url: str, timeout_s: float = 15.0) -> str:
         try:
             current_url = url
             for _ in range(5):
-                res = await client.get(current_url)
+                # L-05: pin IP hasil resolusi; tolak bila host privat/unresolvable.
+                try:
+                    req = tool_registry.build_pinned_request(client, "GET", current_url)
+                except tool_registry.SSRFBlocked:
+                    return ""
+                res = await client.send(req)
                 if res.is_redirect:
                     location = res.headers.get("location")
                     if not location:

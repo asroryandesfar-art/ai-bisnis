@@ -115,11 +115,16 @@ class _FakeStreamResponse:
     async def aiter_bytes(self):
         yield self._body
 
-    async def __aenter__(self):
-        return self
+    async def aclose(self):
+        return None
 
-    async def __aexit__(self, *exc):
-        return False
+
+class _FakeRequest:
+    def __init__(self, method, url, headers):
+        self.method = method
+        self.url = url
+        self.headers = headers or {}
+        self.extensions = {}
 
 
 class _FakeAsyncClient:
@@ -134,7 +139,10 @@ class _FakeAsyncClient:
     async def __aexit__(self, *exc):
         return False
 
-    def stream(self, method, url, headers=None):
+    def build_request(self, method, url, headers=None):
+        return _FakeRequest(method, url, headers)
+
+    async def send(self, req, stream=False):
         return _FakeAsyncClient.responses.pop(0)
 
 

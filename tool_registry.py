@@ -24,7 +24,7 @@ import html
 import ipaddress
 import socket
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 
@@ -343,20 +343,82 @@ class _TextExtractor(HTMLParser):
         return " ".join(self._title_chunks).strip()
 
 
-def _is_public_host(host: str) -> bool:
-    """False jika host me-resolve ke alamat privat/loopback/link-local/metadata."""
+def resolve_public_ips(host: str) -> list[str]:
+    """Resolve hostname SATU kali → daftar IPv4/IPv6 publik unik. Kosong jika
+    host tidak bisa di-resolve ATAU ADA satu pun IP yang privat/loopback/
+    link-local/reserved/multicast/unspecified (fail-closed).
+
+    Inti mitigasi L-05 (DNS-rebinding TOCTOU): IP di-resolve SEKALI di sini,
+    lalu di-pin saat connect (lihat ``build_pinned_request``). Karena HTTP
+    client tidak lagi me-re-resolve DNS sendiri, DNS server penyerang tidak
+    bisa mengubah IP antara saat pengecekan & saat koneksi."""
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return False
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            return False
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            return False
-    return True
+        except (ValueError, IndexError):
+            return []
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return []
+        addr = info[4][0]
+        if addr not in seen:
+            seen.add(addr)
+            out.append(addr)
+    return out
+
+
+def _is_public_host(host: str) -> bool:
+    """False jika host me-resolve ke alamat privat/loopback/link-local/metadata."""
+    return bool(resolve_public_ips(host))
+
+
+class SSRFBlocked(Exception):
+    """Host gagal validasi anti-SSRF (privat/tidak ter-resolve) sehingga
+    tidak ada IP publik yang bisa di-pin."""
+
+
+def build_pinned_request(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    headers: dict | None = None,
+) -> httpx.Request:
+    """Bangun ``httpx.Request`` anti-DNS-rebinding (L-05).
+
+    Alur: host di-resolve sekali via ``resolve_public_ips`` (validasi publik),
+    IP pertama yang lolos dipakai sebagai TUJUAN KONEKSI langsung (URL
+    di-rewrite ke IP itu), sementara header ``Host`` + TLS SNI tetap memakai
+    hostname asli. Dengan demikian ``httpx``/``httpcore`` tidak melakukan
+    resolusi DNS kedua kali saat connect → menutup celah TOCTOU.
+
+    Raise ``SSRFBlocked`` bila host privat/tidak ter-resolve (fail-closed)."""
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES or not parsed.hostname:
+        raise SSRFBlocked(f"Skema/host tidak diizinkan: {parsed.scheme} {parsed.hostname!r}")
+    ips = resolve_public_ips(parsed.hostname)
+    if not ips:
+        raise SSRFBlocked(f"Host {parsed.hostname!r} privat atau tidak ter-resolve.")
+    pinned_ip = ips[0]
+    # Tetap sertakan port eksplisit bila ada di URL asli.
+    netloc = pinned_ip if parsed.port is None else f"{pinned_ip}:{parsed.port}"
+    ip_url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+    req_headers = dict(headers or {})
+    # Host header tetap hostname asli agar virtual-host routing & cert valid.
+    host_header = parsed.hostname if parsed.port is None else f"{parsed.hostname}:{parsed.port}"
+    req_headers["Host"] = host_header
+    req = client.build_request(method, ip_url, headers=req_headers)
+    # SNI untuk TLS handshake memakai hostname asli (bukan IP) → sertifikat
+    # tervalidasi terhadap hostname, koneksi fisik ke IP ter-pin.
+    req.extensions["sni_hostname"] = parsed.hostname
+    return req
 
 
 def _validate_url(url: str) -> tuple[bool, str]:
@@ -374,22 +436,30 @@ async def read_website(url: str) -> dict:
     """Baca konten halaman web yang dikirim user.
 
     SSRF-safe: hanya host publik dengan skema http/https; redirect divalidasi
-    ulang; ukuran respons dibatasi `_MAX_BYTES`. Catatan: tidak melindungi dari
-    DNS rebinding (pengecekan IP dan koneksi aktual bisa beda waktu) — cukup
-    untuk memblok target umum (localhost, jaringan privat, endpoint metadata
-    cloud), bukan jaminan keamanan penuh.
+    ulang; ukuran respons dibatasi `_MAX_BYTES`. Sejak mitigasi L-05, host
+    di-resolve SATU kali lalu IP-nya di-pin saat koneksi (DNS tidak di-query
+    ulang oleh HTTP client) sehingga DNS-rebinding TOCTOU tertutup.
     """
     ok, reason = _validate_url(url)
     if not ok:
         return {"success": False, "url": url, "error": reason}
 
     current_url = url
+    body = b""
+    encoding = "utf-8"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             for _ in range(_MAX_REDIRECTS + 1):
-                async with client.stream(
-                    "GET", current_url, headers={"User-Agent": "BotNesiaBot/1.0"}
-                ) as response:
+                # L-05: bangun request ke IP ter-pin (bukan re-resolve DNS).
+                try:
+                    req = build_pinned_request(
+                        client, "GET", current_url,
+                        headers={"User-Agent": "BotNesiaBot/1.0"},
+                    )
+                except SSRFBlocked as exc:
+                    return {"success": False, "url": url, "error": str(exc)}
+                response = await client.send(req, stream=True)
+                try:
                     if response.is_redirect:
                         location = response.headers.get("location")
                         if not location:
@@ -423,6 +493,10 @@ async def read_website(url: str) -> dict:
                             break
                     body = b"".join(chunks)[:_MAX_BYTES]
                     encoding = response.encoding or "utf-8"
+                finally:
+                    # Tutup streaming response agar koneksi kembali ke pool
+                    # (juga saat redirect/continue/return lebih awal).
+                    await response.aclose()
                 break
             else:
                 return {"success": False, "url": url, "error": "Terlalu banyak redirect."}
