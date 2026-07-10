@@ -43,6 +43,7 @@ import uuid
 import asyncio
 import secrets
 import sys
+import types
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -3615,6 +3616,31 @@ async def meta_webhook_receive(request: Request):
         payload = json.loads(body_bytes.decode("utf-8") or "{}")
     except Exception:
         payload = {}
+
+    # ── Diagnostic logging: lihat SETIAP webhook yang masuk ──
+    _obj = str(payload.get("object") or "")
+    _entries = payload.get("entry") or []
+    logger.debug("=== WEBHOOK RECEIVED === object=%s entries=%d sig=%s", _obj, len(_entries), sig[:24] if sig else "NONE")
+    for _i, _e in enumerate(_entries):
+        _eid = str((_e or {}).get("id") or "")
+        _msg = _e.get("messaging") or []
+        _changes = _e.get("changes") or []
+        if _msg:
+            for _m in _msg:
+                _sender = ((_m.get("sender") or {}).get("id") or "")
+                _recipient = ((_m.get("recipient") or {}).get("id") or "")
+                _text = str(((_m.get("message") or {}).get("text") or "")).strip()
+                logger.debug("  entry[%d] id=%s | messaging sender=%s recipient=%s text=%r",
+                            _i, _eid, _sender, _recipient, _text[:80])
+        elif _changes:
+            for _ch in _changes:
+                _field = _ch.get("field") or ""
+                _val = _ch.get("value") or {}
+                logger.debug("  entry[%d] id=%s | change field=%s phone=%s",
+                            _i, _eid, _field, ((_val.get("metadata") or {}).get("phone_number_id") or ""))
+        else:
+            logger.debug("  entry[%d] id=%s | (no messaging/changes)", _i, _eid)
+
     # Best-effort log payload.
     try:
         p = Path("data/meta_webhooks.log")
@@ -6518,7 +6544,11 @@ try:
         user_meta = {"userId": external_user_id, "name": display_name, "_channel": channel}
         req = ChatReq(message=text, session_id=session_id, user_meta=user_meta)
         try:
-            resp = await chat(bot_id=bot_id, body=req, pool=pool)
+            _stub_request = types.SimpleNamespace(
+                headers={"CF-Connecting-IP": external_user_id},
+                client=None,
+            )
+            resp = await chat(bot_id=bot_id, body=req, request=_stub_request, pool=pool)
             return (resp.get("answer") if isinstance(resp, dict) else None) or ""
         except Exception:
             logger.exception("Route inbound platform message failed (org=%s bot=%s channel=%s)", org_id, bot_id, channel)

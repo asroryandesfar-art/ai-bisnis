@@ -307,22 +307,46 @@ def build_meta_oauth_router(
     @router.get("/callback", include_in_schema=False)
     async def oauth_callback(
         code: str | None = Query(None),
-        state: str = Query(...),
+        state: str | None = Query(None),
         error: str | None = Query(None),
+        error_reason: str | None = Query(None),
+        error_code: str | None = Query(None),
+        error_message: str | None = Query(None),
         error_description: str | None = Query(None),
         pool: asyncpg.Pool = Depends(get_pool),
     ):
-        org_id, raw_context = await db_pop_oauth_state(pool, provider="meta_oauth", state=state)
         dashboard = f"{cfg.app_url.rstrip('/')}/dashboard"
+        # Meta mengirim parameter error → otorisasi ditolak / dibatalkan pengguna.
+        # Tampilkan pesan error tanpa memaksa membaca state (jangan 422).
+        if error or error_reason or error_code or error_message:
+            logger.warning(
+                "Meta OAuth authorization error: error=%s error_code=%s reason=%s message=%s description=%s",
+                error, error_code, error_reason, error_message, error_description,
+            )
+            reason = error_message or error_reason or error_description or error or "authorization_error"
+            return RedirectResponse(
+                f"{dashboard}?{urlencode({'meta_oauth': 'error', 'meta_error': reason})}#channels"
+            )
+        # Tidak ada code → alur dibatalkan tanpa error eksplisit dari Meta.
+        if not code:
+            logger.info("Meta OAuth callback tanpa code (kemungkinan dibatalkan pengguna)")
+            return RedirectResponse(f"{dashboard}?meta_oauth=cancelled#channels")
+        # code ada tapi state tidak ada → tidak bisa memvalidasi CSRF/state; jangan 422.
+        if not state:
+            logger.warning("Meta OAuth callback menerima code tanpa parameter state")
+            return RedirectResponse(f"{dashboard}?meta_oauth=missing_state#channels")
+        # code + state ada → validasi state, lalu tukar code menjadi access token.
+        org_id, raw_context = await db_pop_oauth_state(pool, provider="meta_oauth", state=state)
         if not org_id or not raw_context:
             return RedirectResponse(f"{dashboard}?meta_oauth=invalid_state#channels")
         try:
             context = json.loads(raw_context)
         except json.JSONDecodeError:
-            context = {"bot_id": raw_context, "redirect_uri": cfg.meta_oauth_redirect_uri}
-        if error or not code:
-            logger.warning("Meta OAuth cancelled org=%s: %s %s", org_id, error, error_description)
-            return RedirectResponse(f"{dashboard}?meta_oauth=cancelled#channels")
+            context = {
+                "bot_id": raw_context,
+                "redirect_uri": cfg.meta_oauth_redirect_uri.strip()
+                or f"{cfg.app_url.rstrip('/')}/api/integrations/meta/oauth/callback",
+            }
         try:
             token_data = await exchange_code(code, context["redirect_uri"])
             short_token = token_data.get("access_token") or ""
@@ -341,7 +365,7 @@ def build_meta_oauth_router(
             }
             await db_set_integration(pool, org_id=org_id, key=META_KEY, value=account, secret_key=cfg.secret_key)
             return RedirectResponse(f"{dashboard}?meta_oauth=success&meta_channel={context.get('channel','facebook')}#channels")
-        except Exception as exc:
+        except Exception:
             logger.exception("Meta OAuth callback failed org=%s", org_id)
             return RedirectResponse(f"{dashboard}?meta_oauth=error#channels")
 

@@ -360,7 +360,7 @@ export function planBadge(planKey) {
 }
 
 export function lockCard(title, sub, requiredPlan = "Pro") {
-  return `<div class="lock-card" aria-label="${esc(title)} — ${t('upgrade.feature_locked')}"><div class="lock-layer"><div class="lock-icon-wrap">🔒</div><p class="lock-title">${esc(title)}</p><p class="lock-sub">${esc(sub || `${t('upgrade.available_on')} ${requiredPlan}`)}</p><button class="button button-primary button-sm" data-action="show-upgrade-dialog" data-plan="${esc(requiredPlan)}">${t('upgrade.unlock')}</button></div></div>`;
+  return `<div class="lock-card" aria-label="${esc(title)} — ${t('upgrade.feature_locked')}"><div class="lock-layer"><div class="lock-icon-wrap"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><p class="lock-title">${esc(title)}</p><p class="lock-sub">${esc(sub || `${t('upgrade.available_on')} ${requiredPlan}`)}</p><button class="button button-primary button-sm" data-action="show-upgrade-dialog" data-plan="${esc(requiredPlan)}">${t('upgrade.unlock')}</button></div></div>`;
 }
 
 export function upgradeDialog(requiredPlan = "Pro") {

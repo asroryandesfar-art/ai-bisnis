@@ -1,40 +1,42 @@
-document.querySelectorAll("[data-faq-toggle]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const item = btn.closest(".landing-faq-item");
-    const wasOpen = item.classList.contains("open");
-    document.querySelectorAll(".landing-faq-item.open").forEach((el) => el.classList.remove("open"));
-    if (!wasOpen) item.classList.add("open");
-  });
-});
+/* landing.js — nav scroll state, mobile menu, scroll reveal */
 
-const navToggle = document.querySelector("[data-nav-toggle]");
-const navLinks = document.querySelector(".landing-nav-links");
-if (navToggle && navLinks) {
-  navToggle.addEventListener("click", () => {
-    const isOpen = navLinks.style.display === "flex";
-    navLinks.style.display = isOpen ? "none" : "flex";
-    navLinks.style.flexDirection = "column";
-    navLinks.style.position = "absolute";
-    navLinks.style.top = "64px";
-    navLinks.style.left = "0";
-    navLinks.style.right = "0";
-    navLinks.style.padding = "20px 24px";
-    navLinks.style.background = "rgba(9,11,16,.97)";
-    navLinks.style.borderBottom = "1px solid var(--line)";
-  });
-}
+(function () {
+  // ── Nav: add scrolled state on scroll ──
+  var nav = document.getElementById("lnNav");
+  if (nav) {
+    var onScroll = function () {
+      if (window.scrollY > 8) nav.classList.add("scrolled");
+      else nav.classList.remove("scrolled");
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  }
 
-const revealTargets = document.querySelectorAll("[data-reveal]");
-if ("IntersectionObserver" in window && revealTargets.length) {
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add("in-view");
-        observer.unobserve(entry.target);
-      }
+  // ── Mobile nav toggle ──
+  var toggle = document.getElementById("lnNavToggle");
+  var mobile = document.getElementById("lnNavMobile");
+  if (toggle && mobile) {
+    toggle.addEventListener("click", function () {
+      mobile.classList.toggle("open");
     });
-  }, { threshold: 0.15 });
-  revealTargets.forEach((target) => observer.observe(target));
-} else {
-  revealTargets.forEach((target) => target.classList.add("in-view"));
-}
+    mobile.querySelectorAll("a").forEach(function (a) {
+      a.addEventListener("click", function () { mobile.classList.remove("open"); });
+    });
+  }
+
+  // ── Scroll reveal ──
+  var reveals = document.querySelectorAll("[data-reveal]");
+  if ("IntersectionObserver" in window && reveals.length) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          e.target.classList.add("in-view");
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+    reveals.forEach(function (el) { io.observe(el); });
+  } else {
+    reveals.forEach(function (el) { el.classList.add("in-view"); });
+  }
+})();
