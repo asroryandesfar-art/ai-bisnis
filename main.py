@@ -1282,7 +1282,7 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
             preview_image TEXT,
             system_prompt TEXT NOT NULL,
             greeting TEXT NOT NULL,
-            primary_color TEXT NOT NULL DEFAULT '#0066FF',
+            primary_color TEXT NOT NULL DEFAULT '#2C4477',
             sample_faqs JSONB NOT NULL DEFAULT '[]'::jsonb,
             install_count INT NOT NULL DEFAULT 0,
             version TEXT NOT NULL DEFAULT '1.0.0',
@@ -1774,7 +1774,7 @@ class LoginReq(BaseModel):
 
 class BotCreateReq(BaseModel):
     name:          str
-    primary_color: str = "#0066FF"
+    primary_color: str = "#2C4477"
     greeting:      str = "Halo! Ada yang bisa saya bantu?"
     system_prompt: str | None = None
     language:      str = "id"

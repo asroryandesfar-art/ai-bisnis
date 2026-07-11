@@ -1,4 +1,3 @@
-import { LinearGradient } from "expo-linear-gradient";
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -15,15 +14,12 @@ export function GradientButton({
   disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled || loading} style={({ pressed }) => [pressed && styles.pressed]}>
-      <LinearGradient
-        colors={colors.brand.gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.button, (disabled || loading) && styles.disabled]}
-      >
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.text}>{title}</Text>}
-      </LinearGradient>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={({ pressed }) => [styles.button, pressed && styles.pressed, (disabled || loading) && styles.disabled]}
+    >
+      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.text}>{title}</Text>}
     </Pressable>
   );
 }
@@ -34,6 +30,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: colors.brand.violet500,
   },
   text: { color: "#fff", fontWeight: "700", fontSize: 14, letterSpacing: 0.3 },
   pressed: { opacity: 0.85 },

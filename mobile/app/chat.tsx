@@ -1,5 +1,4 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -61,7 +60,7 @@ export default function Chat() {
       setSessionId(res.session_id || sessionId);
       setMessages((m) => [...m, { id: `b${Date.now()}`, role: "bot", text: res.answer || "(tidak ada jawaban)", at: Date.now() }]);
     } catch (e: any) {
-      setMessages((m) => [...m, { id: `e${Date.now()}`, role: "bot", text: `⚠️ ${e?.message || "Gagal mengirim pesan."}`, at: Date.now() }]);
+      setMessages((m) => [...m, { id: `e${Date.now()}`, role: "bot", text: e?.message || "Gagal mengirim pesan.", at: Date.now() }]);
     } finally {
       setSending(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
@@ -95,9 +94,9 @@ export default function Chat() {
         {messages.map((m) =>
           m.role === "user" ? (
             <View key={m.id} style={styles.userRow}>
-              <LinearGradient colors={colors.brand.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.userBubble}>
+              <View style={[styles.userBubble, { backgroundColor: colors.brand.violet500 }]}>
                 <Text style={styles.userText}>{m.text}</Text>
-              </LinearGradient>
+              </View>
               <Text style={styles.timeTextRight}>{timeLabel(m.at)}</Text>
             </View>
           ) : (

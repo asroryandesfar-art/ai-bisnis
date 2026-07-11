@@ -25,9 +25,6 @@ export default function Splash() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.glowTop} />
-      <View style={styles.glowBottom} />
-
       <View style={styles.center}>
         <View style={styles.logoWrap}>
           <Image source={require("../assets/brand-logo.png")} style={styles.logoBox} />
@@ -61,19 +58,11 @@ export default function Splash() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg.app, alignItems: "center", justifyContent: "center" },
-  glowTop: {
-    position: "absolute", top: "18%", width: 320, height: 320, borderRadius: 999,
-    backgroundColor: "rgba(124,58,237,0.20)",
-  },
-  glowBottom: {
-    position: "absolute", bottom: "18%", width: 240, height: 240, borderRadius: 999,
-    backgroundColor: "rgba(79,70,229,0.15)",
-  },
   center: { alignItems: "center", gap: spacing.lg, paddingHorizontal: spacing.xl },
   logoWrap: { position: "relative" },
   logoBox: {
     width: 96, height: 96, borderRadius: 24, resizeMode: "cover",
-    shadowColor: colors.brand.violet600, shadowOpacity: 0.6, shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
+    shadowColor: "#000000", shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
   onlineDot: {
     position: "absolute", top: -4, right: -4, width: 20, height: 20, borderRadius: 10,

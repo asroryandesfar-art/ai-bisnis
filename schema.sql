@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS bots (
     name           TEXT        NOT NULL,
     status         bot_status  NOT NULL DEFAULT 'active',
     -- konfigurasi tampilan widget
-    primary_color  TEXT        NOT NULL DEFAULT '#0066FF',
+    primary_color  TEXT        NOT NULL DEFAULT '#2C4477',
     position       TEXT        NOT NULL DEFAULT 'bottom-right',
     greeting       TEXT        NOT NULL DEFAULT 'Halo! Ada yang bisa saya bantu?',
     language       TEXT        NOT NULL DEFAULT 'id',
@@ -423,7 +423,7 @@ CREATE TABLE IF NOT EXISTS marketplace_templates (
     preview_image  TEXT,
     system_prompt TEXT NOT NULL,
     greeting      TEXT NOT NULL,
-    primary_color TEXT NOT NULL DEFAULT '#0066FF',
+    primary_color TEXT NOT NULL DEFAULT '#2C4477',
     sample_faqs   JSONB NOT NULL DEFAULT '[]'::jsonb,
     install_count INT NOT NULL DEFAULT 0,
     version       TEXT NOT NULL DEFAULT '1.0.0',

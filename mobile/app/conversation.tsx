@@ -136,14 +136,22 @@ export default function ConversationDetail() {
                           disabled={busyFeedback === m.id}
                           style={[styles.feedbackBtn, m.feedback_rating === "helpful" && styles.feedbackBtnActivePositive]}
                         >
-                          <Text style={styles.feedbackBtnText}>👍</Text>
+                          <Ionicons
+                            name="thumbs-up-outline"
+                            size={13}
+                            color={m.feedback_rating === "helpful" ? colors.status.success : colors.text.muted}
+                          />
                         </Pressable>
                         <Pressable
                           onPress={() => rate(m, "not_helpful")}
                           disabled={busyFeedback === m.id}
                           style={[styles.feedbackBtn, m.feedback_rating === "not_helpful" && styles.feedbackBtnActiveNegative]}
                         >
-                          <Text style={styles.feedbackBtnText}>👎</Text>
+                          <Ionicons
+                            name="thumbs-down-outline"
+                            size={13}
+                            color={m.feedback_rating === "not_helpful" ? colors.status.danger : colors.text.muted}
+                          />
                         </Pressable>
                       </View>
                     ) : null}
@@ -224,7 +232,6 @@ const styles = StyleSheet.create({
   feedbackBtn: { paddingHorizontal: spacing.sm + 2, paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.bg.cardAlt, borderWidth: 1, borderColor: colors.bg.border },
   feedbackBtnActivePositive: { backgroundColor: colors.status.successBg, borderColor: colors.status.success },
   feedbackBtnActiveNegative: { backgroundColor: colors.status.dangerBg, borderColor: colors.status.danger },
-  feedbackBtnText: { fontSize: 13 },
 
   sourcesBtn: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.sm },
   sourcesBtnText: { color: colors.brand.violet400, fontSize: 11, fontWeight: "700" },

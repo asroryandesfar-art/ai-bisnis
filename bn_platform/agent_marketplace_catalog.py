@@ -37,13 +37,15 @@ MARKETPLACE_CATEGORIES = [
 
 CATEGORY_DESCRIPTIONS = dict(MARKETPLACE_CATEGORIES)
 CATEGORY_COLORS = {
-    "Sales & Marketing": "#7C3AED", "Customer Service": "#2563EB", "HR & Recruitment": "#DB2777",
-    "Finance & Accounting": "#059669", "Legal & Compliance": "#475569", "Ecommerce": "#EA580C",
-    "Retail": "#D97706", "Restaurant": "#DC2626", "Hospitality": "#0891B2", "Travel": "#0EA5E9",
-    "Healthcare": "#10B981", "Education": "#F59E0B", "Real Estate": "#8B5CF6", "Startup": "#06B6D4",
-    "Technology": "#3B82F6", "Logistics": "#0F766E", "Manufacturing": "#64748B", "Agriculture": "#65A30D",
-    "Creator Economy": "#EC4899", "Government": "#1D4ED8", "Religious & Community": "#16A34A",
-    "Internal Business Operations": "#14B8A6",
+    # Deep, muted tones (same hue per category, lower saturation/lightness)
+    # so agent branding stays calm and readable against a near-black UI.
+    "Sales & Marketing": "#482C77", "Customer Service": "#2C4477", "HR & Recruitment": "#72324E",
+    "Finance & Accounting": "#287C62", "Legal & Compliance": "#454F5E", "Ecommerce": "#7A4529",
+    "Retail": "#7C5527", "Restaurant": "#723131", "Hospitality": "#296B7B", "Travel": "#2A6179",
+    "Healthcare": "#2C775E", "Education": "#7B5C28", "Real Estate": "#42297A", "Startup": "#27707C",
+    "Technology": "#29487B", "Logistics": "#2F746F", "Manufacturing": "#454F5E", "Agriculture": "#58782B",
+    "Creator Economy": "#762D51", "Government": "#2F4174", "Religious & Community": "#2F7449",
+    "Internal Business Operations": "#2E766E",
 }
 CATEGORY_ICONS = {
     "Sales & Marketing": "megaphone", "Customer Service": "headphones", "HR & Recruitment": "users",

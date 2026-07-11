@@ -1,28 +1,30 @@
-// Design tokens extracted directly from the reference Figma prototype
-// (train-ethics-17051690.figma.site) — exact hex values pulled from its
-// rendered DOM, not eyeballed from screenshots.
+// Premium enterprise design system (2026-07-11 retheme): pure black,
+// one subtle brand accent, no gradients. Key shape kept identical to the
+// prior theme so the ~50 files consuming these tokens don't need edits —
+// only values changed.
 export const colors = {
   bg: {
-    app: "#070B14",
-    base: "#0D1017",
-    card: "#0E1420",
-    cardAlt: "#0A0F1C",
-    border: "#1A2030",
-    borderAlt: "#1A2235",
+    app: "#000000",
+    base: "#0A0A0A",
+    card: "#111111",
+    cardAlt: "#0D0D0D",
+    border: "#1E1E1E",
+    borderAlt: "#2A2A2A",
   },
   text: {
     primary: "#FFFFFF",
-    body: "#A8B4CC",
-    muted: "#5A6A88",
-    faint: "#3A4A62",
+    body: "#B3B3B3",
+    muted: "#808080",
+    faint: "#4D4D4D",
   },
   brand: {
-    violet400: "#A78BFA",
-    violet500: "#8B5CF6",
-    violet600: "#7C3AED",
-    indigo500: "#6366F1",
-    indigo600: "#4F46E5",
-    gradient: ["#7C3AED", "#4F46E5"] as const,
+    // Single accent hue (deep, muted blue) at different tints/shades for
+    // interactive states — not a second color. Never combine into a gradient.
+    violet400: "#6E93BA",
+    violet500: "#3D6791",
+    violet600: "#2C4C6C",
+    indigo500: "#2C4C6C",
+    indigo600: "#21394F",
   },
   status: {
     successBg: "rgba(16,185,129,0.10)",

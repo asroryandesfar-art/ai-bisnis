@@ -96,9 +96,16 @@ export default function CasperWorkflow() {
           <>
             {config ? (
               <Card style={{ borderColor: demoMode ? colors.status.warning : colors.status.success, gap: 2 }}>
-                <Text style={{ color: demoMode ? colors.status.warning : colors.status.success, fontSize: 12, fontWeight: "700" }}>
-                  {demoMode ? "◎ Demo Mode Aktif" : "✓ Real Mode Aktif"}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                  <Ionicons
+                    name={demoMode ? "ellipse-outline" : "checkmark-circle-outline"}
+                    size={13}
+                    color={demoMode ? colors.status.warning : colors.status.success}
+                  />
+                  <Text style={{ color: demoMode ? colors.status.warning : colors.status.success, fontSize: 12, fontWeight: "700" }}>
+                    {demoMode ? "Demo Mode Aktif" : "Real Mode Aktif"}
+                  </Text>
+                </View>
                 <Text style={styles.hint}>
                   {demoMode
                     ? "Proof berupa hash deterministik (bukan transaksi Casper sungguhan). Isi env CASPER_* di server untuk mode nyata."
@@ -116,7 +123,14 @@ export default function CasperWorkflow() {
 
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <Pressable style={[styles.outlineBtnFlex, busy === "demo" && { opacity: 0.6 }]} onPress={runDemo} disabled={busy === "demo"}>
-                {busy === "demo" ? <ActivityIndicator size="small" color={colors.brand.violet400} /> : <Text style={styles.outlineBtnText}>⚡ One-Click Demo</Text>}
+                {busy === "demo" ? (
+                  <ActivityIndicator size="small" color={colors.brand.violet400} />
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    <Ionicons name="flash-outline" size={13} color={colors.brand.violet400} />
+                    <Text style={styles.outlineBtnText}>One-Click Demo</Text>
+                  </View>
+                )}
               </Pressable>
               <Pressable style={styles.primaryBtnFlex} onPress={() => setFormOpen((v) => !v)}>
                 <Text style={styles.primaryBtnText}>{formOpen ? "Batal" : "+ New Action"}</Text>

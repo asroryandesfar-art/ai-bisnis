@@ -179,7 +179,7 @@ export default function Notifikasi() {
         {!error && notifs.length === 0 ? (
           <View style={styles.empty}>
             <MaterialCommunityIcons name="bell-check-outline" size={36} color={colors.status.success} />
-            <Text style={styles.emptyText}>Tidak ada notifikasi. Semua beres! 🎉</Text>
+            <Text style={styles.emptyText}>Tidak ada notifikasi. Semua beres.</Text>
           </View>
         ) : null}
 

@@ -28,7 +28,7 @@ const REASONING_OPTS: { key: Reasoning; label: string }[] = [
   { key: "pro", label: "Pro" },
 ];
 // Preset swatches — RN has no native color picker; matches the brand palette.
-const COLORS = ["#8b7cff", "#7C3AED", "#4F46E5", "#34D399", "#FBBF24", "#FB7185", "#38BDF8", "#F472B6"];
+const COLORS = ["#2F257E", "#482C77", "#343073", "#356E59", "#7D6526", "#7C2733", "#28627B", "#782B53"];
 
 export default function AgentEditor() {
   const router = useRouter();

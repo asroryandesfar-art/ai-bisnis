@@ -472,7 +472,7 @@ CREATE TABLE IF NOT EXISTS marketplace_templates (
     preview_image  TEXT,
     system_prompt TEXT NOT NULL,
     greeting      TEXT NOT NULL,
-    primary_color TEXT NOT NULL DEFAULT '#0066FF',
+    primary_color TEXT NOT NULL DEFAULT '#2C4477',
     sample_faqs   JSONB NOT NULL DEFAULT '[]'::jsonb,
     install_count INT NOT NULL DEFAULT 0,
     version       TEXT NOT NULL DEFAULT '1.0.0',

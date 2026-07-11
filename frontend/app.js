@@ -4,7 +4,7 @@ import {
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
-} from "/ui/components.js?v=20260627-enterprise-ux-2";
+} from "/ui/components.js?v=20260711-mono-terminal-2";
 import { t, setLang, getLang } from "/ui/i18n.js";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
@@ -468,12 +468,12 @@ function drawChart(key, selector, rows, type = "bar") {
   const canvas = el(selector); if (!canvas || !window.Chart) return; destroyChart(key);
   const labels = rows.map((row) => String(row.date || row.label || "").slice(5));
   const values = rows.map((row) => Number(row.convs ?? row.value ?? row.cost ?? 0));
-  state.charts[key] = new Chart(canvas, { type, data:{labels,datasets:[{data:values,borderColor:'#8b7cff',backgroundColor:type==='line'?'rgba(139,124,255,.12)':'rgba(139,124,255,.7)',fill:type==='line',tension:.38,borderWidth:2,pointRadius:0,borderRadius:5}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#697386',font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(105,115,134,.13)'},ticks:{color:'#697386',font:{size:9}}}}} });
+  state.charts[key] = new Chart(canvas, { type, data:{labels,datasets:[{data:values,borderColor:'#ffffff',backgroundColor:type==='line'?'rgba(255,255,255,.1)':'rgba(255,255,255,.7)',fill:type==='line',tension:.38,borderWidth:2,pointRadius:0,borderRadius:5}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#6e6e6e',font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,.06)'},ticks:{color:'#6e6e6e',font:{size:9}}}}} });
 }
 
 function drawDoughnutChart(key, selector, labels, values) {
   const canvas = el(selector); if (!canvas || !window.Chart) return; destroyChart(key);
-  state.charts[key] = new Chart(canvas, { type:"doughnut", data:{labels,datasets:[{data:values,backgroundColor:['#697386','#f4bd62','#45d39b'],borderWidth:0}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#697386',font:{size:10},boxWidth:10}}},cutout:'65%'} });
+  state.charts[key] = new Chart(canvas, { type:"doughnut", data:{labels,datasets:[{data:values,backgroundColor:['#333333','#c99a3e','#2e9e73'],borderWidth:0}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#6e6e6e',font:{size:10},boxWidth:10}}},cutout:'65%'} });
 }
 
 async function renderAnalytics(days = state.analyticsDays) {
@@ -633,7 +633,7 @@ async function renderMarketplace() {
     const installed = Boolean(install);
     const tools = (template.tools || []).slice(0, 3).map((tool)=>`<span>${esc(String(tool).replace(/_/g," "))}</span>`).join("");
     const starters = (template.starter_questions || []).slice(0, 2).map((q)=>`<li>${esc(q)}</li>`).join("");
-    const color = template.primary_color || "#8b7cff";
+    const color = template.primary_color || "#3d6791";
     return `<article class="card card-hover marketplace-agent-card" style="--agent-color:${esc(color)}">
       <div class="marketplace-agent-top"><span class="marketplace-agent-icon">${icon(template.icon || 'agents',18)}</span><div><h3>${esc(template.name)}</h3><p>${esc(template.category)}</p></div></div>
       <p class="marketplace-agent-desc">${esc(template.description)}</p>
@@ -644,7 +644,7 @@ async function renderMarketplace() {
     </article>`;
   };
 
-  const categoryCards = categories.map((category) => `<button class="marketplace-chip ${filters.category===category.name?'active':''}" data-marketplace-category="${esc(category.name)}" style="--category-color:${esc(category.color || '#8b7cff')}">${icon(category.icon || 'agents',15)}<span>${esc(category.name)}</span><span class="chip-count">${formatNumber(category.template_count || 0)}</span></button>`).join("");
+  const categoryCards = categories.map((category) => `<button class="marketplace-chip ${filters.category===category.name?'active':''}" data-marketplace-category="${esc(category.name)}" style="--category-color:${esc(category.color || '#3d6791')}">${icon(category.icon || 'agents',15)}<span>${esc(category.name)}</span><span class="chip-count">${formatNumber(category.template_count || 0)}</span></button>`).join("");
   const installedRows = installs.map((item) => `<tr><td><span class="table-title">${esc(item.template_name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(item.template_key)} · ${esc(item.template_version || '1.0.0')}</div></td><td>${esc(item.template_category || 'Business')}</td><td>${statusBadge(item.bot_status || 'inactive', item.bot_status || 'inactive')}</td><td>${esc(item.bot_name || '—')}</td><td>${relativeTime(item.installed_at)}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="button" data-marketplace-update="${esc(item.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(item.id)}">Uninstall</button></div></td></tr>`).join('');
 
   const actions = `<div class="marketplace-controls"><label class="search-box marketplace-search">${icon('search',15)}<input data-marketplace-search value="${esc(filters.search)}" placeholder="Search ${formatNumber(templates.length)} agents"></label><select class="select" data-marketplace-category-select><option value="">All categories</option>${categories.map((cat)=>`<option value="${esc(cat.name)}" ${filters.category===cat.name?'selected':''}>${esc(cat.name)}</option>`).join('')}</select><button class="button" data-marketplace-clear>Clear</button></div>`;
@@ -2156,9 +2156,9 @@ function translateFeature(text) {
 const MIDTRANS_GATEWAY_APPROVED = false;
 
 const BILLING_PAYMENT_BANNER_STYLE = {
-  success: "background:#e8f5e9;border-color:#66bb6a;color:#1b5e20",
-  pending: "background:#fff8e1;border-color:#ffb300;color:#8d6e00",
-  failed:  "background:#ffebee;border-color:#ef5350;color:#b71c1c",
+  success: "background:#111111;border-color:#2e9e73;color:#2e9e73",
+  pending: "background:#111111;border-color:#c99a3e;color:#c99a3e",
+  failed:  "background:#111111;border-color:#d64550;color:#d64550",
 };
 const BILLING_PAYMENT_BANNER_ICON = { success: "✓", pending: "⏳", failed: "✕" };
 
@@ -2312,7 +2312,7 @@ async function renderBilling() {
 
   const mainPlanCards = mainPlans.map(p => buildPlanCard(p)).join('');
   const enterpriseCard = enterprisePlan ? buildPlanCard(enterprisePlan, true) : '';
-  const pricingNote = `<p style="font-size:11px;color:#888;text-align:center;margin:4px 0 20px">${t('billing.pricing_note')}</p>`;
+  const pricingNote = `<p style="font-size:11px;color:#6e6e6e;text-align:center;margin:4px 0 20px">${t('billing.pricing_note')}</p>`;
 
   // ── Addon Conversation Balance section ─────────────────────────────────
   // balance = jumlah percakapan tambahan, BUKAN Rupiah
@@ -2331,7 +2331,7 @@ async function renderBilling() {
       <td>${statusBadge(isPaid ? 'active' : 'pending', h.kind)}</td>
       <td>${esc(h.description)}</td>
       <td>${idr(h.amount_idr)}</td>
-      <td style="font-weight:600;color:${convCount>0?'#2e7d32':'#c62828'}">${convCount>0?'+':''}${formatNumber(convCount)} ${t('billing.conversations_unit')}</td>
+      <td style="font-weight:600;color:${convCount>0?'#2e9e73':'#d64550'}">${convCount>0?'+':''}${formatNumber(convCount)} ${t('billing.conversations_unit')}</td>
       <td>${formatDate(h.created_at)}</td>
       <td>${statusBadge(isPaid ? 'active' : 'pending', isPaid ? 'Paid' : 'Pending')}</td>
     </tr>`;
@@ -2339,26 +2339,26 @@ async function renderBilling() {
   const topupButtons = topupPackages.map(pkg =>
     `<button class="button" style="padding:10px 18px;font-size:13px;font-weight:600;line-height:1.4;text-align:center" data-topup="${pkg.amount_idr}">
       <span style="display:block">${esc(pkg.label)}</span>
-      <span style="display:block;font-size:11px;font-weight:400;color:#2e7d32">+${formatNumber(pkg.conversations)} ${t('billing.conversations_unit')}</span>
+      <span style="display:block;font-size:11px;font-weight:400;color:var(--text-3)">+${formatNumber(pkg.conversations)} ${t('billing.conversations_unit')}</span>
     </button>`
   ).join('');
   const creditSection = `
   <div class="grid grid-2" style="margin-bottom:20px">
-    <div class="card" style="border:2px solid #e8f5e9">
+    <div class="card">
       <div class="card-head"><h3>${t('billing.credits_balance')}</h3></div>
       <div style="padding:0 20px 20px">
-        <div style="font-size:36px;font-weight:700;color:#2e7d32;margin-bottom:2px">${formatNumber(addonBalance)}</div>
-        <div style="font-size:13px;color:#555;margin-bottom:12px">${t('billing.conversations_unit')}</div>
-        <p style="font-size:12px;color:#666;margin:0 0 8px">${t('billing.credits_desc')}</p>
-        <p style="font-size:11px;color:#888;margin:0">${t('billing.credits_hint')}</p>
+        <div style="font-size:36px;font-weight:700;color:var(--text);margin-bottom:2px">${formatNumber(addonBalance)}</div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">${t('billing.conversations_unit')}</div>
+        <p style="font-size:12px;color:var(--text-2);margin:0 0 8px">${t('billing.credits_desc')}</p>
+        <p style="font-size:11px;color:var(--text-3);margin:0">${t('billing.credits_hint')}</p>
       </div>
     </div>
     <div class="card">
       <div class="card-head"><h3>${t('billing.credits_buy')}</h3></div>
       <div style="padding:0 20px 20px">
-        <p style="font-size:12px;color:#555;margin:0 0 12px">${t('billing.credits_choose')}</p>
+        <p style="font-size:12px;color:var(--text-2);margin:0 0 12px">${t('billing.credits_choose')}</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">${topupButtons}</div>
-        <p style="font-size:11px;color:#aaa;margin:0">${t('billing.credits_note')}</p>
+        <p style="font-size:11px;color:var(--text-3);margin:0">${t('billing.credits_note')}</p>
       </div>
     </div>
   </div>
@@ -2382,7 +2382,7 @@ async function renderBilling() {
     return `<div class="billing-usage-item ${atLimit ? 'at-limit' : nearLimit ? 'near-limit' : ''}">
       <div class="billing-usage-head"><span>${esc(key.replace(/_/g, ' '))}</span><b>${formatNumber(used)} / ${isUnlimited ? '∞' : formatNumber(limit)}</b></div>
       <div class="billing-usage-bar"><span style="width:${pct}%"></span></div>
-      ${atLimit ? `<div style="font-size:11px;color:#c62828;margin-top:4px">${t('billing.quota_full')} <button class="button" style="font-size:11px;padding:2px 8px" data-topup="50000">${t('billing.buy_credits_btn')}</button></div>` : ''}
+      ${atLimit ? `<div style="font-size:11px;color:#d64550;margin-top:4px">${t('billing.quota_full')} <button class="button" style="font-size:11px;padding:2px 8px" data-topup="50000">${t('billing.buy_credits_btn')}</button></div>` : ''}
     </div>`;
   }).join('') : emptyState(t('billing.usage_empty'), t('billing.usage_empty_sub'), '', 'analytics');
 
@@ -2392,16 +2392,16 @@ async function renderBilling() {
   ).join('');
 
   const trialBanner = isTrial && trialEnds
-    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;font-size:13px">
-         🎁 <strong>${t('billing.trial_banner_prefix')}${currentKey.charAt(0).toUpperCase()+currentKey.slice(1)}</strong> ${t('billing.trial_banner_suffix')} <strong>${formatDate(trialEnds)}</strong>. ${t('billing.trial_banner_note')} <a href="#" style="color:#2e7d32;font-weight:600" data-checkout-plan="${currentKey}">${t('billing.trial_banner_activate')}</a>
+    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#111111;border:1px solid #2e9e73;border-radius:8px;font-size:13px;color:var(--text-2)">
+         <strong style="color:var(--text)">${t('billing.trial_banner_prefix')}${currentKey.charAt(0).toUpperCase()+currentKey.slice(1)}</strong> ${t('billing.trial_banner_suffix')} <strong style="color:var(--text)">${formatDate(trialEnds)}</strong>. ${t('billing.trial_banner_note')} <a href="#" style="color:#2e9e73;font-weight:600" data-checkout-plan="${currentKey}">${t('billing.trial_banner_activate')}</a>
        </div>`
     : '';
 
   // Set MIDTRANS_GATEWAY_APPROVED to true (or delete this banner) once Midtrans
   // finishes the merchant business review and real payment channels are live.
   const gatewayStatusBanner = !MIDTRANS_GATEWAY_APPROVED
-    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#fff8e1;border:1px solid #ffb300;border-radius:8px;font-size:13px;color:#8d6e00">
-         ⏳ <strong>${esc(t('billing.gateway_status_title'))}</strong><br>${esc(t('billing.gateway_status_sub'))}
+    ? `<div style="margin-bottom:16px;padding:12px 16px;background:#111111;border:1px solid #c99a3e;border-radius:8px;font-size:13px;color:#c99a3e">
+         <strong>${esc(t('billing.gateway_status_title'))}</strong><br>${esc(t('billing.gateway_status_sub'))}
        </div>`
     : '';
 
@@ -2409,7 +2409,7 @@ async function renderBilling() {
   ${paymentBanner}
   ${gatewayStatusBanner}
   ${trialBanner}
-  <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#555">${t('billing.plan_section')}</div>
+  <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:var(--text-2)">${t('billing.plan_section')}</div>
   <div class="billing-plans-grid" style="grid-template-columns:repeat(4,1fr)">${mainPlanCards}</div>
   ${enterpriseCard ? `<div style="margin-top:8px">${enterpriseCard}</div>` : ''}
   ${pricingNote}
@@ -3204,27 +3204,27 @@ function casperStatusBadge(status) {
 }
 
 function casperActionCard(a) {
-  const typeColors = {hire:'#7e57c2',price_change:'#e91e63',marketing:'#ff9800',finance:'#4caf50',sales:'#2196f3',hr:'#9c27b0',operations:'#607d8b',security:'#f44336',customer_support:'#00bcd4',general:'#757575'};
-  const color = typeColors[a.action_type] || '#757575';
-  const hash = a.deploy_hash ? `<code style="font-size:10px;word-break:break-all;color:#555">${a.deploy_hash.startsWith('demo-') ? a.deploy_hash.slice(0,28)+'…(demo)' : a.deploy_hash.slice(0,32)+'…'}</code>` : '<span style="color:#aaa;font-size:11px">—</span>';
+  const typeColors = {hire:'#51426b',price_change:'#7a334b',marketing:'#825f2b',finance:'#466847',sales:'#4a4a4a',hr:'#6a3b72',operations:'#555555',security:'#7e3530',customer_support:'#606060',general:'#6e6e6e'};
+  const color = typeColors[a.action_type] || '#6e6e6e';
+  const hash = a.deploy_hash ? `<code style="font-size:10px;word-break:break-all;color:var(--text-2)">${a.deploy_hash.startsWith('demo-') ? a.deploy_hash.slice(0,28)+'…(demo)' : a.deploy_hash.slice(0,32)+'…'}</code>` : '<span style="color:var(--text-3);font-size:11px">—</span>';
   const explorerLink = a.explorer_url && !a.deploy_hash?.startsWith('demo-')
-    ? `<a href="${esc(a.explorer_url)}" target="_blank" rel="noopener" style="font-size:11px;color:#7e57c2">View on cspr.live ↗</a>`
+    ? `<a href="${esc(a.explorer_url)}" target="_blank" rel="noopener" style="font-size:11px;color:#3d6791">View on cspr.live ↗</a>`
     : '';
   return `<article class="card casper-action-card" data-action-id="${esc(a.action_id)}" style="border-left:3px solid ${color};cursor:pointer">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
-      <span style="background:${color}22;color:${color};font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px">${esc(a.action_type.replace('_',' '))}</span>
+      <span style="background:${color}44;color:var(--text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px">${esc(a.action_type.replace('_',' '))}</span>
       ${casperStatusBadge(a.casper_status)}
     </div>
     <p style="margin:0 0 8px;font-size:13px;font-weight:600;line-height:1.4">${esc(a.action_summary.slice(0,140))}${a.action_summary.length>140?'…':''}</p>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div style="flex:1">${hash}${explorerLink ? `<br>${explorerLink}` : ''}</div>
-      <time style="font-size:11px;color:#999;white-space:nowrap">${formatDate(a.created_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time>
+      <time style="font-size:11px;color:var(--text-3);white-space:nowrap">${formatDate(a.created_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time>
     </div>
   </article>`;
 }
 
 async function renderCasperWorkflow() {
-  setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}<div class="skeleton" style="height:80px;margin-bottom:16px"></div>${skeletonCards(4)}`);
+  setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo">One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}<div class="skeleton" style="height:80px;margin-bottom:16px"></div>${skeletonCards(4)}`);
   try {
     const [stats, actions, cfg] = await Promise.all([
       api.casperStats().catch(() => ({ total_actions:0, anchored_on_chain:0, pending:0, failed:0, action_types:{} })),
@@ -3239,28 +3239,28 @@ async function renderCasperWorkflow() {
       ${metricCard('Failed',formatNumber(stats.failed),'Proof errors','costs')}
     </div>`;
     const envBanner = cfg && cfg.env && cfg.env.missing.length
-      ? `<div style="margin-bottom:16px;padding:10px 14px;background:#fff3e0;border:1px solid #ffb300;border-radius:6px;font-size:12px;color:#e65100">
+      ? `<div style="margin-bottom:16px;padding:10px 14px;background:#111111;border:1px solid #c99a3e;border-radius:6px;font-size:12px;color:#c99a3e">
            <strong>◎ Demo Mode Active</strong> — missing env vars: <code>${cfg.env.missing.map(m=>m.split(' ')[0]).join(', ')}</code>. Proofs are deterministic hashes (not real Casper transactions). Add vars to .env and restart to enable real mode.
          </div>`
       : (cfg && cfg.real_mode_available
-          ? `<div style="margin-bottom:16px;padding:8px 14px;background:#e8f5e9;border:1px solid #66bb6a;border-radius:6px;font-size:12px;color:#2e7d32">
+          ? `<div style="margin-bottom:16px;padding:8px 14px;background:#111111;border:1px solid #2e9e73;border-radius:6px;font-size:12px;color:#2e9e73">
                <strong>✓ Real Mode Active</strong> — CASPER_* env vars configured, Casper Testnet transactions enabled.
              </div>`
           : '');
-    const contractInfo = `${envBanner}<div class="card" style="margin-bottom:20px;padding:14px 18px;border:1px solid #d1c4e9;background:#f3e5f5">
+    const contractInfo = `${envBanner}<div class="card" style="margin-bottom:20px;padding:14px 18px;border:1px solid var(--line-strong);background:var(--surface-2)">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div style="flex:1">
-          <div style="font-size:11px;font-weight:700;color:#7e57c2;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">AI Proof Registry Smart Contract · Casper Testnet</div>
-          <code style="font-size:11px;color:#4527a0;word-break:break-all">Package: 897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0</code>
+          <div style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">AI Proof Registry Smart Contract · Casper Testnet</div>
+          <code style="font-size:11px;color:var(--text);word-break:break-all">Package: 897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0</code>
         </div>
-        <a href="https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0" target="_blank" rel="noopener" class="button" style="font-size:12px;white-space:nowrap;background:#7e57c2;color:#fff;border-color:#7e57c2">View Contract ↗</a>
+        <a href="https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0" target="_blank" rel="noopener" class="button" style="font-size:12px;white-space:nowrap">View Contract ↗</a>
       </div>
-      <div style="font-size:11px;color:#777;margin-top:6px">Top action types: ${topTypes}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">Top action types: ${topTypes}</div>
     </div>`;
     const grid = actions.length
       ? `<div class="page-section-label">Recent AI Actions (${actions.length})</div><div class="grid grid-3" id="casper-actions-grid">${actions.map(casperActionCard).join('')}</div>`
-      : `<div class="page-section-label">Recent AI Actions</div>${emptyState('No actions yet','Click "One-Click Demo" to record your first AI business decision on Casper Testnet.',`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button>`)}`;
-    setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo" style="background:#7e57c2;color:#fff;border-color:#7e57c2">⚡ One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}${statsBar}${contractInfo}${grid}`);
+      : `<div class="page-section-label">Recent AI Actions</div>${emptyState('No actions yet','Click "One-Click Demo" to record your first AI business decision on Casper Testnet.',`<button class="button" data-action="casper-demo">One-Click Demo</button>`)}`;
+    setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored immutably to Casper Testnet — verifiable, audit-proof, decentralised.",`<button class="button" data-action="casper-demo">One-Click Demo</button><button class="button button-primary" data-action="casper-new-action">+ New Action</button>`)}${statsBar}${contractInfo}${grid}`);
   } catch(error) { setPage(`${pageHeader("Casper Agentic Workflow","AI business decisions anchored to Casper Testnet.")}${errorState(error.message)}`); }
 }
 
@@ -3318,7 +3318,7 @@ async function submitCreateAgent() {
   const data = Object.fromEntries(new FormData(form));
   const button = el('[data-action="submit-create-agent"]'); button.disabled=true; button.textContent="Deploying...";
   try {
-    await api.createBot({ name:data.name, language:data.language, greeting:data.greeting || "Halo! Ada yang bisa saya bantu?", system_prompt:data.system_prompt || null, primary_color:"#8b7cff", status:"active" });
+    await api.createBot({ name:data.name, language:data.language, greeting:data.greeting || "Halo! Ada yang bisa saya bantu?", system_prompt:data.system_prompt || null, primary_color:"#3d6791", status:"active" });
     bustCache("bots"); state.bots = await api.bots(); state.selectedBotId = state.bots[0]?.id || null; el("#modal-root").innerHTML=""; renderChrome(); toast("AI agent deployed successfully.","success"); await route();
   } catch (error) { toast(error.message,"error"); button.disabled=false; button.textContent="Deploy agent"; }
 }
@@ -3693,7 +3693,7 @@ document.addEventListener("click", async (event) => {
   if(action==="run-investor-demo"){ await runInvestorDemoSequence(); return; }
   if(action==="casper-demo"){ try{ toast("Submitting demo AI action to Casper Testnet…"); const r=await api.casperDemo(); const modeLabel = r.proof_mode==="real" ? "✓ Real Casper Tx" : "◎ Demo Mode"; toast(`${modeLabel}: ${r.action_summary?.slice(0,60)}…`,"success"); if(state.route==="casper-agentic-workflow") await renderCasperWorkflow(); }catch(error){ console.error("[Casper] demo error:",error); const msg=error?.data?.detail||error?.message||"Unknown error"; toast(`Casper demo failed: ${msg}`,"error"); } return; }
   if(action==="casper-new-action"){ renderCasperNewActionModal(); return; }
-  const casperCard=event.target.closest(".casper-action-card"); if(casperCard && casperCard.dataset.actionId){ const id=casperCard.dataset.actionId; try{ const detail=await api.casperAction(id); const c=detail.casper||{}; el("#modal-root").innerHTML=`<div class="modal-overlay" data-dismiss-modal><div class="modal" style="max-width:560px" role="dialog"><div class="modal-head"><h3>Action Detail</h3><button class="icon-button" data-dismiss-modal>${icon("close",16)}</button></div><div style="padding:20px 24px"><p style="font-weight:600;margin:0 0 12px">${esc(detail.action_summary)}</p><table class="data-table" style="font-size:12px"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Action Type</td><td>${esc(detail.action_type)}</td></tr><tr><td>Agent</td><td>${esc(detail.agent_name)}</td></tr><tr><td>Casper Status</td><td>${casperStatusBadge(c.status)}</td></tr><tr><td>Deploy Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.deploy_hash||'—')}</code></td></tr><tr><td>Session Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.session_hash||'—')}</code></td></tr><tr><td>Proof Mode</td><td>${esc(c.proof_mode||'—')}</td></tr><tr><td>Submitted</td><td>${c.submitted_at?formatDate(c.submitted_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</td></tr></tbody></table>${c.explorer_url?`<a href="${esc(c.explorer_url)}" target="_blank" rel="noopener" class="button" style="margin-top:16px;background:#7e57c2;color:#fff;border-color:#7e57c2;font-size:12px">View on cspr.live ↗</a>`:''}</div></div></div>`; el("#modal-root").querySelector("[data-dismiss-modal]").addEventListener("click",e=>{if(e.target.closest(".modal")&&!e.target.dataset.dismissModal)return;el("#modal-root").innerHTML="";}); }catch(err){ toast(err.message,"error"); } return; }
+  const casperCard=event.target.closest(".casper-action-card"); if(casperCard && casperCard.dataset.actionId){ const id=casperCard.dataset.actionId; try{ const detail=await api.casperAction(id); const c=detail.casper||{}; el("#modal-root").innerHTML=`<div class="modal-overlay" data-dismiss-modal><div class="modal" style="max-width:560px" role="dialog"><div class="modal-head"><h3>Action Detail</h3><button class="icon-button" data-dismiss-modal>${icon("close",16)}</button></div><div style="padding:20px 24px"><p style="font-weight:600;margin:0 0 12px">${esc(detail.action_summary)}</p><table class="data-table" style="font-size:12px"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Action Type</td><td>${esc(detail.action_type)}</td></tr><tr><td>Agent</td><td>${esc(detail.agent_name)}</td></tr><tr><td>Casper Status</td><td>${casperStatusBadge(c.status)}</td></tr><tr><td>Deploy Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.deploy_hash||'—')}</code></td></tr><tr><td>Session Hash</td><td><code style="word-break:break-all;font-size:11px">${esc(c.session_hash||'—')}</code></td></tr><tr><td>Proof Mode</td><td>${esc(c.proof_mode||'—')}</td></tr><tr><td>Submitted</td><td>${c.submitted_at?formatDate(c.submitted_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</td></tr></tbody></table>${c.explorer_url?`<a href="${esc(c.explorer_url)}" target="_blank" rel="noopener" class="button" style="margin-top:16px;font-size:12px">View on cspr.live ↗</a>`:''}</div></div></div>`; el("#modal-root").querySelector("[data-dismiss-modal]").addEventListener("click",e=>{if(e.target.closest(".modal")&&!e.target.dataset.dismissModal)return;el("#modal-root").innerHTML="";}); }catch(err){ toast(err.message,"error"); } return; }
   if(action==="workforce-create-task") { await createWorkforceTaskPrompt(); return; }
   if(action==="workforce-scan-conflicts"){ try{ const result=await api.scanWorkforceConflicts(); toast(`Scan selesai: ${result.conflicts?.length||0} konflik, ${result.escalated?.length||0} task dieskalasi.`,"success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }

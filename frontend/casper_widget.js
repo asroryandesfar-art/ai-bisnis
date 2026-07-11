@@ -18,62 +18,62 @@
       Anchor to Casper`;
     Object.assign(btn.style, {
       display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '5px 12px', borderRadius: '6px', border: '1px solid #7e57c2',
-      background: '#ede7f6', color: '#4527a0', fontWeight: '600',
+      padding: '5px 12px', borderRadius: '6px', border: '1px solid #333333',
+      background: '#111111', color: '#ffffff', fontWeight: '600',
       fontSize: '13px', cursor: 'pointer', marginLeft: '8px',
       transition: 'background .15s',
     });
-    btn.onmouseenter = () => { btn.style.background = '#d1c4e9'; };
-    btn.onmouseleave = () => { btn.style.background = '#ede7f6'; };
+    btn.onmouseenter = () => { btn.style.background = '#171717'; };
+    btn.onmouseleave = () => { btn.style.background = '#111111'; };
     return btn;
   }
 
   function buildModal(data) {
     const overlay = document.createElement('div');
     Object.assign(overlay.style, {
-      position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)',
+      position: 'fixed', inset: '0', background: 'rgba(0,0,0,.8)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: '9999', fontFamily: 'system-ui, sans-serif',
     });
     const box = document.createElement('div');
     Object.assign(box.style, {
-      background: '#fff', borderRadius: '12px', padding: '28px 32px',
-      maxWidth: '480px', width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,.2)',
+      background: '#0a0a0a', border: '1px solid #242424', borderRadius: '12px', padding: '28px 32px',
+      maxWidth: '480px', width: '90%', boxShadow: '0 24px 70px rgba(0,0,0,.5)',
     });
     const isDemo = data.proof_mode === 'demo' || (data.deploy_hash || '').startsWith('demo-');
     const modeNote = isDemo
-      ? `<p style="margin:0 0 8px;font-size:12px;padding:6px 10px;background:#fff3e0;border-radius:4px;color:#e65100">
-           ◎ Demo mode — deterministic proof hash (real Casper tx unavailable${data.real_mode_error ? ': ' + data.real_mode_error : ''})
+      ? `<p style="margin:0 0 8px;font-size:12px;padding:6px 10px;background:#171717;border:1px solid #333333;border-radius:4px;color:#c99a3e">
+           Demo mode — deterministic proof hash (real Casper tx unavailable${data.real_mode_error ? ': ' + data.real_mode_error : ''})
          </p>`
-      : `<p style="margin:0 0 8px;font-size:12px;color:#555">✓ Real transaction on Casper Testnet — verifiable on cspr.live</p>`;
+      : `<p style="margin:0 0 8px;font-size:12px;color:#a0a0a0">Real transaction on Casper Testnet — verifiable on cspr.live</p>`;
     box.innerHTML = `
-      <h3 style="margin:0 0 12px;color:#4527a0;font-size:18px">
-        ${isDemo ? '◎' : '✅'} ${isDemo ? 'Proof Generated (Demo Mode)' : 'Anchored to Casper Testnet'}
+      <h3 style="margin:0 0 12px;color:#ffffff;font-size:18px">
+        ${isDemo ? 'Proof Generated (Demo Mode)' : 'Anchored to Casper Testnet'}
       </h3>
       ${modeNote}
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
-        <tr><td style="padding:4px 0;color:#777;width:130px">Deploy Hash</td>
-            <td style="word-break:break-all;font-family:monospace;color:#222">${data.deploy_hash}</td></tr>
-        <tr><td style="padding:4px 0;color:#777">Session Hash</td>
-            <td style="word-break:break-all;font-family:monospace;color:#222">${data.session_hash}</td></tr>
-        <tr><td style="padding:4px 0;color:#777">Contract Package</td>
-            <td style="word-break:break-all;font-family:monospace;color:#222">${(data.contract_package_hash||'').slice(0,20)}…</td></tr>
-        <tr><td style="padding:4px 0;color:#777">Mode</td>
-            <td style="font-family:monospace;color:#222">${data.proof_mode || 'real'}</td></tr>
+        <tr><td style="padding:4px 0;color:#6e6e6e;width:130px">Deploy Hash</td>
+            <td style="word-break:break-all;font-family:monospace;color:#ffffff">${data.deploy_hash}</td></tr>
+        <tr><td style="padding:4px 0;color:#6e6e6e">Session Hash</td>
+            <td style="word-break:break-all;font-family:monospace;color:#ffffff">${data.session_hash}</td></tr>
+        <tr><td style="padding:4px 0;color:#6e6e6e">Contract Package</td>
+            <td style="word-break:break-all;font-family:monospace;color:#ffffff">${(data.contract_package_hash||'').slice(0,20)}…</td></tr>
+        <tr><td style="padding:4px 0;color:#6e6e6e">Mode</td>
+            <td style="font-family:monospace;color:#ffffff">${data.proof_mode || 'real'}</td></tr>
       </table>
       <a href="${data.explorer_url}" target="_blank" rel="noopener"
-         style="display:inline-block;padding:8px 16px;background:#7e57c2;color:#fff;
-                border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">
+         style="display:inline-block;padding:8px 16px;background:transparent;color:#3d6791;border:1px solid #333333;
+                border-radius:6px;text-decoration:underline;font-size:13px;font-weight:600;margin-right:8px">
         View Deploy ↗
       </a>
       <a href="${data.contract_url||'https://testnet.cspr.live/contract-package/897c4bd670325c1f17ab1704633a470f55eeeb1ec2b357ef48e5d26ecb78a9f0'}" target="_blank" rel="noopener"
-         style="display:inline-block;padding:8px 16px;background:#4527a0;color:#fff;
-                border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">
+         style="display:inline-block;padding:8px 16px;background:transparent;color:#3d6791;border:1px solid #333333;
+                border-radius:6px;text-decoration:underline;font-size:13px;font-weight:600">
         View Contract ↗
       </a>
       <button id="casper-modal-close"
-              style="float:right;padding:8px 16px;border:1px solid #ccc;border-radius:6px;
-                     background:#f5f5f5;cursor:pointer;font-size:13px">
+              style="float:right;padding:8px 16px;border:1px solid #333333;border-radius:6px;
+                     background:#111111;color:#ffffff;cursor:pointer;font-size:13px">
         Tutup
       </button>`;
     overlay.appendChild(box);

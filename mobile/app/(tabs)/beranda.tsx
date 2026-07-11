@@ -231,7 +231,7 @@ export default function Beranda() {
 
       <View style={styles.greetRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.greeting}>{greetingForNow()} 👋</Text>
+          <Text style={styles.greeting}>{greetingForNow()}</Text>
           <Text style={styles.userName}>{data?.userName ?? "..."}</Text>
         </View>
         <View style={styles.avatar}>

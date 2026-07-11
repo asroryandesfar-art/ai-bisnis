@@ -126,7 +126,10 @@ export default function Marketplace() {
         </View>
         <Text style={styles.tplDesc} numberOfLines={3}>{t.description}</Text>
         <View style={styles.tplMetaRow}>
-          <Text style={styles.tplMeta}>★ {t.rating.toFixed(1)}</Text>
+          <View style={styles.tplRatingRow}>
+            <Ionicons name="star-outline" size={11} color={colors.text.faint} />
+            <Text style={styles.tplMeta}>{t.rating.toFixed(1)}</Text>
+          </View>
           <Text style={styles.tplMeta}>{num(t.install_count)} installs</Text>
           <Text style={styles.tplMeta}>v{t.version}</Text>
         </View>
@@ -277,6 +280,7 @@ const styles = StyleSheet.create({
   tplCategory: { color: colors.text.faint, fontSize: 11, marginTop: 1 },
   tplDesc: { color: colors.text.muted, fontSize: 12, lineHeight: 17 },
   tplMetaRow: { flexDirection: "row", gap: spacing.md },
+  tplRatingRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   tplMeta: { color: colors.text.faint, fontSize: 11 },
 
   input: {
