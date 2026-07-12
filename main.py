@@ -135,6 +135,13 @@ class Settings(BaseSettings):
     # (statement_cache_size=0) supaya aman di belakang PgBouncer. Default False
     # (koneksi langsung ke Postgres; cache prepared statement tetap aktif).
     db_pgbouncer:         bool = False
+    # ── Background task leader (horizontal-scaling) ─────────────
+    # Loop in-process (Gmail poller, intelligence learning, Meta token refresh)
+    # HANYA boleh jalan di SATU replika, jika tidak akan terjadi kerja ganda
+    # (polling/refresh dobel) saat scale-out. Default True mempertahankan
+    # perilaku single-instance sekarang. Deploy multi-replika: set
+    # RUN_BACKGROUND_TASKS=1 di satu instance scheduler, =0 di replika web lain.
+    run_background_tasks: bool = True
     secret_key:           str = "change-me-in-production"
     replicate_api_token:  str = ""
     replicate_api_tokens: str = ""  # optional: comma-separated Replicate tokens
@@ -834,6 +841,17 @@ def build_pool_kwargs(settings: "Settings") -> dict:
         kwargs["statement_cache_size"] = 0
     return kwargs
 
+def should_run_background_tasks() -> bool:
+    """Apakah replika ini boleh menjalankan loop background in-process.
+
+    Titik keputusan tunggal untuk 'leader' background task (Gmail poller,
+    intelligence learning, Meta token refresh). Saat ini dikendalikan flag
+    RUN_BACKGROUND_TASKS (default True = perilaku single-instance). Ini juga
+    tempat alami menaruh leader-election otomatis (mis. pg_try_advisory_lock)
+    di iterasi berikutnya tanpa mengubah call site di startup().
+    """
+    return bool(cfg.run_background_tasks)
+
 async def get_pool() -> asyncpg.Pool:
     global _pool, _pool_loop
     loop = asyncio.get_running_loop()
@@ -918,9 +936,16 @@ async def startup():
         print(f"[WARN] Database belum terhubung: {e}")
         print("  App tetap berjalan - endpoint /health akan menunjukkan status DB")
 
+    # Leader gate: loop background hanya jalan di replika leader (lihat
+    # Settings.run_background_tasks). Mencegah kerja ganda saat scale-out.
+    run_bg = should_run_background_tasks()
+    if not run_bg:
+        print("[OK] Background loops DINONAKTIFKAN di replika ini "
+              "(RUN_BACKGROUND_TASKS=0) — dijalankan oleh replika leader.")
+
     # Gmail auto-poll scheduler (optional)
     try:
-        if cfg.gmail_poll_enabled and _gmail_poll_task is None:
+        if run_bg and cfg.gmail_poll_enabled and _gmail_poll_task is None:
             _gmail_poll_stop = asyncio.Event()
             _gmail_poll_task = asyncio.create_task(_gmail_poll_loop())
             print(f"[OK] Gmail poller aktif (interval={cfg.gmail_poll_interval_seconds}s)")
@@ -930,7 +955,7 @@ async def startup():
     try:
         from intelligence.pipeline import nightly_learning_loop
 
-        if _intelligence_learning_task is None:
+        if run_bg and _intelligence_learning_task is None:
             _intelligence_learning_stop = asyncio.Event()
             _intelligence_learning_task = asyncio.create_task(
                 nightly_learning_loop(_intelligence_learning_stop)
@@ -941,7 +966,7 @@ async def startup():
 
     try:
         from bn_platform.meta_oauth import meta_refresh_loop
-        if _meta_refresh_task is None:
+        if run_bg and _meta_refresh_task is None:
             _meta_refresh_stop = asyncio.Event()
             _meta_refresh_task = asyncio.create_task(meta_refresh_loop(_meta_refresh_stop, get_pool))
             print("[OK] Meta OAuth token refresh aktif")
