@@ -51,9 +51,27 @@ class Settings(BaseSettings):
     app_url:             str = "https://botnesia.id"
     botnesia_url:        str = "http://localhost:8000"   # URL server BotNesia utama
     agent_secret: str = os.environ.get('AGENT_SECRET', '')  # shared secret dengan BotNesia
+    # Origin browser yang diizinkan (comma-separated). Kosong = allowlist aman
+    # (app_url + localhost dev). "*" = escape hatch eksplisit (allow semua).
+    # agent_api adalah service server-to-server (auth via header x-agent-secret,
+    # bukan cookie), jadi default ketat tidak memutus klien manapun.
+    cors_allowed_origins: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 cfg = Settings()
+
+
+def resolve_cors_origins(settings: "Settings") -> list[str]:
+    """Daftar origin CORS efektif dari Settings (pure, mudah diuji)."""
+    raw = (settings.cors_allowed_origins or "").strip()
+    if raw == "*":
+        return ["*"]
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    origins = [settings.app_url, "http://localhost:8000", "http://127.0.0.1:8000"]
+    # Dedup sambil menjaga urutan.
+    seen: set[str] = set()
+    return [o for o in origins if o and not (o in seen or seen.add(o))]
 
 
 # ─── APP ──────────────────────────────────────────────────────
@@ -62,7 +80,7 @@ app = FastAPI(title="BotNesia Multi-Agent API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=resolve_cors_origins(cfg),
     allow_methods=["*"],
     allow_headers=["*"],
 )
