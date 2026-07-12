@@ -142,19 +142,16 @@ def test_login_inactive_account_is_403(client):
     assert r.status_code == 403
 
 
-def test_login_legacy_foreign_hash_current_behavior_is_500(client):
-    # CHARACTERIZATION of a latent bug: the code intends to return a friendly
-    # 409 ("account created before the update, please reset password") for
-    # legacy hashes, but passlib's identify() is lenient and reports every hash
-    # as supported, so the 409 branch never fires. A foreign/legacy hash instead
-    # makes verify_password raise UnknownHashError -> broad except -> 500.
-    # This test locks the CURRENT behavior; the bug is fixed in a follow-up
-    # commit (then this expectation flips to 409).
+def test_login_legacy_foreign_hash_returns_friendly_409(client):
+    # A legacy/foreign hash (e.g. bcrypt from before the pbkdf2_sha256 switch)
+    # must return the friendly 409 "please reset password", not a generic 500.
+    # Regression guard for the is_supported_password_hash fix.
     row = _user_row()
     row["hashed_password"] = "$2b$12$abcdefghijklmnopqrstuuKk3s5j5j5j5j5j5j5j5j5j5j5j5j5j"  # bcrypt-style
     client.fake_pool.fetchrow_value = row
     r = client.post("/auth/login", json={"email": "a@b.com", "password": "supersecret"})
-    assert r.status_code == 500
+    assert r.status_code == 409
+    assert "reset password" in r.json()["detail"]
 
 
 # ── logout ───────────────────────────────────────────────────────

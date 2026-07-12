@@ -1579,9 +1579,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 _DUMMY_PWD_HASH = pwd_ctx.hash("timing-equalization-not-a-real-password")
 
 def is_supported_password_hash(hashed: str) -> bool:
+    # passlib identify() returns None (NOT an exception) for a hash whose scheme
+    # isn't in this context (e.g. a legacy bcrypt hash). Treating None as
+    # "supported" made login fall through to verify_password, which then raised
+    # UnknownHashError -> generic 500, instead of the intended friendly 409.
+    # Require a real scheme so legacy accounts get the "please reset" 409 path.
     try:
-        pwd_ctx.identify(hashed)
-        return True
+        return pwd_ctx.identify(hashed) is not None
     except UnknownHashError:
         return False
 
