@@ -22,8 +22,11 @@ def test_brain_singleton_builds():
 
 
 def test_chat_brain_branch_requires_flag_and_key():
-    # Code contract: the /chat brain branch runs only when the flag is ON *and*
-    # an API key is present (so enabling the flag without a key can't break chat).
+    # Code contract: the brain branch runs only when the flag is ON *and* an API
+    # key is present (so enabling the flag without a key can't break chat). The
+    # branch was extracted from chat() into _maybe_deepseek_brain_answer() during
+    # the chat decomposition; assert the guard there. Behavior is covered by
+    # test_chat_deepseek_brain.py.
     import inspect
-    src = inspect.getsource(main.chat)
+    src = inspect.getsource(main._maybe_deepseek_brain_answer)
     assert "cfg.deepseek_brain_enabled and cfg.deepseek_api_key" in src
