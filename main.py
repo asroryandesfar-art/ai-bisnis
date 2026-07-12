@@ -3921,6 +3921,121 @@ async def _build_self_knowledge(pool, bot: dict, bot_id: str, system: str) -> tu
         system = system + "\n\n" + self_knowledge_context
     return system, self_knowledge_context, business_context
 
+async def _persist_and_build_chat_response(
+    *, pool, bot: dict, bot_id: str, conv_id: str, message: str, answer: str,
+    model_used: str, input_tokens, output_tokens, latency_ms, result,
+    intent_routing: dict, should_handoff: bool, handoff_reason, relevant_chunks: list,
+    agent_meta, intelligence_context: dict, is_new_conversation: bool, user_meta: dict,
+    chat_image_url, chat_image_provider, chat_ca_screenshot_url,
+) -> dict:
+    """Persist the assistant message + conversation stats, schedule best-effort
+    intelligence/workflow side effects, and build the chat response dict.
+    Extracted verbatim from the chat handler tail (decomposition step 6)."""
+    router_intent         = intent_routing.get("intent", "general")
+    router_selected_agent = intent_routing.get("selected_agent", "General AI Agent")
+    router_confidence     = intent_routing.get("confidence", result.confidence if result else None)
+    handoff_offered       = bool(should_handoff)
+    sources = [
+        {"document": c.get("filename") or c.get("file_name"), "chunk_index": c.get("chunk_index")}
+        for c in relevant_chunks
+        if c.get("filename") or c.get("file_name")
+    ]
+    follow_up_questions = (
+        [result.suggested_followup] if result and result.suggested_followup else []
+    )
+
+    # 9. Simpan respons bot
+    bot_msg_id = str(uuid.uuid4())
+    chunk_ids  = [c["id"] for c in relevant_chunks]
+    await pool.execute(
+        """INSERT INTO messages
+           (id, conversation_id, role, content, model, input_tokens, output_tokens, latency_ms,
+            source_chunks, intent, selected_agent, routing_confidence, handoff_status, allow_human_handoff)
+           VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
+        bot_msg_id, conv_id, answer,
+        model_used,
+        input_tokens, output_tokens, latency_ms,
+        chunk_ids,
+        router_intent, router_selected_agent, router_confidence,
+        (handoff_reason if should_handoff else None),
+        intent_routing.get("allow_human_handoff", False),
+    )
+    logger.info(
+        "chat_routing org_id=%s bot_id=%s conv_id=%s intent=%s selected_agent=%s confidence=%s "
+        "handoff_offered=%s latency_ms=%s",
+        bot["org_id"], bot_id, conv_id, router_intent, router_selected_agent, router_confidence,
+        handoff_offered, latency_ms,
+    )
+
+    # 10. Update stats
+    await pool.execute(
+        """UPDATE conversations SET msg_count=msg_count+2, last_msg_at=NOW() WHERE id=$1""",
+        conv_id,
+    )
+
+    if agent_meta is not None and result is not None:
+        try:
+            from intelligence.pipeline import persist_intelligence
+            asyncio.create_task(
+                persist_intelligence(
+                    dict(intelligence_context),
+                    result,
+                    bot_response=answer,
+                )
+            )
+        except Exception:
+            logger.exception("Gagal menjadwalkan persistensi Intelligence")
+
+        asyncio.create_task(_dispatch_workflow_trigger(
+            "message_received",
+            {
+                "conversation_id": conv_id, "bot_id": bot_id,
+                "message": message, "answer": answer,
+                "intent": result.intent, "confidence": result.confidence,
+                "tags": result.topics,
+                "customer_type": "new" if is_new_conversation else "returning",
+                "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                "end_user_email": user_meta.get("email"),
+            },
+            org_id=str(bot["org_id"]), bot_id=bot_id,
+        ))
+
+    resp = {
+        "answer":               answer,
+        "session_id":           conv_id,
+        "message_id":           bot_msg_id,
+        "latency_ms":           latency_ms,
+        "intent":               router_intent,
+        "selected_agent":       router_selected_agent,
+        "confidence":           router_confidence,
+        "handoff_offered":      handoff_offered,
+        "sources":              sources,
+        "follow_up_questions":  follow_up_questions,
+        "image_url":            chat_image_url,
+        "image_provider":       chat_image_provider,
+        "computer_agent_screenshot_url": chat_ca_screenshot_url,
+    }
+
+    # Observability: log request (best-effort).
+    try:
+        await pool.execute(
+            """INSERT INTO request_logs
+               (id, org_id, bot_id, conversation_id, route, model, latency_ms, error)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+            str(uuid.uuid4()),
+            bot["org_id"],
+            bot_id,
+            conv_id,
+            "/chat/{bot_id}",
+            model_used,
+            latency_ms,
+            json.dumps(agent_meta.get("errors")) if agent_meta else None,
+        )
+    except Exception:
+        pass
+    return resp
+
+
 @app.post("/chat/{bot_id}")
 async def chat(
     bot_id: str,
@@ -4385,109 +4500,17 @@ async def chat(
                     logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
 
     # Additive routing fields dari Intent Router (backward-compatible di resp dict)
-    router_intent         = intent_routing.get("intent", "general")
-    router_selected_agent = intent_routing.get("selected_agent", "General AI Agent")
-    router_confidence     = intent_routing.get("confidence", result.confidence if result else None)
-    handoff_offered       = bool(should_handoff)
-    sources = [
-        {"document": c.get("filename") or c.get("file_name"), "chunk_index": c.get("chunk_index")}
-        for c in relevant_chunks
-        if c.get("filename") or c.get("file_name")
-    ]
-    follow_up_questions = (
-        [result.suggested_followup] if result and result.suggested_followup else []
+    return await _persist_and_build_chat_response(
+        pool=pool, bot=bot, bot_id=bot_id, conv_id=conv_id, message=body.message,
+        answer=answer, model_used=model_used, input_tokens=input_tokens,
+        output_tokens=output_tokens, latency_ms=latency_ms, result=result,
+        intent_routing=intent_routing, should_handoff=should_handoff,
+        handoff_reason=handoff_reason, relevant_chunks=relevant_chunks,
+        agent_meta=agent_meta, intelligence_context=intelligence_context,
+        is_new_conversation=is_new_conversation, user_meta=user_meta,
+        chat_image_url=chat_image_url, chat_image_provider=chat_image_provider,
+        chat_ca_screenshot_url=chat_ca_screenshot_url,
     )
-
-    # 9. Simpan respons bot
-    bot_msg_id = str(uuid.uuid4())
-    chunk_ids  = [c["id"] for c in relevant_chunks]
-    await pool.execute(
-        """INSERT INTO messages
-           (id, conversation_id, role, content, model, input_tokens, output_tokens, latency_ms,
-            source_chunks, intent, selected_agent, routing_confidence, handoff_status, allow_human_handoff)
-           VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
-        bot_msg_id, conv_id, answer,
-        model_used,
-        input_tokens, output_tokens, latency_ms,
-        chunk_ids,
-        router_intent, router_selected_agent, router_confidence,
-        (handoff_reason if should_handoff else None),
-        intent_routing.get("allow_human_handoff", False),
-    )
-    logger.info(
-        "chat_routing org_id=%s bot_id=%s conv_id=%s intent=%s selected_agent=%s confidence=%s "
-        "handoff_offered=%s latency_ms=%s",
-        bot["org_id"], bot_id, conv_id, router_intent, router_selected_agent, router_confidence,
-        handoff_offered, latency_ms,
-    )
-
-    # 10. Update stats
-    await pool.execute(
-        """UPDATE conversations SET msg_count=msg_count+2, last_msg_at=NOW() WHERE id=$1""",
-        conv_id,
-    )
-
-    if agent_meta is not None and result is not None:
-        try:
-            from intelligence.pipeline import persist_intelligence
-            asyncio.create_task(
-                persist_intelligence(
-                    dict(intelligence_context),
-                    result,
-                    bot_response=answer,
-                )
-            )
-        except Exception:
-            logger.exception("Gagal menjadwalkan persistensi Intelligence")
-
-        asyncio.create_task(_dispatch_workflow_trigger(
-            "message_received",
-            {
-                "conversation_id": conv_id, "bot_id": bot_id,
-                "message": body.message, "answer": answer,
-                "intent": result.intent, "confidence": result.confidence,
-                "tags": result.topics,
-                "customer_type": "new" if is_new_conversation else "returning",
-                "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
-                "end_user_email": user_meta.get("email"),
-            },
-            org_id=str(bot["org_id"]), bot_id=bot_id,
-        ))
-
-    resp = {
-        "answer":               answer,
-        "session_id":           conv_id,
-        "message_id":           bot_msg_id,
-        "latency_ms":           latency_ms,
-        "intent":               router_intent,
-        "selected_agent":       router_selected_agent,
-        "confidence":           router_confidence,
-        "handoff_offered":      handoff_offered,
-        "sources":              sources,
-        "follow_up_questions":  follow_up_questions,
-        "image_url":            chat_image_url,
-        "image_provider":       chat_image_provider,
-        "computer_agent_screenshot_url": chat_ca_screenshot_url,
-    }
-
-    # Observability: log request (best-effort).
-    try:
-        await pool.execute(
-            """INSERT INTO request_logs
-               (id, org_id, bot_id, conversation_id, route, model, latency_ms, error)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
-            str(uuid.uuid4()),
-            bot["org_id"],
-            bot_id,
-            conv_id,
-            "/chat/{bot_id}",
-            model_used,
-            latency_ms,
-            json.dumps(agent_meta.get("errors")) if agent_meta else None,
-        )
-    except Exception:
-        pass
-    return resp
 
 
 async def _retrieve_chunks(
