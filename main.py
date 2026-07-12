@@ -4011,6 +4011,42 @@ async def _apply_handoff(*, should_handoff: bool, result, answer: str, pool, bot
                 logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
     return answer
 
+async def _maybe_generate_chat_image(*, message: str, bot: dict, bot_id: str, conv_id: str,
+                                     user_meta: dict, effective_lang: str, system: str, pool):
+    """Inline image generation for image requests (runs before the supervisor so
+    the LLM can describe the generated image). Returns (system, image_url,
+    image_provider). Extracted verbatim from the chat handler (decomposition step 9)."""
+    chat_image_url: str | None = None
+    chat_image_provider: str | None = None
+    # SEBELUM supervisor supaya jawaban LLM bisa menjelaskan gambar yang sudah dibuat.
+    if image_providers.looks_like_image_request(message):
+        img_retry_after = _check_media_cooldown(f"chat-image:{bot_id}", "image")
+        if img_retry_after == 0:
+            try:
+                img_result = await _run_image_generation(
+                    org_id=str(bot["org_id"]), user_id=user_meta.get("userId"),
+                    pool=pool, prompt=message, bot_id=bot_id, conversation_id=conv_id,
+                )
+                chat_image_url = img_result["image_url"]
+                chat_image_provider = img_result["provider"]
+                image_note = (
+                    "## Image generated successfully\nThe system has generated the requested image and it will be displayed directly in chat. Write a brief answer (1-2 sentences) explaining the generated image according to the user's request. Do not say you cannot create images."
+                    if effective_lang == "en" else
+                    "## Gambar berhasil dibuat\nSistem sudah berhasil membuat gambar sesuai permintaan user dan akan ditampilkan langsung di chat. Tulis jawaban singkat (1-2 kalimat) yang menjelaskan gambar yang dibuat sesuai permintaan user. Jangan bilang tidak bisa membuat gambar."
+                )
+                system = system + "\n\n" + image_note
+            except HTTPException as exc:
+                logger.info("Chat+Image dilewati conv=%s: %s", conv_id, exc.detail)
+                image_error_note = (
+                    f"## Image generation failed\nThe system failed to generate the image ({exc.detail}). Briefly and politely explain this to the user without technical jargon."
+                    if effective_lang == "en" else
+                    f"## Gambar gagal dibuat\nSistem gagal membuat gambar ({exc.detail}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
+                )
+                system = system + "\n\n" + image_error_note
+            except Exception as exc:
+                logger.warning("Chat+Image error conv=%s: %s", conv_id, exc)
+    return system, chat_image_url, chat_image_provider
+
 def _build_agent_meta(result) -> dict:
     """Build the internal agent-meta dict from a SupervisorResult (logged, not
     sent to the frontend). Pure; extracted from the chat handler (decomposition
@@ -4371,37 +4407,11 @@ async def chat(
     if learning_context:
         system = system + "\n\n" + learning_context
 
-    # 7.6 Chat + Image: deteksi & generate gambar inline (seperti ChatGPT). Dijalankan
-    # SEBELUM supervisor supaya jawaban LLM bisa menjelaskan gambar yang sudah dibuat.
-    chat_image_url: str | None = None
-    chat_image_provider: str | None = None
-    if image_providers.looks_like_image_request(body.message):
-        img_retry_after = _check_media_cooldown(f"chat-image:{bot_id}", "image")
-        if img_retry_after == 0:
-            try:
-                img_result = await _run_image_generation(
-                    org_id=str(bot["org_id"]), user_id=user_meta.get("userId"),
-                    pool=pool, prompt=body.message, bot_id=bot_id, conversation_id=conv_id,
-                )
-                chat_image_url = img_result["image_url"]
-                chat_image_provider = img_result["provider"]
-                image_note = (
-                    "## Image generated successfully\nThe system has generated the requested image and it will be displayed directly in chat. Write a brief answer (1-2 sentences) explaining the generated image according to the user's request. Do not say you cannot create images."
-                    if effective_lang == "en" else
-                    "## Gambar berhasil dibuat\nSistem sudah berhasil membuat gambar sesuai permintaan user dan akan ditampilkan langsung di chat. Tulis jawaban singkat (1-2 kalimat) yang menjelaskan gambar yang dibuat sesuai permintaan user. Jangan bilang tidak bisa membuat gambar."
-                )
-                system = system + "\n\n" + image_note
-            except HTTPException as exc:
-                logger.info("Chat+Image dilewati conv=%s: %s", conv_id, exc.detail)
-                image_error_note = (
-                    f"## Image generation failed\nThe system failed to generate the image ({exc.detail}). Briefly and politely explain this to the user without technical jargon."
-                    if effective_lang == "en" else
-                    f"## Gambar gagal dibuat\nSistem gagal membuat gambar ({exc.detail}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
-                )
-                system = system + "\n\n" + image_error_note
-            except Exception as exc:
-                logger.warning("Chat+Image error conv=%s: %s", conv_id, exc)
-
+    # Chat decomposition: inline image generation extracted to a testable helper.
+    system, chat_image_url, chat_image_provider = await _maybe_generate_chat_image(
+        message=body.message, bot=bot, bot_id=bot_id, conv_id=conv_id,
+        user_meta=user_meta, effective_lang=effective_lang, system=system, pool=pool,
+    )
     # 7.7 Chat + Computer Agent: deteksi & jalankan browsing (AI Agent Platform
     # Phase 3). Opt-in per bot (default FALSE -- bot lama tidak terpengaruh).
     # Aksi baca-saja auto-execute (mirip Chat+Image); aksi tulis (klik/isi
