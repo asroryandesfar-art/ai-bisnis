@@ -3980,6 +3980,37 @@ async def _enforce_output_language(*, answer, result, effective_lang: str, syste
 
     return answer, result
 
+async def _apply_handoff(*, should_handoff: bool, result, answer: str, pool, bot: dict,
+                         bot_id: str, conv_id: str, handoff_reason, handoff_priority, user_meta: dict) -> str:
+    """Append the handoff message to the answer and enqueue a human-handoff ticket
+    (+ workflow trigger) when should_handoff. Returns the (possibly appended) answer.
+    Extracted verbatim from the chat handler (decomposition step 8)."""
+    if should_handoff:
+        handoff_message = result.escalation_message or (
+            "Saya akan menghubungkan percakapan ini ke tim manusia agar dapat ditangani lebih lanjut."
+        )
+        if handoff_message.lower() not in answer.lower():
+            answer = answer.rstrip() + "\n\n" + handoff_message
+        if _platform_enqueue_handoff:
+            try:
+                await _platform_enqueue_handoff(
+                    pool, org_id=bot["org_id"], conversation_id=conv_id,
+                    reason=handoff_reason, priority=handoff_priority,
+                )
+                asyncio.create_task(_dispatch_workflow_trigger(
+                    "new_ticket",
+                    {
+                        "conversation_id": conv_id, "bot_id": bot_id,
+                        "reason": handoff_reason, "priority": handoff_priority,
+                        "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                        "end_user_email": user_meta.get("email"),
+                    },
+                    org_id=str(bot["org_id"]), bot_id=bot_id,
+                ))
+            except Exception:
+                logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
+    return answer
+
 def _build_agent_meta(result) -> dict:
     """Build the internal agent-meta dict from a SupervisorResult (logged, not
     sent to the frontend). Pure; extracted from the chat handler (decomposition
@@ -4456,30 +4487,11 @@ async def chat(
             should_handoff = bool(intent_routing.get("allow_human_handoff", False))
             handoff_reason = intent_routing.get("reason") or result.escalation_reason or "escalation_requested"
             handoff_priority = (result.escalation_urgency or "medium").lower()
-        if should_handoff:
-            handoff_message = result.escalation_message or (
-                "Saya akan menghubungkan percakapan ini ke tim manusia agar dapat ditangani lebih lanjut."
-            )
-            if handoff_message.lower() not in answer.lower():
-                answer = answer.rstrip() + "\n\n" + handoff_message
-            if _platform_enqueue_handoff:
-                try:
-                    await _platform_enqueue_handoff(
-                        pool, org_id=bot["org_id"], conversation_id=conv_id,
-                        reason=handoff_reason, priority=handoff_priority,
-                    )
-                    asyncio.create_task(_dispatch_workflow_trigger(
-                        "new_ticket",
-                        {
-                            "conversation_id": conv_id, "bot_id": bot_id,
-                            "reason": handoff_reason, "priority": handoff_priority,
-                            "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
-                            "end_user_email": user_meta.get("email"),
-                        },
-                        org_id=str(bot["org_id"]), bot_id=bot_id,
-                    ))
-                except Exception:
-                    logger.exception("Gagal membuat human handoff conversation=%s", conv_id)
+        answer = await _apply_handoff(
+            should_handoff=should_handoff, result=result, answer=answer, pool=pool,
+            bot=bot, bot_id=bot_id, conv_id=conv_id, handoff_reason=handoff_reason,
+            handoff_priority=handoff_priority, user_meta=user_meta,
+        )
     except Exception as e:
         logger.exception("CHAT EXCEPTION bot=%s conv=%s: %s", bot_id, conv_id, e)
         if market_answer:
