@@ -3785,6 +3785,72 @@ async def _build_news_augmentation(message: str, system: str, effective_lang: st
         )
     return system
 
+async def _maybe_run_computer_agent(
+    *, bot: dict, message: str, bot_id: str, conv_id: str, user_meta: dict,
+    effective_lang: str, system: str, pool,
+) -> tuple[str, str | None]:
+    """Run the opt-in Computer Agent for browsing requests and augment the system
+    prompt with its result. Returns (system, screenshot_url). Extracted verbatim
+    from the chat handler (decomposition step 3). No-op unless the bot enables it
+    and the message looks like a browsing request; write-plans are stored for
+    approval rather than executed; failures degrade gracefully.
+    """
+    chat_ca_screenshot_url: str | None = None
+    if bot.get("computer_agent_enabled") and computer_agent.looks_like_computer_agent_request(message):
+        ca_retry_after = _check_media_cooldown(f"chat-computer-agent:{bot_id}", "computer_agent")
+        if ca_retry_after == 0:
+            try:
+                ca_agent = computer_agent.ComputerAgent(
+                    api_key=cfg.groq_api_key, model=cfg.groq_cheap_model or cfg.groq_model,
+                    base_url=(cfg.groq_base_url or "").strip() or None,
+                    deepseek_api_key=cfg.deepseek_api_key,
+                    openrouter_api_key=cfg.openrouter_api_key,
+                )
+                ca_steps = await ca_agent.plan_actions(message)
+                if computer_agent.is_write_plan(ca_steps):
+                    await computer_agent.create_task(
+                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
+                        goal=message, steps=ca_steps, status="pending_approval",
+                        created_by=user_meta.get("userId"),
+                    )
+                    approval_note = (
+                        "## Request requires approval\nThe user's request involves an action that changes something on another site (clicking, filling a form, or submitting). The system did NOT run it automatically; it has been recorded and is waiting for team approval. Briefly and politely tell the user that the request is waiting for team approval before execution."
+                        if effective_lang == "en" else
+                        "## Permintaan butuh approval\nPermintaan user melibatkan aksi yang mengubah sesuatu di situs lain (klik/isi form/submit) -- sistem TIDAK menjalankannya otomatis, sudah dicatat dan menunggu persetujuan tim. Beri tahu user secara singkat dan sopan bahwa permintaannya sedang menunggu persetujuan tim sebelum dijalankan."
+                    )
+                    system = system + "\n\n" + approval_note
+                else:
+                    ca_result = await ca_agent.execute_read_only(ca_steps)
+                    await computer_agent.create_task(
+                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
+                        goal=message, steps=ca_steps,
+                        status="completed" if ca_result.get("success") else "failed",
+                        result=ca_result, created_by=user_meta.get("userId"),
+                    )
+                    if ca_result.get("success"):
+                        chat_ca_screenshot_url = ca_result.get("screenshot_url")
+                        screenshot_note = (
+                            "\n\nThe system also captured a screenshot of this page and will display it directly in chat. Mention that; do not say you cannot take screenshots." if (chat_ca_screenshot_url and effective_lang == "en") else
+                            "\n\nSistem juga sudah mengambil screenshot halaman ini dan akan menampilkannya langsung di chat -- sebutkan itu, jangan bilang tidak bisa mengambil screenshot." if chat_ca_screenshot_url else ""
+                        )
+                        system = (
+                            system
+                            + ("\n\n## Computer Agent result\n" if effective_lang == "en" else "\n\n## Hasil Computer Agent\n")
+                            + (ca_result.get("text") or ("(the page has no readable text. Do not invent page contents; be honest that no text was readable)" if effective_lang == "en" else "(halaman tidak punya teks yang bisa dibaca -- jangan mengarang isi halaman, katakan jujur kalau tidak ada teks yang terbaca)"))
+                            + screenshot_note
+                            + "\n\n" + computer_agent.COMPUTER_AGENT_DATA_BLOCK
+                        )
+                    else:
+                        computer_error_note = (
+                            f"## Computer Agent failed\nThe system failed to run the request ({ca_result.get('error')}). Briefly and politely explain this to the user without technical jargon."
+                            if effective_lang == "en" else
+                            f"## Computer Agent gagal\nSistem gagal menjalankan permintaan ({ca_result.get('error')}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
+                        )
+                        system = system + "\n\n" + computer_error_note
+            except Exception as exc:
+                logger.warning("Chat+ComputerAgent error conv=%s: %s", conv_id, exc)
+    return system, chat_ca_screenshot_url
+
 @app.post("/chat/{bot_id}")
 async def chat(
     bot_id: str,
@@ -4088,60 +4154,11 @@ async def chat(
     # form/submit) TIDAK pernah auto-execute -- hanya disimpan sebagai task
     # pending_approval, dieksekusi nanti lewat endpoint approve setelah
     # disetujui staf tenant (lihat bn_platform/computer_agent.py).
-    chat_ca_screenshot_url: str | None = None
-    if bot.get("computer_agent_enabled") and computer_agent.looks_like_computer_agent_request(body.message):
-        ca_retry_after = _check_media_cooldown(f"chat-computer-agent:{bot_id}", "computer_agent")
-        if ca_retry_after == 0:
-            try:
-                ca_agent = computer_agent.ComputerAgent(
-                    api_key=cfg.groq_api_key, model=cfg.groq_cheap_model or cfg.groq_model,
-                    base_url=(cfg.groq_base_url or "").strip() or None,
-                    deepseek_api_key=cfg.deepseek_api_key,
-                    openrouter_api_key=cfg.openrouter_api_key,
-                )
-                ca_steps = await ca_agent.plan_actions(body.message)
-                if computer_agent.is_write_plan(ca_steps):
-                    await computer_agent.create_task(
-                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
-                        goal=body.message, steps=ca_steps, status="pending_approval",
-                        created_by=user_meta.get("userId"),
-                    )
-                    approval_note = (
-                        "## Request requires approval\nThe user's request involves an action that changes something on another site (clicking, filling a form, or submitting). The system did NOT run it automatically; it has been recorded and is waiting for team approval. Briefly and politely tell the user that the request is waiting for team approval before execution."
-                        if effective_lang == "en" else
-                        "## Permintaan butuh approval\nPermintaan user melibatkan aksi yang mengubah sesuatu di situs lain (klik/isi form/submit) -- sistem TIDAK menjalankannya otomatis, sudah dicatat dan menunggu persetujuan tim. Beri tahu user secara singkat dan sopan bahwa permintaannya sedang menunggu persetujuan tim sebelum dijalankan."
-                    )
-                    system = system + "\n\n" + approval_note
-                else:
-                    ca_result = await ca_agent.execute_read_only(ca_steps)
-                    await computer_agent.create_task(
-                        pool, org_id=str(bot["org_id"]), bot_id=bot_id, conversation_id=conv_id,
-                        goal=body.message, steps=ca_steps,
-                        status="completed" if ca_result.get("success") else "failed",
-                        result=ca_result, created_by=user_meta.get("userId"),
-                    )
-                    if ca_result.get("success"):
-                        chat_ca_screenshot_url = ca_result.get("screenshot_url")
-                        screenshot_note = (
-                            "\n\nThe system also captured a screenshot of this page and will display it directly in chat. Mention that; do not say you cannot take screenshots." if (chat_ca_screenshot_url and effective_lang == "en") else
-                            "\n\nSistem juga sudah mengambil screenshot halaman ini dan akan menampilkannya langsung di chat -- sebutkan itu, jangan bilang tidak bisa mengambil screenshot." if chat_ca_screenshot_url else ""
-                        )
-                        system = (
-                            system
-                            + ("\n\n## Computer Agent result\n" if effective_lang == "en" else "\n\n## Hasil Computer Agent\n")
-                            + (ca_result.get("text") or ("(the page has no readable text. Do not invent page contents; be honest that no text was readable)" if effective_lang == "en" else "(halaman tidak punya teks yang bisa dibaca -- jangan mengarang isi halaman, katakan jujur kalau tidak ada teks yang terbaca)"))
-                            + screenshot_note
-                            + "\n\n" + computer_agent.COMPUTER_AGENT_DATA_BLOCK
-                        )
-                    else:
-                        computer_error_note = (
-                            f"## Computer Agent failed\nThe system failed to run the request ({ca_result.get('error')}). Briefly and politely explain this to the user without technical jargon."
-                            if effective_lang == "en" else
-                            f"## Computer Agent gagal\nSistem gagal menjalankan permintaan ({ca_result.get('error')}). Jelaskan ke user secara singkat dan sopan, tanpa istilah teknis."
-                        )
-                        system = system + "\n\n" + computer_error_note
-            except Exception as exc:
-                logger.warning("Chat+ComputerAgent error conv=%s: %s", conv_id, exc)
+    # Chat decomposition: computer-agent browsing extracted to a testable helper.
+    system, chat_ca_screenshot_url = await _maybe_run_computer_agent(
+        bot=bot, message=body.message, bot_id=bot_id, conv_id=conv_id,
+        user_meta=user_meta, effective_lang=effective_lang, system=system, pool=pool,
+    )
 
     # 8. Panggil AI (Multi-Agent pipeline buatan kamu)
     t_start = time.monotonic()
