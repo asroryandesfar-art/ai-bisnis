@@ -3690,6 +3690,46 @@ app.include_router(build_documents_router(
 
 # ─── ROUTE: CHAT ──────────────────────────────────────────────
 
+async def _build_market_augmentation(message: str, system: str, effective_lang: str) -> tuple[str, str]:
+    """Augment the system prompt with real-time market data for price queries.
+
+    Returns (system, market_answer). Extracted verbatim from the chat handler as
+    the first step of decomposing that handler into testable units. For non-price
+    queries it is a no-op returning (system, "").
+    """
+    market_answer = ""
+    if looks_like_market_price_query(message):
+        try:
+            crypto_quotes, stock_quotes = await asyncio.gather(
+                fetch_crypto_quotes(message),
+                fetch_stock_quotes(message),
+            )
+            market_answer = combine_market_answers(crypto_quotes, stock_quotes)
+            market_blocks: list[str] = []
+            crypto_ctx = build_crypto_market_context(crypto_quotes)
+            stock_ctx = build_stock_market_context(stock_quotes)
+            if stock_ctx:
+                market_blocks.append(stock_ctx)
+            if crypto_ctx:
+                market_blocks.append(crypto_ctx)
+            if market_blocks:
+                market_title = "Financial market data (real-time)" if effective_lang == "en" else "Data pasar finansial (real-time)"
+                market_instruction = (
+                    "Important instruction: If the user asks about prices, exchange rates, stock moves, or crypto moves, use the market data above as the primary basis for the answer. Do not say you lack real-time access when market data is available."
+                    if effective_lang == "en" else
+                    "Instruksi penting: Jika user bertanya harga/kurs/perubahan saham atau kripto, gunakan data pasar di atas sebagai jawaban utama. Jangan bilang tidak punya akses real-time jika data pasar tersedia."
+                )
+                system = (
+                    system
+                    + f"\n\n## {market_title}:\n"
+                    + "\n\n".join(market_blocks)
+                    + "\n\n"
+                    + market_instruction
+                )
+        except Exception:
+            market_answer = ""
+    return system, market_answer
+
 @app.post("/chat/{bot_id}")
 async def chat(
     bot_id: str,
@@ -3926,37 +3966,8 @@ async def chat(
     system = language_middleware.build_system_prompt(
         bot["system_prompt"], relevant_chunks, effective_lang
     )
-    market_answer = ""
-    if looks_like_market_price_query(body.message):
-        try:
-            crypto_quotes, stock_quotes = await asyncio.gather(
-                fetch_crypto_quotes(body.message),
-                fetch_stock_quotes(body.message),
-            )
-            market_answer = combine_market_answers(crypto_quotes, stock_quotes)
-            market_blocks: list[str] = []
-            crypto_ctx = build_crypto_market_context(crypto_quotes)
-            stock_ctx = build_stock_market_context(stock_quotes)
-            if stock_ctx:
-                market_blocks.append(stock_ctx)
-            if crypto_ctx:
-                market_blocks.append(crypto_ctx)
-            if market_blocks:
-                market_title = "Financial market data (real-time)" if effective_lang == "en" else "Data pasar finansial (real-time)"
-                market_instruction = (
-                    "Important instruction: If the user asks about prices, exchange rates, stock moves, or crypto moves, use the market data above as the primary basis for the answer. Do not say you lack real-time access when market data is available."
-                    if effective_lang == "en" else
-                    "Instruksi penting: Jika user bertanya harga/kurs/perubahan saham atau kripto, gunakan data pasar di atas sebagai jawaban utama. Jangan bilang tidak punya akses real-time jika data pasar tersedia."
-                )
-                system = (
-                    system
-                    + f"\n\n## {market_title}:\n"
-                    + "\n\n".join(market_blocks)
-                    + "\n\n"
-                    + market_instruction
-                )
-        except Exception:
-            market_answer = ""
+    # Chat decomposition: market-data augmentation extracted to a testable helper.
+    system, market_answer = await _build_market_augmentation(body.message, system, effective_lang)
 
     if cfg.news_enabled and _looks_like_news_query(body.message):
         try:
