@@ -128,7 +128,7 @@ def test_synthesize_combines_specialist_outputs(monkeypatch):
 
 def _fake_call_llm_dispatch(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
     system = messages[0]["content"] if messages else ""
-    if "asisten AI bisnis BotNesia" in system:
+    if "konsultan bisnis AI senior BotNesia" in system:
         return "Halo! Untuk informasi harga paket, silakan cek halaman pricing kami."
     return '{"facts_to_store": [], "summary": "", "forget_keys": []}'
 

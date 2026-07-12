@@ -78,7 +78,7 @@ def test_supervisor_runs_first_principle_before_cs(monkeypatch):
 
     async def fake_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
         system = messages[0]["content"] if messages else ""
-        if "asisten AI bisnis BotNesia" in system:
+        if "konsultan bisnis AI senior BotNesia" in system:
             calls.append("cs")
             assert "Decomposition first-principles internal" in system
             assert "Demand" in system and "Harga" in system and "Lokasi" in system

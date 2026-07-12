@@ -103,7 +103,7 @@ def test_supervisor_applies_uncertainty_prefix_for_low_confidence(monkeypatch):
 
     async def fake_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
         system = messages[0]["content"] if messages else ""
-        if "asisten AI bisnis BotNesia" in system:
+        if "konsultan bisnis AI senior BotNesia" in system:
             return "Kemungkinan masalahnya promosi kurang."
         if "Kamu adalah editor jawaban konsultan" in system:
             return "{\"answer\": \"Kemungkinan masalahnya promosi kurang.\"}"

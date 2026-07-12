@@ -67,7 +67,7 @@ def test_supervisor_revises_marketing_claim_once(monkeypatch):
 
     async def fake_llm(self, messages, temperature=0.3, max_tokens=1024, response_format=None):
         system = messages[0]["content"] if messages else ""
-        if "asisten AI bisnis BotNesia" in system:
+        if "konsultan bisnis AI senior BotNesia" in system:
             calls["draft"] += 1
             return "BotNesia pasti lebih baik daripada semua kompetitor."
         return '{"facts_to_store": [], "summary": "", "forget_keys": []}'
