@@ -103,8 +103,12 @@ def test_platform_channel_config_rejects_missing_operator_secret(monkeypatch):
 
 def test_widget_and_agent_channel_sanitization_are_wired():
     widget = (ROOT / "frontend/botnesia-widget.js").read_text()
-    main = (ROOT / "main.py").read_text()
+    main_src = (ROOT / "main.py").read_text()
     assert "botnesia-chat" in widget
     assert "/api/channels/webchat/" in widget
-    assert 'key not in {"channel", "_channel"}' in main
-    assert '@app.get("/botnesia-widget.js"' in main
+    assert 'key not in {"channel", "_channel"}' in main_src
+    # The /botnesia-widget.js route was extracted to bn_platform/pages.py during
+    # the main.py strangler split; assert it is still wired on the app (behavior)
+    # rather than defined in main.py source text (brittle to further extraction).
+    import main as main_mod
+    assert any(getattr(r, "path", None) == "/botnesia-widget.js" for r in main_mod.app.routes)
