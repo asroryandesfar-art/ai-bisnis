@@ -31,8 +31,88 @@ def build_documents_router(
     process_document_sync: Callable[..., Awaitable],
     store_chunk_embeddings: Callable[..., Awaitable],
     KnowledgeBaseUrlReq,
+    max_document_bytes: int,
+    allowed_extensions: tuple,
 ) -> APIRouter:
     router = APIRouter()
+
+    @router.post("/bots/{bot_id}/documents", status_code=201)
+    async def upload_document(
+        bot_id: str,
+        file:   UploadFile = File(...),
+        user=Depends(get_current_user),
+        pool=Depends(get_pool),
+    ):
+        """Upload dokumen untuk knowledge base bot."""
+        # Validasi bot milik org
+        bot = await pool.fetchrow(
+            "SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, user["org_id"]
+        )
+        if not bot:
+            raise HTTPException(404, "Bot tidak ditemukan")
+
+        filename_l = (file.filename or "").lower()
+        if not filename_l.endswith(allowed_extensions):
+            raise HTTPException(
+                400,
+                f"Tipe file tidak didukung. Format yang didukung: {', '.join(allowed_extensions)}.",
+            )
+
+        # Cek limit dokumen
+        check_limit = get_check_limit()
+        if check_limit:
+            ok, detail = await check_limit(pool, user["org_id"], "knowledge")
+            if not ok:
+                raise HTTPException(
+                    402,
+                    f"Limit jumlah dokumen knowledge base paket '{detail['plan']}' tercapai "
+                    f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+                )
+        else:
+            doc_count = await pool.fetchval(
+                "SELECT COUNT(*) FROM documents WHERE org_id=$1", user["org_id"]
+            )
+            doc_limit = await pool.fetchval(
+                "SELECT doc_limit FROM organizations WHERE id=$1", user["org_id"]
+            )
+            if doc_count >= doc_limit:
+                raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
+
+        contents = await file.read()
+        if len(contents) > max_document_bytes:
+            raise HTTPException(
+                413,
+                f"Ukuran file melebihi batas {max_document_bytes // (1024*1024)}MB.",
+            )
+        doc_id   = str(uuid.uuid4())
+
+        # Simpan metadata ke DB
+        await pool.execute(
+            """INSERT INTO documents (id, org_id, bot_id, filename, file_size, mime_type, status, source_type, source_url)
+               VALUES ($1,$2,$3,$4,$5,$6,'pending','file',NULL)""",
+            doc_id, user["org_id"], bot_id,
+            file.filename, len(contents), file.content_type,
+        )
+
+        # Di production: kirim ke queue (Celery/BullMQ) untuk proses async
+        # Untuk sekarang: proses langsung (simplified)
+        await process_document_sync(pool, doc_id, contents=contents, mime=file.content_type or "", source_type="file")
+
+        # Proses saat ini synchronous, jadi status sudah final (ready/failed)
+        row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
+
+        write_audit = get_write_audit()
+        if write_audit:
+            try:
+                await write_audit(
+                    pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
+                    action="create", resource_type="document", resource_id=doc_id,
+                    metadata={"bot_id": bot_id, "filename": file.filename, "status": row["status"]},
+                )
+            except Exception:
+                pass
+
+        return {"doc_id": doc_id, "status": row["status"], "error_msg": row["error_msg"]}
 
     @router.post("/bots/{bot_id}/documents/url", status_code=201)
     async def upload_document_url(

@@ -3145,83 +3145,6 @@ MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20MB — cukup untuk dokumen knowledge 
 _ALLOWED_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".csv", ".md", ".markdown", ".txt")
 
 
-@app.post("/bots/{bot_id}/documents", status_code=201)
-async def upload_document(
-    bot_id: str,
-    file:   UploadFile = File(...),
-    user=Depends(get_current_user),
-    pool=Depends(get_pool),
-):
-    """Upload dokumen untuk knowledge base bot."""
-    # Validasi bot milik org
-    bot = await pool.fetchrow(
-        "SELECT id FROM bots WHERE id=$1 AND org_id=$2", bot_id, user["org_id"]
-    )
-    if not bot:
-        raise HTTPException(404, "Bot tidak ditemukan")
-
-    filename_l = (file.filename or "").lower()
-    if not filename_l.endswith(_ALLOWED_DOCUMENT_EXTENSIONS):
-        raise HTTPException(
-            400,
-            f"Tipe file tidak didukung. Format yang didukung: {', '.join(_ALLOWED_DOCUMENT_EXTENSIONS)}.",
-        )
-
-    # Cek limit dokumen
-    if _platform_check_limit:
-        ok, detail = await _platform_check_limit(pool, user["org_id"], "knowledge")
-        if not ok:
-            raise HTTPException(
-                402,
-                f"Limit jumlah dokumen knowledge base paket '{detail['plan']}' tercapai "
-                f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
-            )
-    else:
-        doc_count = await pool.fetchval(
-            "SELECT COUNT(*) FROM documents WHERE org_id=$1", user["org_id"]
-        )
-        doc_limit = await pool.fetchval(
-            "SELECT doc_limit FROM organizations WHERE id=$1", user["org_id"]
-        )
-        if doc_count >= doc_limit:
-            raise HTTPException(402, f"Batas dokumen ({doc_limit}) tercapai. Upgrade plan untuk upload lebih.")
-
-    contents = await file.read()
-    if len(contents) > MAX_DOCUMENT_BYTES:
-        raise HTTPException(
-            413,
-            f"Ukuran file melebihi batas {MAX_DOCUMENT_BYTES // (1024*1024)}MB.",
-        )
-    doc_id   = str(uuid.uuid4())
-
-    # Simpan metadata ke DB
-    await pool.execute(
-        """INSERT INTO documents (id, org_id, bot_id, filename, file_size, mime_type, status, source_type, source_url)
-           VALUES ($1,$2,$3,$4,$5,$6,'pending','file',NULL)""",
-        doc_id, user["org_id"], bot_id,
-        file.filename, len(contents), file.content_type,
-    )
-
-    # Di production: kirim ke queue (Celery/BullMQ) untuk proses async
-    # Untuk sekarang: proses langsung (simplified)
-    await _process_document_sync(pool, doc_id, contents=contents, mime=file.content_type or "", source_type="file")
-
-    # Proses saat ini synchronous, jadi status sudah final (ready/failed)
-    row = await pool.fetchrow("SELECT status, error_msg FROM documents WHERE id=$1", doc_id)
-
-    if _platform_write_audit:
-        try:
-            await _platform_write_audit(
-                pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
-                action="create", resource_type="document", resource_id=doc_id,
-                metadata={"bot_id": bot_id, "filename": file.filename, "status": row["status"]},
-            )
-        except Exception:
-            pass
-
-    return {"doc_id": doc_id, "status": row["status"], "error_msg": row["error_msg"]}
-
-
 async def _process_document_sync(
     pool: asyncpg.Pool,
     doc_id: str,
@@ -3685,6 +3608,7 @@ app.include_router(build_documents_router(
     title_from_url=lambda u: _title_from_url(u), process_document_sync=_process_document_sync,
     store_chunk_embeddings=lambda *a, **k: _store_chunk_embeddings(*a, **k),
     KnowledgeBaseUrlReq=KnowledgeBaseUrlReq,
+    max_document_bytes=MAX_DOCUMENT_BYTES, allowed_extensions=_ALLOWED_DOCUMENT_EXTENSIONS,
 ))
 
 
