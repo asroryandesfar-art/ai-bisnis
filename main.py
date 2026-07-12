@@ -3921,6 +3921,90 @@ async def _build_self_knowledge(pool, bot: dict, bot_id: str, system: str) -> tu
         system = system + "\n\n" + self_knowledge_context
     return system, self_knowledge_context, business_context
 
+async def _enforce_output_language(*, answer, result, effective_lang: str, system: str,
+                                   intelligence_context: dict, supervisor, conv_id: str, message: str):
+    """Regenerate the answer if its language mismatches effective_lang: first re-run
+    the supervisor with an enforcement suffix, then rewrite the draft only. Returns
+    (answer, result). Extracted verbatim from the chat handler (decomposition step 7)."""
+    # Output language validation — regenerate if language mismatch detected.
+    # The first retry re-runs the full supervisor with a stronger language rule.
+    # If KB language still pulls the answer off-target, the second pass rewrites
+    # only the draft answer in an isolated language-correction prompt.
+    if answer and not language_middleware.validate_output_language(answer, effective_lang):
+        logger.info(
+            "Language mismatch (expected=%s) conv=%s — retrying with enforcement suffix",
+            effective_lang, conv_id,
+        )
+        retry_context = dict(intelligence_context)
+        retry_context["knowledge_base_context"] = (
+            system + language_middleware.language_enforcement_suffix(effective_lang)
+        )
+        try:
+            retry_result = await supervisor.process(retry_context)
+            if retry_result.final_answer:
+                answer = retry_result.final_answer
+                result = retry_result
+        except Exception as _lang_retry_exc:
+            logger.warning("Language retry failed: %s", _lang_retry_exc)
+
+    if answer and not language_middleware.validate_output_language(answer, effective_lang):
+        logger.info(
+            "Language mismatch persisted (expected=%s) conv=%s — rewriting final answer only",
+            effective_lang, conv_id,
+        )
+        rewrite_system = (
+            "You are a language correction layer. Rewrite the draft answer entirely in English. "
+            "Preserve the meaning and factual content. Do not add new facts. Return only the rewritten answer."
+            if effective_lang == "en" else
+            "Kamu adalah lapisan koreksi bahasa. Tulis ulang draft jawaban sepenuhnya dalam Bahasa Indonesia. "
+            "Pertahankan makna dan fakta. Jangan menambah fakta baru. Kembalikan hanya jawaban yang sudah ditulis ulang."
+        )
+        rewrite_user = (
+            f"User message:\n{message}\n\nDraft answer:\n{answer}"
+            if effective_lang == "en" else
+            f"Pesan pengguna:\n{message}\n\nDraft jawaban:\n{answer}"
+        )
+        try:
+            rewritten_answer = (await supervisor.cs_agent._call_llm(
+                [
+                    {"role": "system", "content": rewrite_system},
+                    {"role": "user", "content": rewrite_user},
+                ],
+                temperature=0.1,
+                max_tokens=1400,
+            )).strip()
+            if rewritten_answer:
+                answer = rewritten_answer
+        except Exception as _lang_rewrite_exc:
+            logger.warning("Language rewrite failed: %s", _lang_rewrite_exc)
+
+    return answer, result
+
+def _build_agent_meta(result) -> dict:
+    """Build the internal agent-meta dict from a SupervisorResult (logged, not
+    sent to the frontend). Pure; extracted from the chat handler (decomposition
+    step 7)."""
+    return {
+        "confidence": result.confidence,
+        "topics": result.topics,
+        "suggested_followup": result.suggested_followup,
+        "should_escalate": result.should_escalate,
+        "escalation_urgency": result.escalation_urgency,
+        "escalation_message": result.escalation_message,
+        "recommended_team": result.recommended_team,
+        "errors": result.errors,
+        "reasoning_mode_used": result.reasoning_mode_used,
+        "socratic_risk": (result.socratic_review or {}).get("risk_if_wrong"),
+        "socratic_needs_clarification": bool((result.socratic_review or {}).get("needs_clarification")),
+        "devil_advocate_severity": (result.devil_advocate_review or {}).get("severity"),
+        "devil_advocate_revision_applied": bool(result.devil_revision_applied),
+        "first_principle_causal_links": int((result.first_principle_analysis or {}).get("causal_links_count", 0)),
+        "first_principle_root_hypotheses": int((result.first_principle_analysis or {}).get("root_hypotheses_count", 0)),
+        "uncertainty_band": result.uncertainty_band,
+        "uncertainty_score": result.uncertainty_score,
+        "uncertainty_reasons": result.uncertainty_reasons,
+    }
+
 async def _persist_and_build_chat_response(
     *, pool, bot: dict, bot_id: str, conv_id: str, message: str, answer: str,
     model_used: str, input_tokens, output_tokens, latency_ms, result,
@@ -4333,57 +4417,11 @@ async def chat(
         result = await supervisor.process(intelligence_context)
         answer = result.final_answer
 
-        # Output language validation — regenerate if language mismatch detected.
-        # The first retry re-runs the full supervisor with a stronger language rule.
-        # If KB language still pulls the answer off-target, the second pass rewrites
-        # only the draft answer in an isolated language-correction prompt.
-        if answer and not language_middleware.validate_output_language(answer, effective_lang):
-            logger.info(
-                "Language mismatch (expected=%s) conv=%s — retrying with enforcement suffix",
-                effective_lang, conv_id,
-            )
-            retry_context = dict(intelligence_context)
-            retry_context["knowledge_base_context"] = (
-                system + language_middleware.language_enforcement_suffix(effective_lang)
-            )
-            try:
-                retry_result = await supervisor.process(retry_context)
-                if retry_result.final_answer:
-                    answer = retry_result.final_answer
-                    result = retry_result
-            except Exception as _lang_retry_exc:
-                logger.warning("Language retry failed: %s", _lang_retry_exc)
-
-        if answer and not language_middleware.validate_output_language(answer, effective_lang):
-            logger.info(
-                "Language mismatch persisted (expected=%s) conv=%s — rewriting final answer only",
-                effective_lang, conv_id,
-            )
-            rewrite_system = (
-                "You are a language correction layer. Rewrite the draft answer entirely in English. "
-                "Preserve the meaning and factual content. Do not add new facts. Return only the rewritten answer."
-                if effective_lang == "en" else
-                "Kamu adalah lapisan koreksi bahasa. Tulis ulang draft jawaban sepenuhnya dalam Bahasa Indonesia. "
-                "Pertahankan makna dan fakta. Jangan menambah fakta baru. Kembalikan hanya jawaban yang sudah ditulis ulang."
-            )
-            rewrite_user = (
-                f"User message:\n{body.message}\n\nDraft answer:\n{answer}"
-                if effective_lang == "en" else
-                f"Pesan pengguna:\n{body.message}\n\nDraft jawaban:\n{answer}"
-            )
-            try:
-                rewritten_answer = (await supervisor.cs_agent._call_llm(
-                    [
-                        {"role": "system", "content": rewrite_system},
-                        {"role": "user", "content": rewrite_user},
-                    ],
-                    temperature=0.1,
-                    max_tokens=1400,
-                )).strip()
-                if rewritten_answer:
-                    answer = rewritten_answer
-            except Exception as _lang_rewrite_exc:
-                logger.warning("Language rewrite failed: %s", _lang_rewrite_exc)
+        answer, result = await _enforce_output_language(
+            answer=answer, result=result, effective_lang=effective_lang, system=system,
+            intelligence_context=intelligence_context, supervisor=supervisor,
+            conv_id=conv_id, message=body.message,
+        )
 
         # Shortcut data pasar mentah hanya untuk jalur cepat (standard). Mode Pro
         # sudah menganalisis data pasar via reasoning lens & sintesis jawaban —
@@ -4404,26 +4442,7 @@ async def chat(
         output_tokens = result.completion_tokens
         latency_ms = result.total_latency_ms
         # Meta agent disimpan untuk logging internal, tidak dikirim ke frontend.
-        agent_meta = {
-            "confidence": result.confidence,
-            "topics": result.topics,
-            "suggested_followup": result.suggested_followup,
-            "should_escalate": result.should_escalate,
-            "escalation_urgency": result.escalation_urgency,
-            "escalation_message": result.escalation_message,
-            "recommended_team": result.recommended_team,
-            "errors": result.errors,
-            "reasoning_mode_used": result.reasoning_mode_used,
-            "socratic_risk": (result.socratic_review or {}).get("risk_if_wrong"),
-            "socratic_needs_clarification": bool((result.socratic_review or {}).get("needs_clarification")),
-            "devil_advocate_severity": (result.devil_advocate_review or {}).get("severity"),
-            "devil_advocate_revision_applied": bool(result.devil_revision_applied),
-            "first_principle_causal_links": int((result.first_principle_analysis or {}).get("causal_links_count", 0)),
-            "first_principle_root_hypotheses": int((result.first_principle_analysis or {}).get("root_hypotheses_count", 0)),
-            "uncertainty_band": result.uncertainty_band,
-            "uncertainty_score": result.uncertainty_score,
-            "uncertainty_reasons": result.uncertainty_reasons,
-        }
+        agent_meta = _build_agent_meta(result)
 
         intent_routing = result.intent_routing or {}
         if _platform_evaluate_handoff:
