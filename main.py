@@ -1745,126 +1745,27 @@ _PLAN_LIMITS: dict[str, dict[str, int]] = {
 _PLAN_RANK: dict[str, int] = {"starter": 0, "growth": 1, "scale": 2}
 
 
-@app.get("/org")
-async def get_org(
-    user=Depends(get_current_user),
-    pool=Depends(get_pool),
-):
-    org = await pool.fetchrow(
-        """SELECT id, name, slug, plan, billing_status, trial_ends_at,
-                  bot_limit, conv_limit, doc_limit
-           FROM organizations WHERE id=$1""",
-        user["org_id"],
-    )
-    if not org:
-        raise HTTPException(404, "Organisasi tidak ditemukan")
-
-    use_cloud = should_use_cloud(org["plan"], org["billing_status"])
-    # Same provider priority as base.py's BaseAgent._call_llm() fallback chain:
-    # Gemini -> DeepSeek -> OpenRouter -> Groq. Previously this only checked
-    # groq_api_key, so it reported "offline" even when DeepSeek/OpenRouter
-    # (the actual active providers since the Groq/Gemini pivot) were serving
-    # every request fine -- kept /health's `ai.configured` check in sync with
-    # this same set of providers already, just never updated here too.
-    if cfg.effective_gemini_api_key:
-        provider, cloud_model = "gemini", cfg.gemini_model
-    elif cfg.deepseek_api_key:
-        provider, cloud_model = "deepseek", "deepseek-chat"
-    elif cfg.openrouter_api_key:
-        provider, cloud_model = "openrouter", "openai/gpt-4o-mini"
-    elif cfg.groq_api_key:
-        provider, cloud_model = "groq", cfg.groq_model
-    else:
-        provider, cloud_model = None, None
-    cloud_ready = provider is not None
-    effective_mode = "cloud" if cloud_ready else "offline"
-
-    return {
-        "id": str(org["id"]),
-        "name": org["name"],
-        "slug": org["slug"],
-        "plan": org["plan"],
-        "billing_status": org["billing_status"],
-        "trial_ends_at": org["trial_ends_at"].isoformat() if org["trial_ends_at"] else None,
-        "limits": {
-            "bot_limit": org["bot_limit"],
-            "conv_limit": org["conv_limit"],
-            "doc_limit": org["doc_limit"],
-        },
-        "ai": {
-            "requested_mode": "cloud" if use_cloud else "local",
-            "effective_mode": effective_mode,
-            "cloud_ready": cloud_ready,
-            "cloud_provider": provider,
-            "cloud_model": cloud_model,
-        },
-    }
-
-
 class OrgPlanUpdateReq(BaseModel):
     plan: str
 
 
-@app.patch("/org/plan")
-async def update_org_plan(
-    body: OrgPlanUpdateReq,
-    user=Depends(get_current_user),
-    pool=Depends(get_pool),
-):
-    if _platform_require_permission:
-        await _platform_require_permission("billing.manage")(user=user, pool=pool)
-
-    plan = (body.plan or "").strip().lower()
-    if plan not in _PLAN_LIMITS:
-        raise HTTPException(400, "Plan tidak valid (starter/growth/scale)")
-
-    # H-01/H-02: endpoint legacy ini TIDAK boleh dipakai untuk upgrade ke tier
-    # berbayar lebih tinggi tanpa pembayaran. `organizations.plan` hanya bisa
-    # NAIK lewat alur checkout terverifikasi (invoice + webhook Midtrans di
-    # bn_platform/billing.py). Di sini hanya izinkan downgrade / tetap sama;
-    # upgrade diarahkan ke /api/billing/checkout.
-    current_plan = ((await pool.fetchval(
-        "SELECT plan FROM organizations WHERE id=$1", user["org_id"]
-    )) or "starter").strip().lower()
-    if _PLAN_RANK.get(plan, 0) > _PLAN_RANK.get(current_plan, 0):
-        raise HTTPException(
-            status.HTTP_402_PAYMENT_REQUIRED,
-            "Upgrade paket harus melalui pembayaran. Gunakan /api/billing/checkout.",
-        )
-
-    # Cegah downgrade kalau resource sekarang melebihi limit baru.
-    active_bots = await pool.fetchval(
-        "SELECT COUNT(*) FROM bots WHERE org_id=$1 AND status != 'inactive'",
-        user["org_id"],
-    )
-    docs_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM documents WHERE org_id=$1",
-        user["org_id"],
-    )
-    limits = _PLAN_LIMITS[plan]
-    if active_bots > limits["bot_limit"]:
-        raise HTTPException(
-            409,
-            f"Terlalu banyak bot aktif ({active_bots}). Hapus/nonaktifkan sampai ≤ {limits['bot_limit']} untuk downgrade.",
-        )
-    if docs_count > limits["doc_limit"]:
-        raise HTTPException(
-            409,
-            f"Terlalu banyak dokumen ({docs_count}). Hapus sampai ≤ {limits['doc_limit']} untuk downgrade.",
-        )
-
-    await pool.execute(
-        """UPDATE organizations
-           SET plan=$2, bot_limit=$3, conv_limit=$4, doc_limit=$5, updated_at=NOW()
-           WHERE id=$1""",
-        user["org_id"],
-        plan,
-        limits["bot_limit"],
-        limits["conv_limit"],
-        limits["doc_limit"],
-    )
-
-    return {"message": "Plan diperbarui", "plan": plan, "limits": limits}
+# ── Org routes /org, /org/plan (extracted to bn_platform/org.py) ──
+# _platform_require_permission is injected as a getter (late binding) so the
+# permission tests that monkeypatch main._platform_require_permission work.
+from bn_platform.org import build_org_router
+_org_router = build_org_router(
+    get_pool=get_pool, get_current_user=get_current_user,
+    should_use_cloud=should_use_cloud, cfg=cfg,
+    get_require_permission=lambda: _platform_require_permission,
+    plan_limits=_PLAN_LIMITS, plan_rank=_PLAN_RANK,
+    OrgPlanUpdateReq=OrgPlanUpdateReq,
+)
+app.include_router(_org_router)
+# Backward-compat: some permission tests call main.get_org/main.update_org_plan
+# directly, so re-expose the handlers at module scope.
+_org_handlers = {r.name: r.endpoint for r in _org_router.routes}
+get_org = _org_handlers["get_org"]
+update_org_plan = _org_handlers["update_org_plan"]
 
 
 # ─── ROUTE: INTEGRATIONS (Gmail / Meta: WA, FB, IG) ────────────
