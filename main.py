@@ -3730,6 +3730,61 @@ async def _build_market_augmentation(message: str, system: str, effective_lang: 
             market_answer = ""
     return system, market_answer
 
+async def _build_news_augmentation(message: str, system: str, effective_lang: str) -> str:
+    """Augment the system prompt with real-time news context for news queries.
+
+    Returns the (possibly augmented) system prompt. Extracted verbatim from the
+    chat handler (decomposition step 2). No-op when news is disabled or the query
+    is not news-like, and degrades gracefully (logs, returns system) on failure.
+    """
+    if not (cfg.news_enabled and _looks_like_news_query(message)):
+        return system
+    try:
+        rss_urls = [u.strip() for u in (cfg.news_rss_feeds or "").split(",") if u.strip()] or None
+        news_needs_bodies = _news_needs_full_bodies(message)
+        news_limit = max(1, min(10, int(cfg.news_max_items or 6)))
+        if not news_needs_bodies:
+            news_limit = min(news_limit, 3)
+        news_timeout = float(cfg.news_timeout_seconds or 8.0)
+        if not news_needs_bodies:
+            news_timeout = min(news_timeout, 4.0)
+        # RSS discovery and article-body fetching are sequential stages.
+        # Give detailed requests enough total time to complete both stages.
+        total_news_timeout = news_timeout * (2 if news_needs_bodies else 1) + 2.0
+        news_ctx = await asyncio.wait_for(
+            build_news_context(
+                message,
+                limit=news_limit,
+                include_bodies=bool(cfg.news_include_bodies and news_needs_bodies),
+                fetch_timeout_s=news_timeout,
+                max_body_chars=max(200, min(6000, int(cfg.news_max_body_chars or 1400))),
+                max_concurrency=max(1, min(8, int(cfg.news_max_concurrency or 3))),
+                rss_urls=rss_urls,
+            ),
+            timeout=total_news_timeout,
+        )
+        if news_ctx:
+            news_title = "Latest news (real-time)" if effective_lang == "en" else "Berita terkini (real-time)"
+            news_instruction = (
+                "Important instruction: Answer based on the news data above and do not add unavailable facts. For each story, include the title, media/feed, publication date when available, and source URL. If article text is available, use that text and quotes as the primary basis. If only an RSS summary is available, summarize it and briefly state that the full article details are not available. If the user asks for solutions or business impact, clearly separate news facts from your analysis."
+                if effective_lang == "en" else
+                "Instruksi penting: Jawab berdasarkan data berita di atas dan jangan menambah fakta yang tidak tersedia. Untuk setiap berita, cantumkan judul, media/feed, tanggal terbit jika ada, dan URL sumber. Jika teks artikel tersedia, gunakan teks dan kutipan sebagai dasar utama. Jika hanya ringkasan RSS yang tersedia, tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
+            )
+            system = (
+                system
+                + f"\n\n## {news_title}:\n"
+                + news_ctx
+                + "\n\n"
+                + news_instruction
+            )
+    except Exception as exc:
+        logger.warning(
+            "News retrieval failed for query=%r: %s",
+            message[:120],
+            exc,
+        )
+    return system
+
 @app.post("/chat/{bot_id}")
 async def chat(
     bot_id: str,
@@ -3969,51 +4024,8 @@ async def chat(
     # Chat decomposition: market-data augmentation extracted to a testable helper.
     system, market_answer = await _build_market_augmentation(body.message, system, effective_lang)
 
-    if cfg.news_enabled and _looks_like_news_query(body.message):
-        try:
-            rss_urls = [u.strip() for u in (cfg.news_rss_feeds or "").split(",") if u.strip()] or None
-            news_needs_bodies = _news_needs_full_bodies(body.message)
-            news_limit = max(1, min(10, int(cfg.news_max_items or 6)))
-            if not news_needs_bodies:
-                news_limit = min(news_limit, 3)
-            news_timeout = float(cfg.news_timeout_seconds or 8.0)
-            if not news_needs_bodies:
-                news_timeout = min(news_timeout, 4.0)
-            # RSS discovery and article-body fetching are sequential stages.
-            # Give detailed requests enough total time to complete both stages.
-            total_news_timeout = news_timeout * (2 if news_needs_bodies else 1) + 2.0
-            news_ctx = await asyncio.wait_for(
-                build_news_context(
-                    body.message,
-                    limit=news_limit,
-                    include_bodies=bool(cfg.news_include_bodies and news_needs_bodies),
-                    fetch_timeout_s=news_timeout,
-                    max_body_chars=max(200, min(6000, int(cfg.news_max_body_chars or 1400))),
-                    max_concurrency=max(1, min(8, int(cfg.news_max_concurrency or 3))),
-                    rss_urls=rss_urls,
-                ),
-                timeout=total_news_timeout,
-            )
-            if news_ctx:
-                news_title = "Latest news (real-time)" if effective_lang == "en" else "Berita terkini (real-time)"
-                news_instruction = (
-                    "Important instruction: Answer based on the news data above and do not add unavailable facts. For each story, include the title, media/feed, publication date when available, and source URL. If article text is available, use that text and quotes as the primary basis. If only an RSS summary is available, summarize it and briefly state that the full article details are not available. If the user asks for solutions or business impact, clearly separate news facts from your analysis."
-                    if effective_lang == "en" else
-                    "Instruksi penting: Jawab berdasarkan data berita di atas dan jangan menambah fakta yang tidak tersedia. Untuk setiap berita, cantumkan judul, media/feed, tanggal terbit jika ada, dan URL sumber. Jika teks artikel tersedia, gunakan teks dan kutipan sebagai dasar utama. Jika hanya ringkasan RSS yang tersedia, tetap rangkum informasi tersebut dan jelaskan singkat bahwa detail artikel penuh belum tersedia. Jika user meminta solusi atau dampak bisnis, pisahkan dengan jelas antara fakta berita dan analisismu."
-                )
-                system = (
-                    system
-                    + f"\n\n## {news_title}:\n"
-                    + news_ctx
-                    + "\n\n"
-                    + news_instruction
-                )
-        except Exception as exc:
-            logger.warning(
-                "News retrieval failed for query=%r: %s",
-                body.message[:120],
-                exc,
-            )
+    # Chat decomposition: real-time news augmentation extracted to a testable helper.
+    system = await _build_news_augmentation(body.message, system, effective_lang)
 
     # 7.5 Self-knowledge BotNesia: paket/usage/channel tenant + performa bisnis
     # (query DB ringan, tanpa LLM — selalu tersedia untuk semua mode/bot).
