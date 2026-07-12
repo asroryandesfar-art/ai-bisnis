@@ -3903,6 +3903,24 @@ async def _maybe_deepseek_brain_answer(message: str, bot: dict, bot_id: str, con
         logger.exception("DeepSeek brain gagal, fallback ke pipeline lama conv=%s", conv_id)
         return None
 
+async def _build_self_knowledge(pool, bot: dict, bot_id: str, system: str) -> tuple[str, str, str]:
+    """Build tenant self-knowledge (plan/usage/channel) + business context (light
+    DB queries, no LLM) and append self-knowledge to the system prompt. Returns
+    (system, self_knowledge_context, business_context). Extracted verbatim from
+    the chat handler (decomposition step 5); degrades to empty on any error.
+    """
+    try:
+        from botnesia_knowledge import build_self_knowledge_context, build_business_context
+        self_knowledge_context, business_context = await asyncio.gather(
+            build_self_knowledge_context(pool, str(bot["org_id"]), bot_id, dict(bot)),
+            build_business_context(pool, str(bot["org_id"]), bot_id),
+        )
+    except Exception:
+        self_knowledge_context, business_context = "", ""
+    if self_knowledge_context:
+        system = system + "\n\n" + self_knowledge_context
+    return system, self_knowledge_context, business_context
+
 @app.post("/chat/{bot_id}")
 async def chat(
     bot_id: str,
@@ -4109,16 +4127,8 @@ async def chat(
 
     # 7.5 Self-knowledge BotNesia: paket/usage/channel tenant + performa bisnis
     # (query DB ringan, tanpa LLM — selalu tersedia untuk semua mode/bot).
-    try:
-        from botnesia_knowledge import build_self_knowledge_context, build_business_context
-        self_knowledge_context, business_context = await asyncio.gather(
-            build_self_knowledge_context(pool, str(bot["org_id"]), bot_id, dict(bot)),
-            build_business_context(pool, str(bot["org_id"]), bot_id),
-        )
-    except Exception:
-        self_knowledge_context, business_context = "", ""
-    if self_knowledge_context:
-        system = system + "\n\n" + self_knowledge_context
+    # Chat decomposition: tenant self-knowledge + business context extracted.
+    system, self_knowledge_context, business_context = await _build_self_knowledge(pool, bot, bot_id, system)
 
     # 7.55 AI Workforce Phase 8 — Self Learning Company: insight yang sudah
     # di-approve manusia (lihat self_learning_engine.py) disuntik sebagai
