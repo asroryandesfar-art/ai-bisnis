@@ -1707,15 +1707,28 @@ async def _start_session(pool, *, user_id: str, org_id: str, email: str,
 # Strangler split; handlers verbatim, guarded by test_auth_endpoints.py. The
 # two platform hooks are injected as getters to keep main's late binding.
 from bn_platform.auth import build_auth_router
-app.include_router(build_auth_router(
-    get_pool=get_pool, get_current_user=get_current_user, ensure_schema=ensure_schema,
-    hash_password=hash_password, verify_password=verify_password,
+# ensure_schema/verify_password are injected as late-binding wrappers (look up
+# the current main global at call time) so that tests which monkeypatch
+# main.ensure_schema / main.verify_password still affect the router handlers.
+_auth_router = build_auth_router(
+    get_pool=get_pool, get_current_user=get_current_user,
+    ensure_schema=lambda p: ensure_schema(p),
+    hash_password=hash_password,
+    verify_password=lambda plain, hashed: verify_password(plain, hashed),
     is_supported_password_hash=is_supported_password_hash, dummy_pwd_hash=_DUMMY_PWD_HASH,
     start_session=_start_session, create_token=create_token, logger=logger,
     get_write_audit=lambda: _platform_write_audit,
     get_revoke_session=lambda: _platform_revoke_session,
     RegisterReq=RegisterReq, LoginReq=LoginReq,
-))
+)
+app.include_router(_auth_router)
+# Backward-compat: re-expose the handlers at module scope. Some security tests
+# call main.register/main.login/main.logout directly (and rely on the
+# late-binding wrappers above), so keep these names available after extraction.
+_auth_handlers = {r.name: r.endpoint for r in _auth_router.routes}
+register = _auth_handlers["register"]
+login = _auth_handlers["login"]
+logout = _auth_handlers["logout"]
 
 
 # ─── ROUTE: ORGANIZATION / SUBSCRIPTION ────────────────────────
