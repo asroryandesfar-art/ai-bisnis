@@ -124,6 +124,17 @@ import language_middleware
 class Settings(BaseSettings):
     database_url:         str = "postgresql+asyncpg://user:pass@localhost/botnesia"
     db_connect_timeout_seconds: float = 2.5
+    # ── Connection pool (horizontal-scaling) ────────────────────
+    # Ukuran pool asyncpg PER-PROSES. Default mempertahankan perilaku lama
+    # (2..20). Untuk banyak replika, atur lewat env: kecilkan per-proses lalu
+    # kalikan jumlah replika, atau taruh PgBouncer di depan (lihat db_pgbouncer).
+    db_pool_min_size:     int = 2
+    db_pool_max_size:     int = 20
+    # PgBouncer mode transaction/statement TIDAK kompatibel dengan prepared
+    # statement asyncpg. Set DB_PGBOUNCER=1 agar statement cache dimatikan
+    # (statement_cache_size=0) supaya aman di belakang PgBouncer. Default False
+    # (koneksi langsung ke Postgres; cache prepared statement tetap aktif).
+    db_pgbouncer:         bool = False
     secret_key:           str = "change-me-in-production"
     replicate_api_token:  str = ""
     replicate_api_tokens: str = ""  # optional: comma-separated Replicate tokens
@@ -806,6 +817,23 @@ async def ensure_schema(pool: asyncpg.Pool) -> bool:
             print(f"[WARN] Gagal inisialisasi schema database: {e}")
             return False
 
+def build_pool_kwargs(settings: "Settings") -> dict:
+    """Bangun kwargs asyncpg.create_pool dari Settings (pure, tanpa I/O).
+
+    Dipisah agar bisa diuji tanpa database live. Menormalkan ukuran pool
+    (asyncpg butuh max_size>=1 dan min_size<=max_size) supaya salah konfigurasi
+    env tidak membuat pool gagal boot dengan error membingungkan, dan mematikan
+    prepared-statement cache saat di belakang PgBouncer.
+    """
+    pool_max = max(1, settings.db_pool_max_size)
+    pool_min = min(max(0, settings.db_pool_min_size), pool_max)
+    kwargs: dict = {"min_size": pool_min, "max_size": pool_max}
+    if settings.db_pgbouncer:
+        # Wajib untuk PgBouncer transaction pooling (asyncpg tak bisa memakai
+        # prepared statement lintas koneksi yang di-multiplex PgBouncer).
+        kwargs["statement_cache_size"] = 0
+    return kwargs
+
 async def get_pool() -> asyncpg.Pool:
     global _pool, _pool_loop
     loop = asyncio.get_running_loop()
@@ -822,13 +850,10 @@ async def get_pool() -> asyncpg.Pool:
 
     if _pool is None:
         dsn = cfg.database_url.replace("+asyncpg", "")
+        pool_kwargs = build_pool_kwargs(cfg)
         try:
             _pool = await asyncio.wait_for(
-                asyncpg.create_pool(
-                    dsn,
-                    min_size=2,
-                    max_size=20,
-                ),
+                asyncpg.create_pool(dsn, **pool_kwargs),
                 timeout=cfg.db_connect_timeout_seconds,
             )
             _pool_loop = loop
