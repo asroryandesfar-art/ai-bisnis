@@ -4047,6 +4047,49 @@ async def _maybe_generate_chat_image(*, message: str, bot: dict, bot_id: str, co
                 logger.warning("Chat+Image error conv=%s: %s", conv_id, exc)
     return system, chat_image_url, chat_image_provider
 
+async def _chat_error_fallback(*, exc, market_answer: str, t_start: float, pool, bot: dict,
+                               bot_id: str, conv_id: str, user_meta: dict):
+    """Fallback path when the supervisor pipeline raises: prefer raw market data
+    if available, else a human-handoff message (enqueuing an ai_error ticket).
+    Returns (answer, model_used, input_tokens, output_tokens, latency_ms, agent_meta).
+    Extracted verbatim from the chat handler except-block (decomposition step 10)."""
+    if market_answer:
+        answer = market_answer
+        model_used = "system:market-data"
+        input_tokens = 0
+        output_tokens = 0
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+        agent_meta = {"errors": [str(exc)], "fallback": "market-data"}
+    else:
+        answer = (
+            "Maaf, AI sedang mengalami kendala. Percakapan ini sudah diteruskan "
+            "ke tim manusia agar tetap dapat ditangani."
+        )
+        model_used = "system:human-handoff"
+        input_tokens = 0
+        output_tokens = 0
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+        agent_meta = {"errors": [str(exc)], "handoff_reason": "ai_error"}
+        if _platform_enqueue_handoff:
+            try:
+                await _platform_enqueue_handoff(
+                    pool, org_id=bot["org_id"], conversation_id=conv_id,
+                    reason="ai_error", priority="high",
+                )
+                asyncio.create_task(_dispatch_workflow_trigger(
+                    "new_ticket",
+                    {
+                        "conversation_id": conv_id, "bot_id": bot_id,
+                        "reason": "ai_error", "priority": "high",
+                        "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
+                        "end_user_email": user_meta.get("email"),
+                    },
+                    org_id=str(bot["org_id"]), bot_id=bot_id,
+                ))
+            except Exception:
+                logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
+    return answer, model_used, input_tokens, output_tokens, latency_ms, agent_meta
+
 def _build_agent_meta(result) -> dict:
     """Build the internal agent-meta dict from a SupervisorResult (logged, not
     sent to the frontend). Pure; extracted from the chat handler (decomposition
@@ -4504,41 +4547,10 @@ async def chat(
         )
     except Exception as e:
         logger.exception("CHAT EXCEPTION bot=%s conv=%s: %s", bot_id, conv_id, e)
-        if market_answer:
-            answer = market_answer
-            model_used = "system:market-data"
-            input_tokens = 0
-            output_tokens = 0
-            latency_ms = int((time.monotonic() - t_start) * 1000)
-            agent_meta = {"errors": [str(e)], "fallback": "market-data"}
-        else:
-            answer = (
-                "Maaf, AI sedang mengalami kendala. Percakapan ini sudah diteruskan "
-                "ke tim manusia agar tetap dapat ditangani."
-            )
-            model_used = "system:human-handoff"
-            input_tokens = 0
-            output_tokens = 0
-            latency_ms = int((time.monotonic() - t_start) * 1000)
-            agent_meta = {"errors": [str(e)], "handoff_reason": "ai_error"}
-            if _platform_enqueue_handoff:
-                try:
-                    await _platform_enqueue_handoff(
-                        pool, org_id=bot["org_id"], conversation_id=conv_id,
-                        reason="ai_error", priority="high",
-                    )
-                    asyncio.create_task(_dispatch_workflow_trigger(
-                        "new_ticket",
-                        {
-                            "conversation_id": conv_id, "bot_id": bot_id,
-                            "reason": "ai_error", "priority": "high",
-                            "end_user_id": user_meta.get("userId"), "end_user_name": user_meta.get("name"),
-                            "end_user_email": user_meta.get("email"),
-                        },
-                        org_id=str(bot["org_id"]), bot_id=bot_id,
-                    ))
-                except Exception:
-                    logger.exception("Gagal membuat error handoff conversation=%s", conv_id)
+        answer, model_used, input_tokens, output_tokens, latency_ms, agent_meta = await _chat_error_fallback(
+            exc=e, market_answer=market_answer, t_start=t_start, pool=pool,
+            bot=bot, bot_id=bot_id, conv_id=conv_id, user_meta=user_meta,
+        )
 
     # Additive routing fields dari Intent Router (backward-compatible di resp dict)
     return await _persist_and_build_chat_response(
