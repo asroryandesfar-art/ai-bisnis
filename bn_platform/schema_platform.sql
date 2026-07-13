@@ -1163,10 +1163,10 @@ VALUES
   '{"description": "Cocok untuk mencoba BotNesia dan UMKM yang baru mulai.", "highlights": ["1 AI Agent", "100 percakapan/bulan", "Branding BotNesia"], "branding_botnesia": true, "knowledge_base": false, "analytics": false, "analytics_advanced": false, "whatsapp": false, "multi_user": false, "api_access": false, "priority_support": false, "multi_tenant": false, "white_label": false, "custom_pricing": false}', 0),
  ('starter',    'Starter',    99000,   990000,   1000,  2,  3,  10, 2,
   '{"description": "Untuk bisnis kecil yang mulai serius pakai AI chatbot.", "highlights": ["2 AI Agents", "1.000 percakapan/bulan", "Knowledge Base dasar", "Analytics dasar"], "branding_botnesia": false, "knowledge_base": true, "analytics": true, "analytics_advanced": false, "whatsapp": false, "multi_user": false, "api_access": false, "priority_support": false, "multi_tenant": false, "white_label": false, "custom_pricing": false}', 1),
- ('pro',        'Pro',        299000,  2990000,  5000,  5,  10, 50, 4,
+ ('pro',        'Pro',        349000,  3490000,  5000,  5,  10, 50, 4,
   '{"description": "Untuk bisnis yang siap terhubung ke WhatsApp dengan tim lebih besar.", "highlights": ["5 AI Agents", "5.000 percakapan/bulan", "WhatsApp integration", "Analytics lengkap", "Multi-user"], "branding_botnesia": false, "knowledge_base": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "multi_user": true, "api_access": false, "priority_support": false, "multi_tenant": false, "white_label": false, "custom_pricing": false}', 2),
- ('business',   'Business',   999000,  9990000,  10000, 10, 20, 200, 8,
-  '{"description": "Untuk UMKM, startup, dan tim kecil-menengah yang butuh kapasitas lebih besar.", "highlights": ["10 AI Agents", "10.000 percakapan/bulan", "WhatsApp Multi Number", "Advanced Analytics", "Team Management", "Priority Support", "Knowledge Base lebih besar"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": false, "multi_tenant": false, "white_label": false, "custom_domain": false, "dedicated_support": false, "custom_integration": false, "sla": false, "advanced_security": false, "audit_log": false, "sso": false, "custom_pricing": false}', 3),
+ ('business',   'Business',   990000,  9900000,  16500, 10, 20, 200, 8,
+  '{"description": "Untuk UMKM, startup, dan tim kecil-menengah yang butuh kapasitas lebih besar.", "highlights": ["10 AI Agents", "16.500 percakapan/bulan", "WhatsApp Multi Number", "Advanced Analytics", "Team Management", "Priority Support", "Knowledge Base lebih besar"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": false, "multi_tenant": false, "white_label": false, "custom_domain": false, "dedicated_support": false, "custom_integration": false, "sla": false, "advanced_security": false, "audit_log": false, "sso": false, "custom_pricing": false}', 3),
  ('enterprise', 'Enterprise', 0,       0,        -1,    -1, -1, -1, -1,
   '{"description": "Untuk perusahaan besar, agency, SaaS multi-cabang, dan white label reseller.", "highlights": ["Unlimited AI Agents", "Unlimited Conversations", "Multi Tenant", "White Label", "API Access", "Custom Domain", "Dedicated Support", "Custom Integration", "SLA Perusahaan", "Advanced Security", "Audit Log", "SSO (Single Sign-On)"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": true, "multi_tenant": true, "white_label": true, "custom_domain": true, "dedicated_support": true, "custom_integration": true, "sla": true, "advanced_security": true, "audit_log": true, "sso": true, "custom_pricing": true}', 4)
 ON CONFLICT (key) DO NOTHING;
@@ -1185,6 +1185,19 @@ UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'starter';
 UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'pro';
 UPDATE plans SET free_trial_eligible = TRUE  WHERE key = 'business';
 UPDATE plans SET free_trial_eligible = FALSE WHERE key = 'enterprise';
+
+-- P0-2: kurva harga monoton (idempoten; menimpa baris lama krn INSERT di atas
+-- ON CONFLICT DO NOTHING). Rp/percakapan HARUS turun tiap naik paket:
+--   Starter 99.000/1.000 = Rp99  >  Pro 349.000/5.000 = Rp69,8  >  Business 990.000/16.500 = Rp60
+-- Sebelumnya Business (999.000/10.000 = Rp99,9) LEBIH mahal/percakapan dari Pro
+-- (Rp59,8) -> upgrade tidak masuk akal. Pro dinaikkan sedikit utk spasi bersih;
+-- Business ~harga sama tapi +65% kuota shg jadi value/rupiah terbaik.
+UPDATE plans SET price_monthly_idr = 349000, price_yearly_idr = 3490000 WHERE key = 'pro';
+UPDATE plans SET price_monthly_idr = 990000, price_yearly_idr = 9900000,
+                 max_conversations_per_month = 16500 WHERE key = 'business';
+-- Sinkronkan teks highlight yang ditampilkan (frontend membaca features.highlights).
+UPDATE plans SET features = replace(features::text, '10.000 percakapan/bulan', '16.500 percakapan/bulan')::jsonb
+ WHERE key = 'business' AND features::text LIKE '%10.000 percakapan/bulan%';
 
 -- Katalog permission (dipakai bn_platform/rbac.py — harus sinkron dgn PERMISSIONS const)
 INSERT INTO permissions (key, category, description) VALUES
