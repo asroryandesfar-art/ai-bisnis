@@ -135,6 +135,13 @@ class Settings(BaseSettings):
     # (statement_cache_size=0) supaya aman di belakang PgBouncer. Default False
     # (koneksi langsung ke Postgres; cache prepared statement tetap aktif).
     db_pgbouncer:         bool = False
+    # Batas waktu per-query (detik) untuk SEMUA koneksi pool. asyncpg default =
+    # tanpa batas, jadi satu query yang hang bisa menahan koneksi pool selamanya
+    # (risiko pool exhaustion). Default 0 = NONAKTIF (perilaku lama). Set
+    # DB_COMMAND_TIMEOUT_SECONDS>0 di prod untuk membatasi query hang. Hati-hati:
+    # timeout ini kena SEMUA query termasuk init schema & batch insert besar, jadi
+    # beri margin (mis. 30) — jangan setel terlalu kecil.
+    db_command_timeout_seconds: float = 0.0
     # ── Background task leader (horizontal-scaling) ─────────────
     # Loop in-process (Gmail poller, intelligence learning, Meta token refresh)
     # HANYA boleh jalan di SATU replika, jika tidak akan terjadi kerja ganda
@@ -657,6 +664,10 @@ def build_pool_kwargs(settings: "Settings") -> dict:
         # Wajib untuk PgBouncer transaction pooling (asyncpg tak bisa memakai
         # prepared statement lintas koneksi yang di-multiplex PgBouncer).
         kwargs["statement_cache_size"] = 0
+    # command_timeout hanya diset kalau dikonfigurasi (>0); default asyncpg tanpa
+    # batas dipertahankan saat 0 agar tidak memutus query panjang yang sah.
+    if settings.db_command_timeout_seconds and settings.db_command_timeout_seconds > 0:
+        kwargs["command_timeout"] = float(settings.db_command_timeout_seconds)
     return kwargs
 
 def should_run_background_tasks() -> bool:

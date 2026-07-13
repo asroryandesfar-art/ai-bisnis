@@ -41,3 +41,20 @@ def test_misconfigured_sizes_are_clamped_to_valid_range():
     kwargs = main.build_pool_kwargs(_settings(db_pool_min_size=99, db_pool_max_size=0))
     assert kwargs["max_size"] >= 1
     assert kwargs["min_size"] <= kwargs["max_size"]
+
+
+def test_command_timeout_omitted_by_default():
+    # Default 0 = nonaktif: pertahankan perilaku asyncpg tanpa batas waktu query.
+    kwargs = main.build_pool_kwargs(_settings())
+    assert "command_timeout" not in kwargs
+
+
+def test_command_timeout_set_when_configured():
+    kwargs = main.build_pool_kwargs(_settings(db_command_timeout_seconds=30))
+    assert kwargs["command_timeout"] == 30.0
+
+
+def test_command_timeout_ignored_when_non_positive():
+    # 0 atau negatif tidak boleh diteruskan ke asyncpg.
+    assert "command_timeout" not in main.build_pool_kwargs(_settings(db_command_timeout_seconds=0))
+    assert "command_timeout" not in main.build_pool_kwargs(_settings(db_command_timeout_seconds=-5))
