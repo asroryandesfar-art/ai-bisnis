@@ -4416,6 +4416,15 @@ try:
         ),
         prefix="/api",
     )
+    # Multi-agent orchestrator (internal, authenticated + RBAC-scoped).
+    from bn_platform.orchestrator import build_orchestrator_router
+    app.include_router(
+        build_orchestrator_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
     app.include_router(
         build_marketing_router(
             get_pool=get_pool, get_current_user=get_current_user,

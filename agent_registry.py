@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from dataclasses import dataclass
 
 import asyncpg
 
@@ -40,6 +41,138 @@ AGENT_DIRECTORY: list[tuple[str, str, str, str]] = [
     ("research_agent", "ResearchAgent", "research", AUTHENTICATED_API),
     ("computer_agent", "ComputerAgent", "computer_use", CHAT_PIPELINE),
 ]
+
+
+# ── Orkestrasi multi-agent (endpoint internal terautentikasi) ───────────────
+# Agent tambahan yang BUKAN "digital employee" di AGENT_DIRECTORY tapi valid
+# dipanggil orkestrator internal (support/analitik). Format sama:
+# (module_path, class_name, category, channel).
+ORCHESTRATION_EXTRA: list[tuple[str, str, str, str]] = [
+    ("analytics", "AnalyticsAgent", "analytics", AUTHENTICATED_API),
+    ("memory_agent", "MemoryAgent", "memory", AUTHENTICATED_API),
+]
+
+# Permission RBAC yang diwajibkan agar sebuah kategori boleh dipanggil di
+# orkestrator internal. None = cukup terautentikasi (aman lintas-peran).
+# Sumber tunggal; TIDAK menduplikasi tabel dispatch — routing tetap dinamis.
+AGENT_PERMISSION_BY_CATEGORY: dict[str, str | None] = {
+    "customer_service": None,
+    "sales":            None,
+    "general_ai":       None,
+    "memory":           None,
+    "knowledge":        "knowledge.read",
+    "analytics":        "analytics.read",
+    "finance":          "finance.read",
+    "marketing":        "marketing.read",
+    "hr":               "hr.read",
+    "operations":       "operations.read",
+    "security":         "security.read",
+    "executive":        "analytics.read",
+    "workforce":        "workforce.read",
+    "self_learning":    "learning.read",
+    "research":         "research.read",
+    "computer_use":     "computer_agent.read",
+}
+
+# Kata kunci per kategori untuk router FALLBACK heuristik (dipakai hanya bila
+# router LLM tidak tersedia/mengembalikan sampah). Bukan satu-satunya jalan
+# routing; sekadar jaring pengaman deterministik.
+AGENT_CAPABILITY_KEYWORDS: dict[str, list[str]] = {
+    "finance":   ["biaya", "harga", "gaji", "budget", "anggaran", "invoice", "profit", "cashflow", "revenue", "keuangan", "expense", "pajak"],
+    "hr":        ["karyawan", "rekrut", "perekrutan", "kandidat", "interview", "gaji", "training", "cuti", "hr", "sdm", "onboarding"],
+    "marketing": ["campaign", "konten", "iklan", "marketing", "promosi", "sosial media", "audience", "branding"],
+    "analytics": ["analitik", "metrik", "statistik", "tren", "grafik", "conversion", "performa", "dashboard"],
+    "research":  ["riset", "cari", "temukan", "pelajari", "referensi", "sumber", "research"],
+    "operations":["operasional", "sla", "uptime", "kesehatan sistem", "alert", "insiden"],
+    "security":  ["keamanan", "risiko", "audit", "kerentanan", "security", "breach"],
+    "knowledge": ["dokumen", "kebijakan", "prosedur", "knowledge", "panduan", "sop"],
+    "sales":     ["jual", "penawaran", "closing", "prospek", "diskon", "deal"],
+    "customer_service": ["komplain", "keluhan", "bantuan", "refund", "layanan"],
+}
+
+
+@dataclass
+class OrchestrationAgentSpec:
+    """Deskriptor satu agent yang bisa dipanggil orkestrator internal."""
+    name:         str
+    class_name:   str
+    category:     str
+    module_path:  str
+    permission:   str | None
+    capabilities: list[str]
+
+
+def _overrides_run(cls: type) -> bool:
+    """True bila class benar-benar mengimplementasikan run() sendiri.
+
+    Dasar penemuan DINAMIS: hanya agent dengan run(context) sendiri yang bisa
+    di-orkestrasi seragam via safe_run(). Agent berbasis fungsi-modul (mis.
+    operations/security tanpa run()) otomatis TIDAK terdaftar sampai punya run()
+    — tak perlu daftar hardcode terpisah.
+    """
+    return getattr(cls, "run", None) is not getattr(BaseAgent, "run", None)
+
+
+def build_agent(module_path: str, class_name: str, **kwargs) -> BaseAgent:
+    """Instansiasi agent secara dinamis dari (module_path, class_name).
+
+    Kwarg yang tidak diterima __init__ agent DIBUANG otomatis (kecuali agent
+    memakai **kwargs) supaya config LLM bersama aman dipakai lintas agent yang
+    signature-nya beda-beda — tanpa TypeError.
+    """
+    import inspect
+    module = importlib.import_module(module_path)
+    cls = getattr(module, class_name)
+    try:
+        sig = inspect.signature(cls.__init__)
+        has_var_kw = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if not has_var_kw:
+            allowed = set(sig.parameters) - {"self"}
+            kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+    except (TypeError, ValueError):
+        pass
+    return cls(**kwargs)
+
+
+def orchestration_agents(
+    *, allowed_permissions: set[str] | None = None
+) -> list[OrchestrationAgentSpec]:
+    """Daftar agent yang boleh dipanggil orkestrator, difilter RBAC.
+
+    Penemuan dinamis: gabung AGENT_DIRECTORY + ORCHESTRATION_EXTRA, sisakan yang
+    override run(), lalu filter berdasarkan permission efektif user. Bila
+    allowed_permissions None → tanpa filter (mis. konteks super-admin/test).
+    """
+    specs: list[OrchestrationAgentSpec] = []
+    seen: set[str] = set()
+    for module_path, class_name, category, _channel in (*AGENT_DIRECTORY, *ORCHESTRATION_EXTRA):
+        if class_name in seen:
+            continue
+        try:
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
+        except Exception:
+            continue
+        if not _overrides_run(cls):
+            continue
+        perm = AGENT_PERMISSION_BY_CATEGORY.get(category)
+        if (
+            perm is not None
+            and allowed_permissions is not None
+            and perm not in allowed_permissions
+            and "*" not in allowed_permissions
+        ):
+            continue
+        seen.add(class_name)
+        specs.append(OrchestrationAgentSpec(
+            name=getattr(cls, "name", class_name),
+            class_name=class_name,
+            category=category,
+            module_path=module_path,
+            permission=perm,
+            capabilities=AGENT_CAPABILITY_KEYWORDS.get(category, []),
+        ))
+    return specs
 
 
 def list_agents() -> list[dict]:

@@ -47,12 +47,19 @@ class AgentMessage:
 
 @dataclass
 class AgentResult:
-    """Hasil dari satu agen."""
+    """Hasil dari satu agen.
+
+    `confidence` (0.0..1.0) ditambahkan untuk orkestrasi multi-agent: tiap agen
+    boleh melaporkan keyakinannya (mis. dari `output["confidence"]`) sehingga
+    Supervisor bisa membobot/memilih jawaban. None = tidak melapor (diperlakukan
+    netral oleh agregator). Field lama tidak berubah -> backward compatible.
+    """
     agent:      str
     success:    bool
     output:     dict
     latency_ms: int
     error:      str | None = None
+    confidence: float | None = None
 
 
 class BaseAgent:
