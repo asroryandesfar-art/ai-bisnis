@@ -165,13 +165,17 @@ def _generate_invoice_number() -> str:
 # CREDIT LEDGER
 # ============================================================
 
-# Nominal top-up yang tersedia (IDR -> kredit konversi 1:1 IDR)
+# Nominal top-up (P0-1 repricing): harga/percakapan SENGAJA di ATAS harga
+# per-percakapan paket tertinggi (Starter = Rp99/percakapan) supaya top-up jadi
+# solusi DARURAT overflow, bukan celah lebih murah dari kuota bawaan paket.
+# Rp/percakapan turun sedikit seiring nominal (diskon volume) tapi tetap
+# Rp125–143 — jauh di atas COGS (~Rp40) → margin ~70%+ dan mendorong upgrade,
+# bukan cannibalisasi paket. Paket Rp25.000 lama dihapus (rugi & terlalu kecil).
 TOPUP_PACKAGES = [
-    {"amount_idr": 25_000,  "conversations": 1_000,  "label": "Rp25.000"},
-    {"amount_idr": 50_000,  "conversations": 2_500,  "label": "Rp50.000"},
-    {"amount_idr": 100_000, "conversations": 5_000,  "label": "Rp100.000"},
-    {"amount_idr": 250_000, "conversations": 15_000, "label": "Rp250.000"},
-    {"amount_idr": 500_000, "conversations": 35_000, "label": "Rp500.000"},
+    {"amount_idr": 50_000,  "conversations": 350,   "label": "Rp50.000"},   # Rp142,9/percakapan
+    {"amount_idr": 150_000, "conversations": 1_100, "label": "Rp150.000"},  # Rp136,4/percakapan
+    {"amount_idr": 350_000, "conversations": 2_700, "label": "Rp350.000"},  # Rp129,6/percakapan
+    {"amount_idr": 750_000, "conversations": 6_000, "label": "Rp750.000"},  # Rp125,0/percakapan
 ]
 
 # Lookup: amount_idr → conversations
@@ -447,7 +451,7 @@ class CheckoutReq(BaseModel):
 
 
 class TopupReq(BaseModel):
-    amount_idr: int = Field(..., ge=25_000, le=5_000_000)
+    amount_idr: int = Field(..., ge=50_000, le=750_000)
     provider:   str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
 
 
