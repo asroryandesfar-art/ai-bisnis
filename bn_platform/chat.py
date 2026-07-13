@@ -260,7 +260,8 @@ def build_chat_router() -> APIRouter:
         intent_routing: dict = {}
         try:
             use_cloud = main.should_use_cloud(bot["plan"], bot["billing_status"])
-            supervisor = main.get_supervisor(use_cloud)
+            # P0-3: tier model per paket (free/starter=murah, pro+=full).
+            supervisor = main.get_supervisor(use_cloud, plan=bot["plan"])
             intelligence_context = {
                 "bot_id": bot_id,
                 "org_id": str(bot["org_id"]),

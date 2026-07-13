@@ -353,6 +353,7 @@ _platform_require_permission = None  # (permission_key) → async checker(user=,
 
 # Multi-agent supervisor singleton (cloud-only)
 _supervisor_cloud: SupervisorAgent | None = None
+_supervisor_cheap: SupervisorAgent | None = None  # P0-3: instance model murah (free/starter)
 _knowledge_builder_agent: KnowledgeBuilderAgent | None = None
 
 # Background tasks
@@ -456,13 +457,52 @@ def should_use_cloud(plan: str, billing_status: str) -> bool:
     return True
 
 
-def get_supervisor(use_cloud: bool) -> SupervisorAgent:
-    global _supervisor_cloud
+def model_tier_for_plan(plan: str | None) -> str:
+    """P0-3: pilih tier model berdasarkan paket untuk menjaga margin.
+
+    'cheap'  (free/starter/unknown) → DeepSeek/Groq (≈Rp21-29/percakapan);
+       Gemini SENGAJA dilewati supaya biaya paket murah tidak meledak.
+    'full'   (pro/business/enterprise) → Gemini Flash primary + fallback
+       (kualitas lebih tinggi; percakapan berbayar menutup biayanya).
+    Default 'cheap' (least-cost) bila plan tak dikenal — aman untuk margin.
+    """
+    p = (plan or "").strip().lower()
+    if p in ("pro", "business", "enterprise"):
+        return "full"
+    return "cheap"
+
+
+def get_supervisor(use_cloud: bool = True, plan: str | None = None) -> SupervisorAgent:
+    """Supervisor instance, di-tier berdasarkan paket (P0-3 model gating).
+
+    plan=None → tier 'full' (perilaku lama; dipakai jalur non-chat/agent_api).
+    Instance di-cache per tier. Tier 'cheap' dibangun TANPA Gemini key sehingga
+    BaseAgent._call_llm turun ke DeepSeek→Groq. Bila provider murah tidak
+    dikonfigurasi, fallback ke 'full' agar layanan tidak mati."""
+    global _supervisor_cloud, _supervisor_cheap
     if not cfg.effective_gemini_api_key and not cfg.groq_api_key and not cfg.openrouter_api_key and not cfg.deepseek_api_key:
         raise RuntimeError(
             "Cloud AI belum dikonfigurasi. "
             "Isi GEMINI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, atau GROQ_API_KEY di .env lalu restart server."
         )
+
+    tier = model_tier_for_plan(plan) if plan is not None else "full"
+    has_cheap_provider = bool(cfg.deepseek_api_key or cfg.groq_api_key)
+    if tier == "cheap" and not has_cheap_provider:
+        tier = "full"  # tak ada model murah → jangan matikan layanan
+
+    if tier == "cheap":
+        if _supervisor_cheap is None:
+            _supervisor_cheap = SupervisorAgent(
+                api_key=cfg.groq_api_key,
+                model=cfg.groq_cheap_model or cfg.groq_model,
+                base_url=(cfg.groq_base_url or "").strip() or None,
+                app_url=cfg.app_url,
+                gemini_api_key="",  # P0-3: paksa jalur murah (DeepSeek/Groq)
+                openrouter_api_key=cfg.openrouter_api_key,
+                deepseek_api_key=cfg.deepseek_api_key,
+            )
+        return _supervisor_cheap
 
     if _supervisor_cloud is None:
         _supervisor_cloud = SupervisorAgent(

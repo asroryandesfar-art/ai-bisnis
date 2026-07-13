@@ -37,6 +37,42 @@ def parse_json_response(raw, default: dict | None = None) -> dict:
     return dict(default) if default is not None else {}
 
 
+# ── Anti-abuse & cost bound (P0-3) ──────────────────────────────────────────
+# Output token adalah dimensi biaya TERMAHAL (mis. Gemini 2.5 Flash output
+# $2,50/M vs input $0,30/M), jadi membatasi max_tokens mengunci biaya worst-case
+# tiap panggilan. Input dibatasi ~12K token (≈48K char) supaya percakapan
+# panjang/abusif tidak meledakkan biaya LLM. Berlaku untuk SEMUA model/provider.
+MAX_OUTPUT_TOKENS = 2048
+MAX_INPUT_CHARS = 48_000
+
+
+def _cap_input_messages(messages: list[dict], max_chars: int = MAX_INPUT_CHARS) -> list[dict]:
+    """Batasi total karakter input. Pertahankan SEMUA pesan system + pesan
+    terbaru; buang pesan non-system tertua bila melebihi budget; truncate isi
+    bila satu pesan pun masih terlalu besar. Tidak pernah mengubah list asli."""
+    def clen(m: dict) -> int:
+        return len(str(m.get("content") or ""))
+
+    if sum(clen(m) for m in messages) <= max_chars:
+        return messages
+
+    kept: list[dict] = []
+    running = 0
+    # Jalan dari yang TERBARU agar konteks paling relevan dipertahankan.
+    for m in reversed(messages):
+        content = str(m.get("content") or "")
+        is_system = m.get("role") == "system"
+        if is_system or not kept or running + len(content) <= max_chars:
+            if len(content) > max_chars:  # satu pesan raksasa -> potong (sisakan awal)
+                m = {**m, "content": content[:max_chars]}
+                content = m["content"]
+            kept.append(m)
+            running += len(content)
+        # else: buang pesan non-system tertua yang tak muat
+    kept.reverse()
+    return kept
+
+
 @dataclass
 class AgentMessage:
     """Pesan yang mengalir antar agen."""
@@ -201,6 +237,9 @@ class BaseAgent:
         Smart LLM call: Gemini primary (Flash/Pro by tier) when key is set,
         Groq fallback otherwise or on Gemini failure.
         """
+        # P0-3: bound biaya per panggilan (output termahal) + anti-abuse input.
+        max_tokens = min(max_tokens, MAX_OUTPUT_TOKENS)
+        messages = _cap_input_messages(messages)
         # ── Gemini primary path ──────────────────────────────────────────────
         if self.gemini_api_key:
             from ai_providers.gemini import GeminiProvider
@@ -388,6 +427,10 @@ class BaseAgent:
         bisa dipersist langsung ke log (lihat task_engine.py).
         """
         import tool_executor
+
+        # P0-3: bound biaya + anti-abuse (sama seperti _call_llm).
+        max_tokens = min(max_tokens, MAX_OUTPUT_TOKENS)
+        messages = _cap_input_messages(messages)
 
         # Pilih provider yang tersedia: Groq → DeepSeek → OpenRouter
         if self.api_key:

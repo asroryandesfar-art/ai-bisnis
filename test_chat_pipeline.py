@@ -101,7 +101,7 @@ def client(monkeypatch):
     monkeypatch.setattr(main, "_rate_limiter", types.SimpleNamespace(check=_allowed))
 
     fake_supervisor = types.SimpleNamespace(process=_proc)
-    monkeypatch.setattr(main, "get_supervisor", lambda use_cloud: fake_supervisor)
+    monkeypatch.setattr(main, "get_supervisor", lambda use_cloud=True, plan=None: fake_supervisor)
 
     main.app.dependency_overrides[main.get_pool] = lambda: FakePool()
     c = TestClient(main.app)
