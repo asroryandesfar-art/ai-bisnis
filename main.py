@@ -791,6 +791,22 @@ async def startup():
     except Exception as e:
         print(f"[WARN] Meta OAuth refresh gagal start: {e}")
 
+    # MCP tool servers (opt-in via MCP_SERVERS). Discover tools best-effort on the
+    # leader replica only (network I/O to external MCP servers); absence is a no-op.
+    try:
+        import mcp_registry
+        _mcp_reg = mcp_registry.configure_from_env()
+        if run_bg and _mcp_reg is not None:
+            async def _mcp_discover():
+                try:
+                    n = await _mcp_reg.discover()
+                    print(f"[OK] MCP: {n} tool(s) dari {len(_mcp_reg._servers)} server")
+                except Exception as _mcp_exc:
+                    logger.warning("MCP discovery gagal: %s", _mcp_exc)
+            asyncio.create_task(_mcp_discover())
+    except Exception as e:
+        print(f"[WARN] MCP init gagal: {e}")
+
 @app.on_event("shutdown")
 async def shutdown():
     global _pool, _pool_loop, _gmail_poll_task, _gmail_poll_stop
