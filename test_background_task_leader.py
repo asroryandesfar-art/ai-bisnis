@@ -103,3 +103,51 @@ def test_acquire_and_release_leadership(monkeypatch):
         assert main._leader_conn is None
 
     asyncio.run(_run())
+
+
+# ── Heartbeat / failover (manager leader, HA) ────────────────────────────────
+
+def test_leader_heartbeat_default_and_env(monkeypatch):
+    assert main.Settings().db_leader_heartbeat_seconds == 10.0
+    monkeypatch.setenv("DB_LEADER_HEARTBEAT_SECONDS", "3")
+    assert main.Settings().db_leader_heartbeat_seconds == 3.0
+
+
+def test_leadership_tick_promotes_then_steady(monkeypatch):
+    # Tick pertama mempromosikan (mulai loop sekali); tick lanjutan steady
+    # (koneksi hidup) TANPA memulai loop lagi.
+    monkeypatch.setattr(main, "_leader_conn", None)
+    starts = []
+    monkeypatch.setattr(main, "_start_background_loops", lambda: starts.append(1))
+
+    async def _run():
+        assert await main._leadership_tick() is True
+        assert main._leader_conn is not None
+        assert len(starts) == 1
+        assert await main._leadership_tick() is True  # steady
+        assert len(starts) == 1  # tidak start ulang
+        await main.release_leadership()
+
+    asyncio.run(_run())
+
+
+def test_leadership_tick_demotes_on_dead_connection(monkeypatch):
+    # Koneksi lock putus diam-diam → tick mendeteksi, turun, dan hentikan loop
+    # (cegah split-brain). Ini jaminan HA yang tidak ada di v1.
+    monkeypatch.setattr(main, "_leader_conn", None)
+    monkeypatch.setattr(main, "_start_background_loops", lambda: None)
+    stops = []
+
+    async def _stop():
+        stops.append(1)
+
+    monkeypatch.setattr(main, "_stop_background_loops", _stop)
+
+    async def _run():
+        assert await main._leadership_tick() is True     # jadi leader
+        await main._leader_conn.close()                  # simulasi drop diam-diam
+        assert await main._leadership_tick() is False    # deteksi → demosi
+        assert main._leader_conn is None
+        assert len(stops) == 1
+
+    asyncio.run(_run())

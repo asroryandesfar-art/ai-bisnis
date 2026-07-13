@@ -153,10 +153,14 @@ class Settings(BaseSettings):
     # perilaku lama (dikendalikan flag RUN_BACKGROUND_TASKS manual per-replika).
     # Set DB_LEADER_ELECTION=1 di SEMUA replika: tepat satu yang memenangkan
     # pg_try_advisory_lock jadi leader (flag diabaikan) — tak perlu menandai
-    # leader manual saat scale-out. Failover butuh restart (lock dilepas saat
-    # proses leader mati). Tidak andal di belakang PgBouncer transaction pooling
-    # (advisory lock level-session; lihat db_pgbouncer).
+    # leader manual saat scale-out. Manager heartbeat memantau kepemimpinan &
+    # failover otomatis (~1 heartbeat, tanpa restart). Tidak andal di belakang
+    # PgBouncer transaction pooling (advisory lock level-session; lihat db_pgbouncer).
     db_leader_election:   bool = False
+    # Interval heartbeat (detik) manager leader saat election ON: leader cek
+    # koneksi lock masih hidup, non-leader coba rebut lock. Menentukan kecepatan
+    # failover otomatis (~1 interval). Hanya berlaku bila DB_LEADER_ELECTION=1.
+    db_leader_heartbeat_seconds: float = 10.0
     secret_key:           str = "change-me-in-production"
     replicate_api_token:  str = ""
     replicate_api_tokens: str = ""  # optional: comma-separated Replicate tokens
@@ -358,6 +362,11 @@ _intelligence_learning_task: asyncio.Task | None = None
 _intelligence_learning_stop: asyncio.Event | None = None
 _meta_refresh_task: asyncio.Task | None = None
 _meta_refresh_stop: asyncio.Event | None = None
+# Manager heartbeat loop untuk leader election otomatis (HA): pada tiap replika
+# saat DB_LEADER_ELECTION=1 — verifikasi lock leader masih hidup, promosikan /
+# turunkan replika, dan mulai/hentikan loop background secara dinamis.
+_leadership_mgr_task: asyncio.Task | None = None
+_leadership_mgr_stop: asyncio.Event | None = None
 _platform_route_inbound = None
 
 
@@ -750,6 +759,101 @@ async def resolve_background_leadership() -> bool:
         return should_run_background_tasks()
     return await try_acquire_leadership()
 
+def _start_background_loops() -> None:
+    """Mulai loop background in-process (idempoten; per-loop dijaga `is None`).
+
+    Dipakai oleh startup (path flag) dan oleh manager leader saat sebuah replika
+    dipromosikan. Aman dipanggil berulang: loop yang sudah jalan dilewati.
+    """
+    global _gmail_poll_task, _gmail_poll_stop
+    global _intelligence_learning_task, _intelligence_learning_stop
+    global _meta_refresh_task, _meta_refresh_stop
+    try:
+        if cfg.gmail_poll_enabled and _gmail_poll_task is None:
+            _gmail_poll_stop = asyncio.Event()
+            _gmail_poll_task = asyncio.create_task(_gmail_poll_loop())
+            print(f"[OK] Gmail poller aktif (interval={cfg.gmail_poll_interval_seconds}s)")
+    except Exception as e:
+        print(f"[WARN] Gmail poller gagal start: {e}")
+    try:
+        from intelligence.pipeline import nightly_learning_loop
+        if _intelligence_learning_task is None:
+            _intelligence_learning_stop = asyncio.Event()
+            _intelligence_learning_task = asyncio.create_task(
+                nightly_learning_loop(_intelligence_learning_stop)
+            )
+            print("[OK] Intelligence nightly learning aktif")
+    except Exception as e:
+        print(f"[WARN] Intelligence nightly learning gagal start: {e}")
+    try:
+        from bn_platform.meta_oauth import meta_refresh_loop
+        if _meta_refresh_task is None:
+            _meta_refresh_stop = asyncio.Event()
+            _meta_refresh_task = asyncio.create_task(meta_refresh_loop(_meta_refresh_stop, get_pool))
+            print("[OK] Meta OAuth token refresh aktif")
+    except Exception as e:
+        print(f"[WARN] Meta OAuth refresh gagal start: {e}")
+
+async def _stop_background_loops() -> None:
+    """Hentikan loop background in-process (dipakai shutdown & demosi leader)."""
+    global _gmail_poll_task, _gmail_poll_stop
+    global _intelligence_learning_task, _intelligence_learning_stop
+    global _meta_refresh_task, _meta_refresh_stop
+    for stop, task in (
+        (_gmail_poll_stop, _gmail_poll_task),
+        (_intelligence_learning_stop, _intelligence_learning_task),
+        (_meta_refresh_stop, _meta_refresh_task),
+    ):
+        try:
+            if stop is not None:
+                stop.set()
+            if task is not None:
+                try:
+                    await asyncio.wait_for(task, timeout=3.0)
+                except BaseException:
+                    task.cancel()
+        except BaseException:
+            pass
+    _gmail_poll_task = _gmail_poll_stop = None
+    _intelligence_learning_task = _intelligence_learning_stop = None
+    _meta_refresh_task = _meta_refresh_stop = None
+
+async def _leadership_tick() -> bool:
+    """Satu iterasi manager leader. Return True bila replika ini leader setelahnya.
+
+    Leader: verifikasi koneksi lock masih hidup (== masih memegang lock). Bila
+    putus → turun jadi non-leader dan hentikan loop background (cegah split-brain).
+    Non-leader: coba rebut lock; bila menang → mulai loop background.
+    """
+    global _leader_conn
+    if _leader_conn is not None:
+        try:
+            await _leader_conn.execute("SELECT 1")
+            return True
+        except Exception:
+            logger.warning("Leader kehilangan koneksi lock — turun jadi non-leader")
+            await release_leadership()
+            await _stop_background_loops()
+            return False
+    won = await try_acquire_leadership()
+    if won:
+        _start_background_loops()
+        print("[OK] Replika ini menjadi LEADER — loop background dimulai")
+    return won
+
+async def _leadership_manager_loop(stop: asyncio.Event) -> None:
+    """Loop heartbeat (per replika, election ON): failover otomatis tanpa restart."""
+    interval = max(1.0, cfg.db_leader_heartbeat_seconds)
+    while not stop.is_set():
+        try:
+            await _leadership_tick()
+        except Exception as e:
+            logger.warning("Leadership manager tick error: %s", e)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
 async def get_pool() -> asyncpg.Pool:
     global _pool, _pool_loop
     loop = asyncio.get_running_loop()
@@ -793,9 +897,7 @@ async def get_pool_safe(timeout: float | None = None) -> asyncpg.Pool | None:
 
 @app.on_event("startup")
 async def startup():
-    global _gmail_poll_task, _gmail_poll_stop
-    global _intelligence_learning_task, _intelligence_learning_stop
-    global _meta_refresh_task, _meta_refresh_stop
+    global _leadership_mgr_task, _leadership_mgr_stop
 
     # C-01: guard kekuatan secret (warn-only kecuali STRICT_SECRETS=1).
     validate_startup_secrets(cfg)
@@ -841,45 +943,26 @@ async def startup():
         print("[WARN] DB_LEADER_ELECTION=1 di belakang PgBouncer transaction "
               "pooling tidak andal (advisory lock level-session). Pastikan "
               "koneksi langsung ke Postgres untuk election.")
-    run_bg = await resolve_background_leadership()
-    if not run_bg:
-        reason = ("kalah leader election" if cfg.db_leader_election
-                  else "RUN_BACKGROUND_TASKS=0")
-        print(f"[OK] Background loops DINONAKTIFKAN di replika ini "
-              f"({reason}) — dijalankan oleh replika leader.")
-    elif cfg.db_leader_election:
-        print("[OK] Replika ini LEADER (memegang advisory lock) — "
-              "menjalankan loop background.")
-
-    # Gmail auto-poll scheduler (optional)
-    try:
-        if run_bg and cfg.gmail_poll_enabled and _gmail_poll_task is None:
-            _gmail_poll_stop = asyncio.Event()
-            _gmail_poll_task = asyncio.create_task(_gmail_poll_loop())
-            print(f"[OK] Gmail poller aktif (interval={cfg.gmail_poll_interval_seconds}s)")
-    except Exception as e:
-        print(f"[WARN] Gmail poller gagal start: {e}")
-
-    try:
-        from intelligence.pipeline import nightly_learning_loop
-
-        if run_bg and _intelligence_learning_task is None:
-            _intelligence_learning_stop = asyncio.Event()
-            _intelligence_learning_task = asyncio.create_task(
-                nightly_learning_loop(_intelligence_learning_stop)
-            )
-            print("[OK] Intelligence nightly learning aktif")
-    except Exception as e:
-        print(f"[WARN] Intelligence nightly learning gagal start: {e}")
-
-    try:
-        from bn_platform.meta_oauth import meta_refresh_loop
-        if run_bg and _meta_refresh_task is None:
-            _meta_refresh_stop = asyncio.Event()
-            _meta_refresh_task = asyncio.create_task(meta_refresh_loop(_meta_refresh_stop, get_pool))
-            print("[OK] Meta OAuth token refresh aktif")
-    except Exception as e:
-        print(f"[WARN] Meta OAuth refresh gagal start: {e}")
+    if cfg.db_leader_election:
+        # Election ON: coba jadi leader sekarang; manager heartbeat memelihara
+        # kepemimpinan & failover otomatis (mulai/hentikan loop dinamis).
+        await _leadership_tick()
+        run_bg = _leader_conn is not None
+        if not run_bg:
+            print("[OK] Replika ini NON-LEADER — menunggu giliran leader "
+                  "(heartbeat setiap %ss)." % cfg.db_leader_heartbeat_seconds)
+        _leadership_mgr_stop = asyncio.Event()
+        _leadership_mgr_task = asyncio.create_task(
+            _leadership_manager_loop(_leadership_mgr_stop)
+        )
+    else:
+        # Election OFF (default): path flag lama, start loop sekali di startup.
+        run_bg = should_run_background_tasks()
+        if run_bg:
+            _start_background_loops()
+        else:
+            print("[OK] Background loops DINONAKTIFKAN di replika ini "
+                  "(RUN_BACKGROUND_TASKS=0) — dijalankan oleh replika leader.")
 
     # MCP tool servers (opt-in via MCP_SERVERS). Discover tools best-effort on the
     # leader replica only (network I/O to external MCP servers); absence is a no-op.
@@ -899,42 +982,20 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _pool, _pool_loop, _gmail_poll_task, _gmail_poll_stop
-    global _intelligence_learning_task, _intelligence_learning_stop
-    global _meta_refresh_task, _meta_refresh_stop
+    global _pool, _pool_loop, _leadership_mgr_task, _leadership_mgr_stop
+    # Hentikan manager leader dulu supaya tidak merebut lock saat shutdown.
     try:
-        if _gmail_poll_stop is not None:
-            _gmail_poll_stop.set()
-        if _gmail_poll_task is not None:
+        if _leadership_mgr_stop is not None:
+            _leadership_mgr_stop.set()
+        if _leadership_mgr_task is not None:
             try:
-                await asyncio.wait_for(_gmail_poll_task, timeout=3.0)
+                await asyncio.wait_for(_leadership_mgr_task, timeout=3.0)
             except BaseException:
-                pass
+                _leadership_mgr_task.cancel()
     finally:
-        _gmail_poll_task = None
-        _gmail_poll_stop = None
-    try:
-        if _intelligence_learning_stop is not None:
-            _intelligence_learning_stop.set()
-        if _intelligence_learning_task is not None:
-            try:
-                await asyncio.wait_for(_intelligence_learning_task, timeout=3.0)
-            except BaseException:
-                _intelligence_learning_task.cancel()
-    finally:
-        _intelligence_learning_task = None
-        _intelligence_learning_stop = None
-    try:
-        if _meta_refresh_stop is not None:
-            _meta_refresh_stop.set()
-        if _meta_refresh_task is not None:
-            try:
-                await asyncio.wait_for(_meta_refresh_task, timeout=3.0)
-            except BaseException:
-                _meta_refresh_task.cancel()
-    finally:
-        _meta_refresh_task = None
-        _meta_refresh_stop = None
+        _leadership_mgr_task = None
+        _leadership_mgr_stop = None
+    await _stop_background_loops()
     try:
         from intelligence.db import close_pool as close_intelligence_pool
         await close_intelligence_pool()
