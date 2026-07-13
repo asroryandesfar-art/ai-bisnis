@@ -465,7 +465,8 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
 
     @router.get("/plans")
     async def get_plans(pool: Annotated[asyncpg.Pool, Depends(get_pool)]):
-        return {"plans": await list_plans(pool)}
+        # sales_email dipakai frontend untuk CTA "Hubungi Sales" (paket custom).
+        return {"plans": await list_plans(pool), "sales_email": platform_cfg.sales_email}
 
     @router.get("/subscription")
     async def get_subscription(
@@ -498,6 +499,21 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         plan = await get_plan_by_key(pool, body.plan_key)
         if not plan:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{body.plan_key}' tidak ditemukan")
+        # P0-4: paket custom/Enterprise TIDAK bisa checkout self-serve — harus
+        # lewat sales (harga dinegosiasikan). Guard defense-in-depth walau UI
+        # sudah mengarahkan ke "Hubungi Sales".
+        _feat = plan.get("features")
+        if isinstance(_feat, str):
+            try:
+                _feat = json.loads(_feat)
+            except Exception:
+                _feat = {}
+        if body.plan_key == "enterprise" or bool((_feat or {}).get("custom_pricing")):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Paket '{plan['name']}' memerlukan konsultasi tim sales "
+                f"(harga custom). Hubungi {platform_cfg.sales_email}.",
+            )
         amount = plan["price_yearly_idr"] if body.billing_cycle == "yearly" else plan["price_monthly_idr"]
 
         # Free trial: plan berbayar + eligible + user meminta trial

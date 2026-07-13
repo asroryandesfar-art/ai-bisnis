@@ -2216,6 +2216,7 @@ async function renderBilling() {
     settle("credits", api.credits()),
   ]);
   state.plans = plansResult.ok ? plansResult.data.plans || [] : [];
+  state.salesEmail = (plansResult.ok && plansResult.data.sales_email) || 'sales@botnesia.id';
   state.subscription = subResult.ok ? subResult.data : state.subscription;
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
@@ -2267,8 +2268,13 @@ async function renderBilling() {
       ? `<div class="billing-trial-badge">${t('billing.trial_badge')}</div>`
       : '';
 
+    // Paket custom (Enterprise): tampil "Custom" + anchor "mulai Rp…/bln"
+    // bila ada harga lantai, supaya prospek punya referensi harga.
+    const customSub = plan.price_monthly_idr > 0
+      ? `${t('billing.starting_from')} ${idr(plan.price_monthly_idr)}${t('billing.per_month_short')}`
+      : t('billing.contact_sales_label');
     const priceHtml = isCustom
-      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price_label')}</strong><span>${t('billing.contact_sales_label')}</span></div>`
+      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price_label')}</strong><span>${customSub}</span></div>`
       : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('billing.per_month_short')}</span></div>`;
 
     const featureListHtml = features.slice(0, wide ? 6 : 8).map(feat =>
@@ -2279,7 +2285,8 @@ async function renderBilling() {
     if (isCurrent) {
       btnLabel = t('billing.btn_current'); btnAction = '';
     } else if (isCustom) {
-      btnLabel = t('billing.btn_contact_sales'); btnAction = `data-checkout-plan="${esc(plan.key)}"`;
+      // P0-4: JANGAN checkout self-serve; buka quote flow "Hubungi Sales".
+      btnLabel = t('billing.btn_contact_sales'); btnAction = `data-contact-sales="${esc(plan.key)}"`;
     } else if (hasTrial) {
       btnLabel = t('billing.btn_start_trial'); btnAction = `data-checkout-trial="${esc(plan.key)}"`;
     } else if (plan.key === 'free') {
@@ -3668,6 +3675,15 @@ document.addEventListener("click", async (event) => {
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan){ await checkout(plan.dataset.checkoutPlan, false); return; }
+  const contactSales=event.target.closest("[data-contact-sales]"); if(contactSales){
+    // P0-4 quote flow: paket custom/Enterprise → email sales (bukan checkout).
+    const planKey=contactSales.dataset.contactSales;
+    const email=state.salesEmail||'sales@botnesia.id';
+    const subject=encodeURIComponent(`Permintaan penawaran BotNesia — paket ${planKey}`);
+    const body=encodeURIComponent(`Halo tim BotNesia,\n\nSaya tertarik dengan paket ${planKey}. Mohon info penawaran & demo.\n\nNama perusahaan:\nPerkiraan volume percakapan/bulan:\nKebutuhan khusus (white-label/SSO/API/multi-tenant):\n`);
+    window.location.href=`mailto:${email}?subject=${subject}&body=${body}`;
+    return;
+  }
   const trialPlan=event.target.closest("[data-checkout-trial]"); if(trialPlan){ await checkout(trialPlan.dataset.checkoutTrial, true); return; }
   const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup, topup.dataset.topupConv); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();

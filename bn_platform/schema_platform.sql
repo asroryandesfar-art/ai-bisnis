@@ -1167,8 +1167,8 @@ VALUES
   '{"description": "Untuk bisnis yang siap terhubung ke WhatsApp dengan tim lebih besar.", "highlights": ["5 AI Agents", "5.000 percakapan/bulan", "WhatsApp integration", "Analytics lengkap", "Multi-user"], "branding_botnesia": false, "knowledge_base": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "multi_user": true, "api_access": false, "priority_support": false, "multi_tenant": false, "white_label": false, "custom_pricing": false}', 2),
  ('business',   'Business',   990000,  9900000,  16500, 10, 20, 200, 8,
   '{"description": "Untuk UMKM, startup, dan tim kecil-menengah yang butuh kapasitas lebih besar.", "highlights": ["10 AI Agents", "16.500 percakapan/bulan", "WhatsApp Multi Number", "Advanced Analytics", "Team Management", "Priority Support", "Knowledge Base lebih besar"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": false, "multi_tenant": false, "white_label": false, "custom_domain": false, "dedicated_support": false, "custom_integration": false, "sla": false, "advanced_security": false, "audit_log": false, "sso": false, "custom_pricing": false}', 3),
- ('enterprise', 'Enterprise', 0,       0,        -1,    -1, -1, -1, -1,
-  '{"description": "Untuk perusahaan besar, agency, SaaS multi-cabang, dan white label reseller.", "highlights": ["Unlimited AI Agents", "Unlimited Conversations", "Multi Tenant", "White Label", "API Access", "Custom Domain", "Dedicated Support", "Custom Integration", "SLA Perusahaan", "Advanced Security", "Audit Log", "SSO (Single Sign-On)"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": true, "multi_tenant": true, "white_label": true, "custom_domain": true, "dedicated_support": true, "custom_integration": true, "sla": true, "advanced_security": true, "audit_log": true, "sso": true, "custom_pricing": true}', 4)
+ ('enterprise', 'Enterprise', 4000000, 40000000, 100000, -1, -1, -1, -1,
+  '{"description": "Untuk perusahaan besar, agency, SaaS multi-cabang, dan white label reseller.", "highlights": ["Unlimited AI Agents", "100.000+ percakapan/bulan", "Multi Tenant", "White Label", "API Access", "Custom Domain", "Dedicated Support", "Custom Integration", "SLA Perusahaan", "Advanced Security", "Audit Log", "SSO (Single Sign-On)"], "branding_botnesia": false, "knowledge_base": true, "knowledge_base_large": true, "analytics": true, "analytics_advanced": true, "whatsapp": true, "whatsapp_multi_number": true, "multi_user": true, "team_management": true, "priority_support": true, "api_access": true, "multi_tenant": true, "white_label": true, "custom_domain": true, "dedicated_support": true, "custom_integration": true, "sla": true, "advanced_security": true, "audit_log": true, "sso": true, "custom_pricing": true}', 4)
 ON CONFLICT (key) DO NOTHING;
 
 -- Kuota image generation per paket (UPDATE terpisah karena ON CONFLICT DO NOTHING
@@ -1198,6 +1198,17 @@ UPDATE plans SET price_monthly_idr = 990000, price_yearly_idr = 9900000,
 -- Sinkronkan teks highlight yang ditampilkan (frontend membaca features.highlights).
 UPDATE plans SET features = replace(features::text, '10.000 percakapan/bulan', '16.500 percakapan/bulan')::jsonb
  WHERE key = 'business' AND features::text LIKE '%10.000 percakapan/bulan%';
+
+-- P0-4: lantai harga Enterprise + kuota percakapan FINITE (idempoten).
+-- Sebelumnya 0/0 & max_conversations=-1 (unlimited) -> satu tenant bisa pakai
+-- percakapan tak terbatas tanpa bayar. Beri lantai Rp4.000.000/bln (anchor;
+-- tetap custom_pricing=Hubungi Sales) dan ceiling 100.000 conv/bln (deal nyata
+-- dinegosiasikan lebih tinggi lewat sales). Dimensi lain tetap -1 (unlimited)
+-- karena bukan biaya linear seperti percakapan. Rp/conv = 40 < Business Rp60 ✓.
+UPDATE plans SET price_monthly_idr = 4000000, price_yearly_idr = 40000000,
+                 max_conversations_per_month = 100000 WHERE key = 'enterprise';
+UPDATE plans SET features = replace(features::text, 'Unlimited Conversations', '100.000+ percakapan/bulan')::jsonb
+ WHERE key = 'enterprise' AND features::text LIKE '%Unlimited Conversations%';
 
 -- Katalog permission (dipakai bn_platform/rbac.py — harus sinkron dgn PERMISSIONS const)
 INSERT INTO permissions (key, category, description) VALUES
