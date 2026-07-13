@@ -6,10 +6,12 @@ the image tests that call main._run_image_generation directly and monkeypatch
 main._replicate_image_queue / _moderate_prompt / cfg are unaffected. The media
 file server (/media/{path}) and the signing helpers stay in main too.
 """
+import hmac
 from typing import Awaitable, Callable
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import document_generator
@@ -48,8 +50,25 @@ def build_media_router(
     run_image_generation: Callable[..., Awaitable[dict]],
     media_signed_url: Callable[[str], str],
     MediaImageReq,
+    media_dir,
+    sign_media_rel: Callable[[str], str],
 ) -> APIRouter:
     router = APIRouter()
+
+    @router.get("/media/{path:path}", include_in_schema=False)
+    async def serve_media(path: str, sig: str | None = None):
+        p = (media_dir / path).resolve()
+        # L-03: pakai is_relative_to (bukan startswith string) agar direktori
+        # sibling berprefix sama (mis. data/media-rahasia) tidak lolos.
+        if not p.is_relative_to(media_dir) or not p.exists() or not p.is_file():
+            raise HTTPException(404, "Not found")
+        # M-02: bila enforcement aktif, wajib tanda tangan sah (cegah akses lintas-
+        # tenant via URL tebakan). Default (flag off) tetap melayani URL lama.
+        if cfg.media_require_signature:
+            expected = sign_media_rel(path)
+            if not (sig and hmac.compare_digest(sig, expected)):
+                raise HTTPException(403, "Tautan media tidak sah atau kedaluwarsa.")
+        return FileResponse(p)
 
     @router.post("/media/image")
     async def generate_image(

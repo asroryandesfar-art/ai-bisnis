@@ -2125,25 +2125,10 @@ app.include_router(build_media_router(
     get_current_user=get_current_user, get_pool=get_pool, cfg=cfg, logger=logger,
     check_media_cooldown=_check_media_cooldown, run_image_generation=_run_image_generation,
     media_signed_url=_media_signed_url, MediaImageReq=MediaImageReq,
+    media_dir=_MEDIA_DIR, sign_media_rel=_sign_media_rel,
 ))
 
 
-
-
-@app.get("/media/{path:path}", include_in_schema=False)
-async def serve_media(path: str, sig: str | None = None):
-    p = (_MEDIA_DIR / path).resolve()
-    # L-03: pakai is_relative_to (bukan startswith string) agar direktori
-    # sibling berprefix sama (mis. data/media-rahasia) tidak lolos.
-    if not p.is_relative_to(_MEDIA_DIR) or not p.exists() or not p.is_file():
-        raise HTTPException(404, "Not found")
-    # M-02: bila enforcement aktif, wajib tanda tangan sah (cegah akses lintas-
-    # tenant via URL tebakan). Default (flag off) tetap melayani URL lama.
-    if cfg.media_require_signature:
-        expected = _sign_media_rel(path)
-        if not (sig and hmac.compare_digest(sig, expected)):
-            raise HTTPException(403, "Tautan media tidak sah atau kedaluwarsa.")
-    return FileResponse(p)
 
 
 class GmailMapBotReq(BaseModel):
