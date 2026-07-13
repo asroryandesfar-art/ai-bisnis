@@ -3446,6 +3446,17 @@ app.include_router(_chat_router)
 # Re-export handler as module-level main.chat (webhook routing + tests use it).
 chat = {r.name: r.endpoint for r in _chat_router.routes}["chat"]
 
+# ── SSE streaming chat (POST /chat/{bot_id}/stream) → bn_platform/chat_stream.py ──
+import chat_streaming
+from bn_platform.chat_stream import build_chat_stream_router
+app.include_router(build_chat_stream_router(
+    get_pool=get_pool, cfg=cfg,
+    retrieve_chunks=lambda *a, **k: _retrieve_chunks(*a, **k),
+    language_middleware=language_middleware, ChatReq=ChatReq,
+    stream_answer=chat_streaming.stream_answer,
+    any_provider_configured=chat_streaming.any_provider_configured,
+))
+
 
 async def _retrieve_chunks(
     pool: asyncpg.Pool,
