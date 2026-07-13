@@ -21,6 +21,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from base import AgentResult, BaseAgent
+
 _TIMEOUT = 10.0
 
 
@@ -207,3 +209,36 @@ def format_web_search_context(result: dict, query: str) -> str:
             line += f"\n  {snippet[:400]}"
         lines.append(line)
     return "\n".join(lines)
+
+
+class SearchAgent(BaseAgent):
+    """Agent pencarian web untuk orkestrasi internal (bungkus search() modul).
+
+    Reuse fungsi search() yang sudah ada (SearXNG/Tavily) — bukan mesin baru.
+    Kredensial pencarian datang lewat context (_searxng_url/_search_api_key),
+    diisi endpoint orkestrator dari get_workflow_agent_config()."""
+    name = "search_agent"
+    skills = ["web_search", "source_ranking"]
+    tools: list[str] = ["web_search"]
+    goals = ["Mencari informasi terkini dari web dan meringkas sumber relevan."]
+
+    async def run(self, context: dict) -> AgentResult:
+        query = str(context.get("user_message") or context.get("goal") or "").strip()
+        if not query:
+            return AgentResult(agent=self.name, success=False, output={},
+                               latency_ms=0, error="query pencarian kosong")
+        result = await search(
+            query,
+            searxng_url=context.get("_searxng_url", ""),
+            tavily_api_key=context.get("_search_api_key", ""),
+        )
+        if not result.get("success"):
+            return AgentResult(agent=self.name, success=False, output={}, latency_ms=0,
+                               error=result.get("error") or "web search tidak tersedia")
+        results = result.get("results") or []
+        answer = format_web_search_context(result, query) or f"{len(results)} sumber ditemukan."
+        return AgentResult(
+            agent=self.name, success=True,
+            output={"answer": answer, "results": results, "provider": result.get("provider")},
+            latency_ms=0, confidence=0.7 if results else 0.4,
+        )

@@ -25,7 +25,7 @@ from datetime import timedelta
 
 import asyncpg
 
-from base import BaseAgent
+from base import AgentResult, BaseAgent
 from operations_agent import has_recent_open_alert, update_alert_status  # noqa: F401 (update_alert_status re-exported for router)
 
 RISK_LEVELS = ("low", "medium", "high", "critical")
@@ -234,3 +234,23 @@ Balas HANYA JSON dengan field: summary (string)."""
         if result.get("_llm_unavailable"):
             return None
         return result.get("summary")
+
+    async def run(self, context: dict) -> AgentResult:
+        """Entry NL untuk orkestrasi internal (RBAC security.read).
+
+        Baca dashboard_summary (read-only) lalu buat ringkasan risiko. Butuh
+        context: pool + org_id (permukaan terautentikasi). Tanpa itu → gagal
+        anggun."""
+        pool = context.get("pool")
+        org_id = context.get("org_id")
+        if pool is None or not org_id:
+            return AgentResult(agent=self.name, success=False, output={},
+                               latency_ms=0, error="butuh pool + org_id (permukaan terautentikasi)")
+        data = await dashboard_summary(pool, org_id)
+        summary = await self.generate_summary(data)
+        return AgentResult(
+            agent=self.name, success=True,
+            output={"answer": summary or "Ringkasan keamanan tersedia.",
+                    "summary": summary, "security": data},
+            latency_ms=0, confidence=0.75 if summary else 0.5,
+        )

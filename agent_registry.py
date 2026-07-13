@@ -50,6 +50,7 @@ AGENT_DIRECTORY: list[tuple[str, str, str, str]] = [
 ORCHESTRATION_EXTRA: list[tuple[str, str, str, str]] = [
     ("analytics", "AnalyticsAgent", "analytics", AUTHENTICATED_API),
     ("memory_agent", "MemoryAgent", "memory", AUTHENTICATED_API),
+    ("web_search_agent", "SearchAgent", "search", AUTHENTICATED_API),
 ]
 
 # Permission RBAC yang diwajibkan agar sebuah kategori boleh dipanggil di
@@ -71,6 +72,7 @@ AGENT_PERMISSION_BY_CATEGORY: dict[str, str | None] = {
     "workforce":        "workforce.read",
     "self_learning":    "learning.read",
     "research":         "research.read",
+    "search":           "research.read",
     "computer_use":     "computer_agent.read",
 }
 
@@ -82,7 +84,8 @@ AGENT_CAPABILITY_KEYWORDS: dict[str, list[str]] = {
     "hr":        ["karyawan", "rekrut", "perekrutan", "kandidat", "interview", "gaji", "training", "cuti", "hr", "sdm", "onboarding"],
     "marketing": ["campaign", "konten", "iklan", "marketing", "promosi", "sosial media", "audience", "branding"],
     "analytics": ["analitik", "metrik", "statistik", "tren", "grafik", "conversion", "performa", "dashboard"],
-    "research":  ["riset", "cari", "temukan", "pelajari", "referensi", "sumber", "research"],
+    "research":  ["riset", "pelajari", "referensi", "sumber", "research", "analisa mendalam"],
+    "search":    ["cari", "temukan", "terkini", "berita", "terbaru", "google", "web"],
     "operations":["operasional", "sla", "uptime", "kesehatan sistem", "alert", "insiden"],
     "security":  ["keamanan", "risiko", "audit", "kerentanan", "security", "breach"],
     "knowledge": ["dokumen", "kebijakan", "prosedur", "knowledge", "panduan", "sop"],

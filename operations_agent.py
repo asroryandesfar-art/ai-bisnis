@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import asyncpg
 
-from base import BaseAgent
+from base import AgentResult, BaseAgent
 
 ALERT_SEVERITIES = {"low", "medium", "high", "critical"}
 ALERT_STATUSES = {"open", "acknowledged", "resolved"}
@@ -310,3 +310,23 @@ Balas HANYA JSON dengan field: summary (string)."""
         if result.get("_llm_unavailable"):
             return None
         return result.get("summary")
+
+    async def run(self, context: dict) -> AgentResult:
+        """Entry NL untuk orkestrasi internal (RBAC operations.read).
+
+        Baca dashboard_summary (read-only) lalu buat ringkasan naratif. Butuh
+        context: pool (asyncpg.Pool) + org_id — hanya tersedia di permukaan
+        terautentikasi. Tanpa itu → gagal anggun (bukan raise)."""
+        pool = context.get("pool")
+        org_id = context.get("org_id")
+        if pool is None or not org_id:
+            return AgentResult(agent=self.name, success=False, output={},
+                               latency_ms=0, error="butuh pool + org_id (permukaan terautentikasi)")
+        metrics = await dashboard_summary(pool, org_id)
+        summary = await self.generate_summary(metrics)
+        return AgentResult(
+            agent=self.name, success=True,
+            output={"answer": summary or "Ringkasan operasional tersedia.",
+                    "summary": summary, "metrics": metrics},
+            latency_ms=0, confidence=0.75 if summary else 0.5,
+        )

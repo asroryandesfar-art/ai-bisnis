@@ -319,6 +319,97 @@ def test_rbac_filters_domain_agents():
     assert {"finance", "hr", "analytics"} <= owner_cats
 
 
+# ── DOMAIN AGENT run() ADAPTERS (Operations/Security/Search) ─────────────
+def test_operations_agent_run_needs_pool():
+    import operations_agent
+
+    async def _run():
+        res = await operations_agent.OperationsAgent().run({})  # tanpa pool/org
+        assert res.success is False and "pool" in res.error
+
+    asyncio.run(_run())
+
+
+def test_operations_agent_run_with_pool(monkeypatch):
+    import operations_agent
+
+    async def fake_summary(pool, org_id):
+        return {"health_score": 88, "open_alerts": 1}
+
+    monkeypatch.setattr(operations_agent, "dashboard_summary", fake_summary)
+
+    async def _run():
+        res = await operations_agent.OperationsAgent().run(
+            {"pool": object(), "org_id": "org-1"})
+        assert res.success is True
+        assert res.output["metrics"]["health_score"] == 88
+        assert res.confidence in (0.5, 0.75)
+
+    asyncio.run(_run())
+
+
+def test_security_agent_run_with_pool(monkeypatch):
+    import security_agent
+
+    async def fake_summary(pool, org_id):
+        return {"risk_level": "low", "findings": []}
+
+    monkeypatch.setattr(security_agent, "dashboard_summary", fake_summary)
+
+    async def _run():
+        res = await security_agent.SecurityAgent().run(
+            {"pool": object(), "org_id": "org-1"})
+        assert res.success is True
+        assert res.output["security"]["risk_level"] == "low"
+
+    asyncio.run(_run())
+
+
+def test_search_agent_run(monkeypatch):
+    import web_search_agent
+
+    async def fake_search(query, *, searxng_url="", tavily_api_key=""):
+        return {"success": True, "provider": "tavily",
+                "results": [{"title": "X", "url": "http://x", "snippet": "s"}]}
+
+    monkeypatch.setattr(web_search_agent, "search", fake_search)
+
+    async def _run():
+        res = await web_search_agent.SearchAgent().run({"user_message": "berita terbaru AI"})
+        assert res.success is True
+        assert res.output["provider"] == "tavily"
+        assert len(res.output["results"]) == 1
+        # query kosong → gagal anggun
+        res2 = await web_search_agent.SearchAgent().run({"user_message": "  "})
+        assert res2.success is False
+
+    asyncio.run(_run())
+
+
+def test_orchestrator_routes_to_operations_end_to_end(monkeypatch):
+    """Integrasi: registry ASLI → build_agent ASLI → OperationsAgent.run."""
+    import operations_agent
+
+    async def fake_summary(pool, org_id):
+        return {"health_score": 90}
+
+    monkeypatch.setattr(operations_agent, "dashboard_summary", fake_summary)
+
+    async def _run():
+        orch = MultiAgentOrchestrator(agent_kwargs={}, default_timeout=5.0)
+        res = await orch.orchestrate(
+            message="cek kesehatan operasional",
+            context={"pool": object(), "org_id": "org-1"},
+            allowed_permissions={"*"},
+            requested_agents=["operations"],
+        )
+        assert res.routing["selected"] == ["operations_agent"]
+        assert res.agents[0]["success"] is True
+        assert res.agents[0]["output"]["metrics"]["health_score"] == 90
+
+    asyncio.run(_run())
+
+
 def test_no_permitted_agents_returns_empty():
     async def _run():
         # permission set kosong → hanya agent perm=None yang lolos; paksa None-only
