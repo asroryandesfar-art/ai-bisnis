@@ -2317,12 +2317,13 @@ async function renderBilling() {
   // ── Addon Conversation Balance section ─────────────────────────────────
   // balance = jumlah percakapan tambahan, BUKAN Rupiah
   const addonBalance = Number(credits.addon_conversation_balance ?? credits.balance ?? 0);
+  // Sumber utama = API (billing.TOPUP_PACKAGES). Fallback HARUS sinkron dengan
+  // backend (P0-1 repricing) supaya tidak menampilkan nominal lama yang ditolak.
   const topupPackages = (credits.topup_packages || [
-    {amount_idr:25000,conversations:1000,label:"Rp25.000"},
-    {amount_idr:50000,conversations:2500,label:"Rp50.000"},
-    {amount_idr:100000,conversations:5000,label:"Rp100.000"},
-    {amount_idr:250000,conversations:15000,label:"Rp250.000"},
-    {amount_idr:500000,conversations:35000,label:"Rp500.000"},
+    {amount_idr:50000,conversations:350,label:"Rp50.000"},
+    {amount_idr:150000,conversations:1100,label:"Rp150.000"},
+    {amount_idr:350000,conversations:2700,label:"Rp350.000"},
+    {amount_idr:750000,conversations:6000,label:"Rp750.000"},
   ]);
   const creditHistoryRows = (credits.history || []).map(h => {
     const convCount = Number(h.conversations ?? 0);
@@ -2337,7 +2338,7 @@ async function renderBilling() {
     </tr>`;
   }).join('');
   const topupButtons = topupPackages.map(pkg =>
-    `<button class="button" style="padding:10px 18px;font-size:13px;font-weight:600;line-height:1.4;text-align:center" data-topup="${pkg.amount_idr}">
+    `<button class="button" style="padding:10px 18px;font-size:13px;font-weight:600;line-height:1.4;text-align:center" data-topup="${pkg.amount_idr}" data-topup-conv="${pkg.conversations}">
       <span style="display:block">${esc(pkg.label)}</span>
       <span style="display:block;font-size:11px;font-weight:400;color:var(--text-3)">+${formatNumber(pkg.conversations)} ${t('billing.conversations_unit')}</span>
     </button>`
@@ -3447,10 +3448,10 @@ async function checkout(planKey, useFreeTrial = false) {
   catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
-async function topupCredits(amountIdr) {
-  // Cari paket yang sesuai untuk tampilkan info percakapan di konfirmasi
-  const pkgMap = {25000:1000, 50000:2500, 100000:5000, 250000:15000, 500000:35000};
-  const convCount = pkgMap[Number(amountIdr)];
+async function topupCredits(amountIdr, convCountRaw) {
+  // Jumlah percakapan diambil dari data tombol (data-topup-conv) yang dirender
+  // dari API — TIDAK di-hardcode, supaya selalu sinkron dengan backend.
+  const convCount = Number(convCountRaw) || 0;
   const convLabel = convCount ? ` (+${convCount.toLocaleString('id-ID')} ${t('billing.conversations_unit')})` : '';
   if(!confirm(`Top up Rp${Number(amountIdr).toLocaleString('id-ID')}${convLabel}?`)) return;
   try {
@@ -3668,7 +3669,7 @@ document.addEventListener("click", async (event) => {
   const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan){ await checkout(plan.dataset.checkoutPlan, false); return; }
   const trialPlan=event.target.closest("[data-checkout-trial]"); if(trialPlan){ await checkout(trialPlan.dataset.checkoutTrial, true); return; }
-  const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup); return; }
+  const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup, topup.dataset.topupConv); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();
   if(action==="finance-new-expense") await createExpensePrompt();
   if(action==="finance-ask-ai") await askFinanceAiPrompt();
