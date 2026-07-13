@@ -89,3 +89,21 @@ def test_tool_executor_mcp_without_config_is_graceful(monkeypatch):
     res = asyncio.run(tool_executor.execute_tool("mcp__docs__search", {"q": "x"}, ctx={}))
     assert res["success"] is False
     assert "MCP" in res["error"]
+
+
+def test_available_tool_schemas_includes_requested_mcp_tool(monkeypatch):
+    import asyncio
+    reg = _registry()
+    asyncio.run(reg.discover())
+    monkeypatch.setattr(mcp_registry, "_registry", reg)
+    # agent lists a built-in AND an mcp tool; both schemas returned
+    got = tool_executor.available_tool_schemas(["calculator", "mcp__docs__search", "mcp__docs__missing"])
+    names = [s["function"]["name"] for s in got]
+    assert "mcp__docs__search" in names
+    assert "mcp__docs__missing" not in names  # not discovered -> omitted
+
+
+def test_available_tool_schemas_no_mcp_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(mcp_registry, "_registry", None)
+    got = tool_executor.available_tool_schemas(["mcp__docs__search"])
+    assert got == []

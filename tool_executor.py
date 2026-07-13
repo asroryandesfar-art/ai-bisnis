@@ -373,8 +373,23 @@ _QUERY_ALLOWLIST: dict[str, tuple[list[str], str | None]] = {
 
 
 def available_tool_schemas(names: list[str]) -> list[dict]:
-    """Subset TOOL_SCHEMAS sesuai nama yang diminta caller (mis. agent.tools)."""
-    return [TOOL_SCHEMAS[n] for n in names if n in TOOL_SCHEMAS]
+    """Subset TOOL_SCHEMAS sesuai nama yang diminta caller (mis. agent.tools).
+
+    Nama berawalan `mcp__` (tool dari MCP server) diambil dari MCP registry bila
+    dikonfigurasi, sehingga agent bisa memakai tool MCP hanya dengan menuliskan
+    nama tool-nya di daftar `tools` mereka (opt-in, tanpa mengubah built-in)."""
+    schemas = [TOOL_SCHEMAS[n] for n in names if n in TOOL_SCHEMAS]
+    mcp_names = [n for n in names if n.startswith("mcp__")]
+    if mcp_names:
+        try:
+            from mcp_registry import get_registry
+            reg = get_registry()
+            if reg is not None:
+                by_name = {s["function"]["name"]: s for s in reg.tool_schemas()}
+                schemas.extend(by_name[n] for n in mcp_names if n in by_name)
+        except Exception:
+            pass
+    return schemas
 
 
 async def _exec_knowledge_search(args: dict, ctx: dict) -> dict:
