@@ -664,6 +664,14 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
 
 async def execute_tool(name: str, args: dict, *, ctx: dict) -> dict:
     """Jalankan satu tool nyata. ctx wajib berisi minimal {pool, org_id}."""
+    # MCP tools (namespaced mcp__<server>__<tool>) are routed to the MCP registry
+    # if configured; keeps built-in tools and remote MCP tools in one dispatch.
+    if name.startswith("mcp__"):
+        from mcp_registry import get_registry
+        reg = get_registry()
+        if reg is None:
+            return {"success": False, "error": "MCP tidak dikonfigurasi (set MCP_SERVERS)"}
+        return await reg.call(name, args)
     executor = _EXECUTORS.get(name)
     if executor is None:
         return {"success": False, "error": f"Tool '{name}' tidak dikenal"}
