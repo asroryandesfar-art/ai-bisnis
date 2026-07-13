@@ -149,6 +149,14 @@ class Settings(BaseSettings):
     # perilaku single-instance sekarang. Deploy multi-replika: set
     # RUN_BACKGROUND_TASKS=1 di satu instance scheduler, =0 di replika web lain.
     run_background_tasks: bool = True
+    # Leader election OTOMATIS via Postgres advisory lock. Default False =
+    # perilaku lama (dikendalikan flag RUN_BACKGROUND_TASKS manual per-replika).
+    # Set DB_LEADER_ELECTION=1 di SEMUA replika: tepat satu yang memenangkan
+    # pg_try_advisory_lock jadi leader (flag diabaikan) — tak perlu menandai
+    # leader manual saat scale-out. Failover butuh restart (lock dilepas saat
+    # proses leader mati). Tidak andal di belakang PgBouncer transaction pooling
+    # (advisory lock level-session; lihat db_pgbouncer).
+    db_leader_election:   bool = False
     secret_key:           str = "change-me-in-production"
     replicate_api_token:  str = ""
     replicate_api_tokens: str = ""  # optional: comma-separated Replicate tokens
@@ -670,16 +678,77 @@ def build_pool_kwargs(settings: "Settings") -> dict:
         kwargs["command_timeout"] = float(settings.db_command_timeout_seconds)
     return kwargs
 
-def should_run_background_tasks() -> bool:
-    """Apakah replika ini boleh menjalankan loop background in-process.
+# Kunci advisory lock leader (bigint konstan, khas BotNesia). Semua replika
+# memakai kunci sama → Postgres menjamin hanya satu pemegang pada satu waktu.
+_LEADER_ADVISORY_LOCK_KEY = 0x626E7473  # 'bnts'
+# Koneksi khusus (DI LUAR pool) yang menahan advisory lock selama proses leader
+# hidup. Session-level lock lepas saat koneksi ini ditutup / proses mati.
+_leader_conn: asyncpg.Connection | None = None
 
-    Titik keputusan tunggal untuk 'leader' background task (Gmail poller,
-    intelligence learning, Meta token refresh). Saat ini dikendalikan flag
-    RUN_BACKGROUND_TASKS (default True = perilaku single-instance). Ini juga
-    tempat alami menaruh leader-election otomatis (mis. pg_try_advisory_lock)
-    di iterasi berikutnya tanpa mengubah call site di startup().
+def should_run_background_tasks() -> bool:
+    """Apakah replika ini boleh menjalankan loop background in-process (path FLAG).
+
+    Titik keputusan untuk 'leader' background task (Gmail poller, intelligence
+    learning, Meta token refresh) saat leader election otomatis DIMATIKAN
+    (default). Dikendalikan flag RUN_BACKGROUND_TASKS (default True = perilaku
+    single-instance). Untuk election otomatis, lihat resolve_background_leadership.
     """
     return bool(cfg.run_background_tasks)
+
+async def try_acquire_leadership() -> bool:
+    """Coba jadi leader via pg_try_advisory_lock (non-blocking).
+
+    Buka koneksi langsung khusus (di luar pool) dan tahan selama proses hidup:
+    lock level-session lepas otomatis saat koneksi ditutup / proses mati,
+    sehingga replika lain bisa mengambil alih pada restart. Idempoten: kalau
+    sudah leader, langsung True. Gagal konek / tidak menang → False (replika ini
+    tidak menjalankan loop background).
+    """
+    global _leader_conn
+    if _leader_conn is not None:
+        return True
+    dsn = cfg.database_url.replace("+asyncpg", "")
+    conn: asyncpg.Connection | None = None
+    try:
+        conn = await asyncio.wait_for(
+            asyncpg.connect(dsn), timeout=cfg.db_connect_timeout_seconds
+        )
+        got = await conn.fetchval(
+            "SELECT pg_try_advisory_lock($1)", _LEADER_ADVISORY_LOCK_KEY
+        )
+        if got:
+            _leader_conn = conn
+            return True
+        await conn.close()
+        return False
+    except Exception as e:
+        logger.warning("Leader election gagal (advisory lock): %s", e)
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+        return False
+
+async def release_leadership() -> None:
+    """Lepas advisory lock leader dengan menutup koneksi khusus (dipanggil saat shutdown)."""
+    global _leader_conn
+    if _leader_conn is not None:
+        try:
+            await _leader_conn.close()
+        except Exception:
+            pass
+        _leader_conn = None
+
+async def resolve_background_leadership() -> bool:
+    """Tentukan apakah replika ini menjalankan loop background.
+
+    election OFF (default) → path flag should_run_background_tasks().
+    election ON            → menang pg_try_advisory_lock (flag diabaikan).
+    """
+    if not cfg.db_leader_election:
+        return should_run_background_tasks()
+    return await try_acquire_leadership()
 
 async def get_pool() -> asyncpg.Pool:
     global _pool, _pool_loop
@@ -765,12 +834,22 @@ async def startup():
         print(f"[WARN] Database belum terhubung: {e}")
         print("  App tetap berjalan - endpoint /health akan menunjukkan status DB")
 
-    # Leader gate: loop background hanya jalan di replika leader (lihat
-    # Settings.run_background_tasks). Mencegah kerja ganda saat scale-out.
-    run_bg = should_run_background_tasks()
+    # Leader gate: loop background hanya jalan di replika leader. Mencegah kerja
+    # ganda saat scale-out. election OFF → flag RUN_BACKGROUND_TASKS; election ON
+    # → pg_try_advisory_lock (lihat resolve_background_leadership).
+    if cfg.db_leader_election and cfg.db_pgbouncer:
+        print("[WARN] DB_LEADER_ELECTION=1 di belakang PgBouncer transaction "
+              "pooling tidak andal (advisory lock level-session). Pastikan "
+              "koneksi langsung ke Postgres untuk election.")
+    run_bg = await resolve_background_leadership()
     if not run_bg:
-        print("[OK] Background loops DINONAKTIFKAN di replika ini "
-              "(RUN_BACKGROUND_TASKS=0) — dijalankan oleh replika leader.")
+        reason = ("kalah leader election" if cfg.db_leader_election
+                  else "RUN_BACKGROUND_TASKS=0")
+        print(f"[OK] Background loops DINONAKTIFKAN di replika ini "
+              f"({reason}) — dijalankan oleh replika leader.")
+    elif cfg.db_leader_election:
+        print("[OK] Replika ini LEADER (memegang advisory lock) — "
+              "menjalankan loop background.")
 
     # Gmail auto-poll scheduler (optional)
     try:
@@ -865,6 +944,8 @@ async def shutdown():
         await _replicate_image_queue.shutdown()
     except BaseException:
         pass
+    # Lepas advisory lock leader agar replika lain bisa mengambil alih.
+    await release_leadership()
     if _pool:
         await _pool.close()
     _pool = None
