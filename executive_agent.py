@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import asyncpg
 
-from base import BaseAgent
+from base import AgentResult, BaseAgent
 
 REPORT_TYPES = ("weekly", "monthly")
 
@@ -469,3 +469,18 @@ seperti ini (jangan ubah tipe data field manapun):
             return None
         result.pop("_llm_unavailable", None)
         return result
+
+    async def run(self, context: dict) -> AgentResult:
+        """Entry NL orkestrasi internal (RBAC analytics.read). Ringkasan
+        eksekutif read-only dari dashboard_summary. Butuh pool + org_id."""
+        pool = context.get("pool")
+        org_id = context.get("org_id")
+        if pool is None or not org_id:
+            return AgentResult(agent=self.name, success=False, output={}, latency_ms=0,
+                               error="butuh pool + org_id (permukaan terautentikasi)")
+        data = await dashboard_summary(pool, org_id)
+        return AgentResult(
+            agent=self.name, success=True,
+            output={"answer": "Ringkasan eksekutif lintas-domain tersedia.", "executive": data},
+            latency_ms=0, confidence=0.7,
+        )

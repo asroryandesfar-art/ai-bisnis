@@ -22,7 +22,7 @@ import uuid
 
 import asyncpg
 
-from base import BaseAgent
+from base import AgentResult, BaseAgent
 
 CATEGORIES = ("sales_pattern", "complaint_resolution", "successful_approach")
 STATUSES = ("candidate", "approved", "rejected", "archived")
@@ -265,3 +265,18 @@ Balas HANYA JSON dengan field: insight (string)."""
         if result.get("_llm_unavailable"):
             return None
         return result.get("insight")
+
+    async def run(self, context: dict) -> AgentResult:
+        """Entry NL orkestrasi internal (RBAC learning.read). Ringkasan insight
+        pembelajaran read-only dari dashboard_summary. Butuh pool + org_id."""
+        pool = context.get("pool")
+        org_id = context.get("org_id")
+        if pool is None or not org_id:
+            return AgentResult(agent=self.name, success=False, output={}, latency_ms=0,
+                               error="butuh pool + org_id (permukaan terautentikasi)")
+        data = await dashboard_summary(pool, org_id)
+        return AgentResult(
+            agent=self.name, success=True,
+            output={"answer": "Ringkasan insight pembelajaran tersedia.", "learning": data},
+            latency_ms=0, confidence=0.7,
+        )

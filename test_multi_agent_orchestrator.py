@@ -410,6 +410,131 @@ def test_orchestrator_routes_to_operations_end_to_end(monkeypatch):
     asyncio.run(_run())
 
 
+# ── Executive / Workforce / Self-learning run() ──────────────────────────
+def test_executive_agent_run(monkeypatch):
+    import executive_agent
+
+    async def fake_summary(pool, org_id):
+        return {"health_score": 80}
+
+    monkeypatch.setattr(executive_agent, "dashboard_summary", fake_summary)
+
+    async def _run():
+        r1 = await executive_agent.ExecutiveAgent().run({})
+        assert r1.success is False
+        r2 = await executive_agent.ExecutiveAgent().run({"pool": object(), "org_id": "o1"})
+        assert r2.success is True and r2.output["executive"]["health_score"] == 80
+
+    asyncio.run(_run())
+
+
+def test_workforce_agent_run(monkeypatch):
+    import workforce_orchestrator
+
+    async def fake_summary(pool, org_id):
+        return {"open_tasks": 3}
+
+    async def fake_conflicts(pool, org_id):
+        return []
+
+    monkeypatch.setattr(workforce_orchestrator, "dashboard_summary", fake_summary)
+    monkeypatch.setattr(workforce_orchestrator, "detect_conflicts", fake_conflicts)
+
+    async def _run():
+        res = await workforce_orchestrator.WorkforceOrchestratorAgent().run(
+            {"pool": object(), "org_id": "o1"})
+        assert res.success is True and res.output["summary"]["open_tasks"] == 3
+
+    asyncio.run(_run())
+
+
+def test_self_learning_agent_run(monkeypatch):
+    import self_learning_engine
+
+    async def fake_summary(pool, org_id):
+        return {"insights": 7}
+
+    monkeypatch.setattr(self_learning_engine, "dashboard_summary", fake_summary)
+
+    async def _run():
+        res = await self_learning_engine.SelfLearningAgent().run(
+            {"pool": object(), "org_id": "o1"})
+        assert res.success is True and res.output["learning"]["insights"] == 7
+
+    asyncio.run(_run())
+
+
+# ── Marketplace / Billing / Subscription adapters ────────────────────────
+def test_marketplace_agent_run(monkeypatch):
+    import bn_platform.marketplace as mp
+    from orchestration_domain_agents import MarketplaceAgent
+
+    async def _templates(pool):
+        return [{"key": "a"}, {"key": "b"}]
+
+    async def _installs(pool, org_id):
+        return [{"id": "i1"}]
+
+    async def _analytics(pool, org_id):
+        return {"installs": 1}
+
+    monkeypatch.setattr(mp, "list_templates", _templates)
+    monkeypatch.setattr(mp, "list_installs", _installs)
+    monkeypatch.setattr(mp, "marketplace_analytics", _analytics)
+
+    async def _run():
+        assert (await MarketplaceAgent().run({})).success is False
+        res = await MarketplaceAgent().run({"pool": object(), "org_id": "o1"})
+        assert res.success is True and res.output["templates_count"] == 2
+
+    asyncio.run(_run())
+
+
+def test_billing_and_subscription_agents_run(monkeypatch):
+    import bn_platform.billing as billing
+    from orchestration_domain_agents import BillingAgent, SubscriptionAgent
+
+    async def _balance(pool, org_id):
+        return 120
+
+    async def _usage(pool, org_id):
+        return {"conversations": 45}
+
+    async def _active(pool, org_id):
+        return {"plan_key": "pro"}
+
+    async def _plans(pool):
+        return [{"key": "starter"}, {"key": "pro"}]
+
+    monkeypatch.setattr(billing, "get_credit_balance", _balance)
+    monkeypatch.setattr(billing, "current_usage", _usage)
+    monkeypatch.setattr(billing, "get_active_subscription", _active)
+    monkeypatch.setattr(billing, "list_plans", _plans)
+
+    async def _run():
+        b = await BillingAgent().run({"pool": object(), "org_id": "o1"})
+        assert b.success is True and b.output["credit_balance"] == 120
+        s = await SubscriptionAgent().run({"pool": object(), "org_id": "o1"})
+        assert s.success is True and "pro" in s.output["answer"]
+
+    asyncio.run(_run())
+
+
+def test_new_agents_respect_rbac():
+    from bn_platform.rbac import SYSTEM_ROLE_PERMISSIONS
+    # 'agent' role: tak punya billing.read/analytics.read/workforce.read/learning.read
+    agent_specs = agent_registry.orchestration_agents(
+        allowed_permissions=SYSTEM_ROLE_PERMISSIONS["agent"])
+    cats = {s.category for s in agent_specs}
+    for blocked in ("billing", "subscription", "executive", "workforce", "self_learning"):
+        assert blocked not in cats
+    # owner: semua enam hadir
+    owner = agent_registry.orchestration_agents(
+        allowed_permissions=SYSTEM_ROLE_PERMISSIONS["owner"])
+    ocats = {s.category for s in owner}
+    assert {"billing", "subscription", "executive", "workforce", "self_learning", "marketplace"} <= ocats
+
+
 def test_no_permitted_agents_returns_empty():
     async def _run():
         # permission set kosong → hanya agent perm=None yang lolos; paksa None-only

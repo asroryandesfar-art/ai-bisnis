@@ -51,6 +51,9 @@ ORCHESTRATION_EXTRA: list[tuple[str, str, str, str]] = [
     ("analytics", "AnalyticsAgent", "analytics", AUTHENTICATED_API),
     ("memory_agent", "MemoryAgent", "memory", AUTHENTICATED_API),
     ("web_search_agent", "SearchAgent", "search", AUTHENTICATED_API),
+    ("orchestration_domain_agents", "MarketplaceAgent", "marketplace", AUTHENTICATED_API),
+    ("orchestration_domain_agents", "BillingAgent", "billing", AUTHENTICATED_API),
+    ("orchestration_domain_agents", "SubscriptionAgent", "subscription", AUTHENTICATED_API),
 ]
 
 # Permission RBAC yang diwajibkan agar sebuah kategori boleh dipanggil di
@@ -74,6 +77,9 @@ AGENT_PERMISSION_BY_CATEGORY: dict[str, str | None] = {
     "research":         "research.read",
     "search":           "research.read",
     "computer_use":     "computer_agent.read",
+    "marketplace":      "bots.read",
+    "billing":          "billing.read",
+    "subscription":     "billing.read",
 }
 
 # Kata kunci per kategori untuk router FALLBACK heuristik (dipakai hanya bila
@@ -91,6 +97,12 @@ AGENT_CAPABILITY_KEYWORDS: dict[str, list[str]] = {
     "knowledge": ["dokumen", "kebijakan", "prosedur", "knowledge", "panduan", "sop"],
     "sales":     ["jual", "penawaran", "closing", "prospek", "diskon", "deal"],
     "customer_service": ["komplain", "keluhan", "bantuan", "refund", "layanan"],
+    "marketplace": ["template", "marketplace", "pasang", "install", "katalog"],
+    "billing":   ["kredit", "saldo", "tagihan", "billing", "pemakaian", "kuota"],
+    "subscription": ["langganan", "paket", "plan", "upgrade", "downgrade", "subscription"],
+    "executive": ["eksekutif", "ringkasan bisnis", "strategi", "board", "c-level"],
+    "workforce": ["tugas", "task", "koordinasi", "konflik", "workforce", "assignment"],
+    "self_learning": ["pembelajaran", "insight", "pola", "learning", "perbaikan otomatis"],
 }
 
 
