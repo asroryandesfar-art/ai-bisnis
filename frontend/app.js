@@ -2219,6 +2219,7 @@ async function renderBilling() {
   state.salesEmail = (plansResult.ok && plansResult.data.sales_email) || 'sales@botnesia.id';
   state.subscription = subResult.ok ? subResult.data : state.subscription;
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
+  state.channelUsage = usageResult.ok ? usageResult.data.channel_usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
   const credits = creditsResult.ok ? creditsResult.data : { addon_conversation_balance: 0, topup_packages: [], history: [] };
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
@@ -2394,6 +2395,14 @@ async function renderBilling() {
     </div>`;
   }).join('') : emptyState(t('billing.usage_empty'), t('billing.usage_empty_sub'), '', 'analytics');
 
+  // P1-6: eksposur biaya WhatsApp (Meta pass-through) — info, bukan quota bar.
+  const waCount = Number((state.channelUsage || {}).whatsapp || 0);
+  const waUsageHtml = waCount > 0
+    ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text-2)">
+         💬 ${t('billing.whatsapp_usage')}: <b>${formatNumber(waCount)}</b> ${t('billing.conversations_unit')}
+       </div>`
+    : '';
+
   // ── Invoice table ───────────────────────────────────────────────────────
   const invoiceRows = state.invoices.map((inv) =>
     `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`
@@ -2425,7 +2434,7 @@ async function renderBilling() {
   <div class="grid grid-2">
     <div class="card">
       <div class="card-head"><h3>${t('billing.usage_title')}</h3><span class="subtle mono" style="font-size:9px">${esc(currentKey.toUpperCase())}</span></div>
-      <div class="card-body">${usageHtml}</div>
+      <div class="card-body">${usageHtml}${waUsageHtml}</div>
     </div>
     <div class="card">
       <div class="card-head"><h3>${t('billing.invoices_title')}</h3></div>

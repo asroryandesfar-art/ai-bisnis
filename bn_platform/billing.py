@@ -125,7 +125,13 @@ async def current_usage(pool: asyncpg.Pool, org_id: str) -> dict:
              (SELECT COUNT(*) FROM channel_accounts WHERE org_id=$1 AND is_active)  AS channels,
              (SELECT COUNT(*) FROM image_generations
                 WHERE org_id=$1 AND kind='generate' AND status='completed'
-                  AND created_at >= DATE_TRUNC('month', NOW()))                    AS image_generations
+                  AND created_at >= DATE_TRUNC('month', NOW()))                    AS image_generations,
+             -- P1-6: percakapan via WhatsApp bulan berjalan (eksposur biaya Meta
+             -- pass-through). WA sudah memotong kuota yang sama; ini untuk
+             -- VISIBILITAS biaya per-channel, bukan limit terpisah.
+             (SELECT COUNT(*) FROM conversations
+                WHERE org_id=$1 AND channel='whatsapp'
+                  AND started_at >= DATE_TRUNC('month', NOW()))                    AS whatsapp_conversations
         """,
         org_id,
     )
@@ -517,7 +523,12 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         for dim in LIMIT_FIELDS:
             ok, detail = await check_limit(pool, user["org_id"], dim)
             results[dim] = {**detail, "within_limit": ok}
-        return {"usage": results}
+        # P1-6: eksposur biaya per-channel (WhatsApp) — info, bukan limit.
+        usage = await current_usage(pool, user["org_id"])
+        return {
+            "usage": results,
+            "channel_usage": {"whatsapp": int(usage.get("whatsapp_conversations", 0))},
+        }
 
     @router.post("/checkout", status_code=status.HTTP_201_CREATED)
     async def checkout(

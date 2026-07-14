@@ -335,6 +335,7 @@ const T = {
     "billing.plan_desc.pro":"Untuk bisnis yang siap terhubung ke WhatsApp dengan tim lebih besar.",
     "billing.plan_desc.business":"Untuk UMKM, startup, dan tim kecil-menengah yang butuh kapasitas lebih besar.",
     "billing.plan_desc.enterprise":"Untuk perusahaan besar, agency, SaaS multi-cabang, dan white label reseller.",
+    "billing.whatsapp_usage":"Percakapan via WhatsApp bulan ini",
     // Billing — addon conversations (top up)
     "billing.credits_balance":"💬 Percakapan Tambahan Tersisa",
     "billing.credits_buy":"⚡ Beli Percakapan Tambahan",
@@ -471,6 +472,7 @@ const T = {
     "billing.plan_desc.pro":"For businesses ready to connect WhatsApp with a larger team.",
     "billing.plan_desc.business":"For SMEs, startups, and small-to-medium teams needing more capacity.",
     "billing.plan_desc.enterprise":"For large companies, agencies, multi-branch SaaS, and white-label resellers.",
+    "billing.whatsapp_usage":"WhatsApp conversations this month",
     // Billing — addon conversations (top up)
     "billing.credits_balance":"💬 Remaining Add-on Conversations",
     "billing.credits_buy":"⚡ Buy Extra Conversations",
