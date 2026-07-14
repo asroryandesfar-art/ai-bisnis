@@ -186,6 +186,14 @@ CREATE INDEX IF NOT EXISTS idx_subs_org    ON subscriptions(org_id);
 CREATE INDEX IF NOT EXISTS idx_subs_status ON subscriptions(status);
 CREATE INDEX IF NOT EXISTS idx_subs_period_end ON subscriptions(current_period_end);
 
+-- Grandfathering (P2): harga terkunci saat aktivasi. Bila admin menaikkan harga
+-- plan, pelanggan lama tetap membayar harga yang mereka setujui (locked). NULL =
+-- belum terkunci → pakai harga live plan (paket free/legacy). Lock dipertahankan
+-- selama tetap di plan yang sama; berpindah plan mengunci ulang harga plan baru.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_monthly_idr BIGINT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_yearly_idr  BIGINT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_locked_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS invoices (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

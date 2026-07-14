@@ -2302,9 +2302,24 @@ async function renderBilling() {
     const customSub = plan.price_monthly_idr > 0
       ? `${t('billing.starting_from')} ${idr(plan.price_monthly_idr)}${t('billing.per_month_short')}`
       : t('billing.contact_sales_label');
-    const priceHtml = isCustom
-      ? `<div class="billing-plan-price"><strong>${t('billing.custom_price_label')}</strong><span>${customSub}</span></div>`
-      : `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('billing.per_month_short')}</span></div>`;
+    // Grandfathering: paket aktif dengan harga terkunci → tampil harga locked
+    // + harga list (dicoret) + badge, supaya pelanggan lama paham mereka dapat
+    // harga lama meski daftar harga sudah naik.
+    const sub = state.subscription?.subscription;
+    const grandfathered = isCurrent && !isCustom && sub?.is_grandfathered
+      && sub?.effective_price_monthly_idr != null;
+    let priceHtml;
+    if (isCustom) {
+      priceHtml = `<div class="billing-plan-price"><strong>${t('billing.custom_price_label')}</strong><span>${customSub}</span></div>`;
+    } else if (grandfathered) {
+      priceHtml = `<div class="billing-plan-price">`
+        + `<strong>${idr(sub.effective_price_monthly_idr)}</strong><span>${t('billing.per_month_short')}</span>`
+        + `<div class="billing-plan-locked" title="${esc(t('billing.grandfathered_hint'))}">`
+        + `<s>${idr(plan.price_monthly_idr)}</s> · 🔒 ${t('billing.grandfathered_badge')}</div>`
+        + `</div>`;
+    } else {
+      priceHtml = `<div class="billing-plan-price"><strong>${idr(plan.price_monthly_idr)}</strong><span>${t('billing.per_month_short')}</span></div>`;
+    }
 
     const featureListHtml = features.slice(0, wide ? 6 : 8).map(feat =>
       `<li><span class="billing-feature-check">✓</span>${esc(translateFeature(String(feat).replace(/_/g, ' ')))}</li>`

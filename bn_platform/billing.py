@@ -94,6 +94,31 @@ async def get_active_subscription(pool: asyncpg.Pool, org_id: str) -> dict | Non
     return dict(row) if row else None
 
 
+def effective_price(sub: dict, billing_cycle: str) -> int:
+    """Harga efektif yang ditagihkan ke tenant untuk siklus ini (grandfathering).
+
+    Bila subscription punya harga terkunci (locked) untuk siklus tsb, itulah yang
+    dibayar — walaupun admin sudah menaikkan harga live plan. Bila belum terkunci
+    (NULL, mis. paket free/legacy), pakai harga live plan. `sub` diharapkan hasil
+    get_active_subscription (punya kolom locked_* + price_*_idr dari JOIN plans).
+    """
+    if billing_cycle == "yearly":
+        locked, live = sub.get("locked_price_yearly_idr"), sub.get("price_yearly_idr")
+    else:
+        locked, live = sub.get("locked_price_monthly_idr"), sub.get("price_monthly_idr")
+    return int(locked if locked is not None else (live or 0))
+
+
+def is_grandfathered(sub: dict, billing_cycle: str) -> bool:
+    """True bila harga terkunci lebih murah dari harga live plan (pelanggan lama
+    diuntungkan). Sama/lebih mahal → bukan grandfather (tak perlu badge)."""
+    if billing_cycle == "yearly":
+        locked, live = sub.get("locked_price_yearly_idr"), sub.get("price_yearly_idr")
+    else:
+        locked, live = sub.get("locked_price_monthly_idr"), sub.get("price_monthly_idr")
+    return locked is not None and live is not None and int(locked) < int(live)
+
+
 async def ensure_subscription(pool: asyncpg.Pool, org_id: str) -> dict:
     """Pastikan tenant punya baris subscription (auto-provision Free + trial saat baru daftar)."""
     sub = await get_active_subscription(pool, org_id)
@@ -404,12 +429,18 @@ async def activate_subscription(pool: asyncpg.Pool, *, org_id: str, plan_key: st
     period_end = datetime.now(timezone.utc) + timedelta(days=days)
     trial_ends = datetime.now(timezone.utc) + timedelta(days=30) if is_free_trial else None
     sub_status = "trialing" if is_free_trial else "active"
+    # Grandfathering: kunci harga live plan saat aktivasi. Bila tetap di plan yang
+    # sama (renewal), lock LAMA dipertahankan (COALESCE) supaya kenaikan harga
+    # tidak menular ke pelanggan lama. Berpindah plan → kunci ulang harga baru.
+    lock_monthly = int(plan["price_monthly_idr"])
+    lock_yearly = int(plan["price_yearly_idr"])
     row = await pool.fetchrow(
         """INSERT INTO subscriptions (org_id, plan_id, status, billing_cycle,
                                       current_period_start, current_period_end,
                                       cancel_at_period_end, canceled_at, trial_ends_at,
-                                      is_free_trial)
-           VALUES ($1, $2, $3, $4, NOW(), $5, FALSE, NULL, $6, $7)
+                                      is_free_trial, locked_price_monthly_idr,
+                                      locked_price_yearly_idr, price_locked_at)
+           VALUES ($1, $2, $3, $4, NOW(), $5, FALSE, NULL, $6, $7, $8, $9, NOW())
            ON CONFLICT (org_id) DO UPDATE SET
                plan_id = EXCLUDED.plan_id,
                status = EXCLUDED.status,
@@ -420,9 +451,22 @@ async def activate_subscription(pool: asyncpg.Pool, *, org_id: str, plan_key: st
                canceled_at = NULL,
                trial_ends_at = EXCLUDED.trial_ends_at,
                is_free_trial = EXCLUDED.is_free_trial,
+               locked_price_monthly_idr = CASE
+                   WHEN subscriptions.plan_id = EXCLUDED.plan_id
+                   THEN COALESCE(subscriptions.locked_price_monthly_idr, EXCLUDED.locked_price_monthly_idr)
+                   ELSE EXCLUDED.locked_price_monthly_idr END,
+               locked_price_yearly_idr = CASE
+                   WHEN subscriptions.plan_id = EXCLUDED.plan_id
+                   THEN COALESCE(subscriptions.locked_price_yearly_idr, EXCLUDED.locked_price_yearly_idr)
+                   ELSE EXCLUDED.locked_price_yearly_idr END,
+               price_locked_at = CASE
+                   WHEN subscriptions.plan_id = EXCLUDED.plan_id
+                   THEN COALESCE(subscriptions.price_locked_at, EXCLUDED.price_locked_at)
+                   ELSE EXCLUDED.price_locked_at END,
                updated_at = NOW()
            RETURNING *""",
-        org_id, plan["id"], sub_status, billing_cycle, period_end, trial_ends, is_free_trial,
+        org_id, plan["id"], sub_status, billing_cycle, period_end, trial_ends,
+        is_free_trial, lock_monthly, lock_yearly,
     )
     # sinkronkan kolom legacy organizations.plan agar fitur lama tetap konsisten
     legacy_plan = {"free": "starter", "starter": "starter", "pro": "growth",
@@ -548,6 +592,17 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         sub = await ensure_subscription(pool, user["org_id"])
         usage = await current_usage(pool, user["org_id"])
         limits = {dim: sub[field] for dim, field in LIMIT_FIELDS.items()}
+        cycle = sub.get("billing_cycle") or "monthly"
+        # Grandfathering: harga efektif (locked bila ada) + harga live plan untuk
+        # ditampilkan sebagai referensi (strikethrough) + flag badge di UI.
+        sub = {
+            **sub,
+            "effective_price_monthly_idr": effective_price(sub, "monthly"),
+            "effective_price_yearly_idr": effective_price(sub, "yearly"),
+            "list_price_monthly_idr": int(sub.get("price_monthly_idr") or 0),
+            "list_price_yearly_idr": int(sub.get("price_yearly_idr") or 0),
+            "is_grandfathered": is_grandfathered(sub, cycle),
+        }
         return {"subscription": sub, "usage": usage, "limits": limits}
 
     @router.get("/usage")
@@ -591,7 +646,14 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
                 f"Paket '{plan['name']}' memerlukan konsultasi tim sales "
                 f"(harga custom). Hubungi {platform_cfg.sales_email}.",
             )
-        amount = plan["price_yearly_idr"] if body.billing_cycle == "yearly" else plan["price_monthly_idr"]
+        # Grandfathering: bila tenant memperpanjang plan yang SAMA dan sudah punya
+        # harga terkunci, tagih harga locked (bukan harga baru yang lebih mahal).
+        # Ganti plan → tagih harga live plan tujuan.
+        current_sub = await get_active_subscription(pool, user["org_id"])
+        if current_sub and current_sub.get("plan_key") == body.plan_key:
+            amount = effective_price(current_sub, body.billing_cycle)
+        else:
+            amount = plan["price_yearly_idr"] if body.billing_cycle == "yearly" else plan["price_monthly_idr"]
 
         # Free trial: plan berbayar + eligible + user meminta trial
         use_trial = (

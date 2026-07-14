@@ -1232,6 +1232,12 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_idr BIGINT;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_idr BIGINT NOT NULL DEFAULT 0;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,4) NOT NULL DEFAULT 0;",
+        # Grandfathering: harga terkunci per-subscription saat aktivasi. NULL =
+        # belum terkunci → pakai harga live plan (free/legacy). Bila admin
+        # menaikkan harga plan, pelanggan lama tetap bayar harga locked.
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_monthly_idr BIGINT;",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_yearly_idr BIGINT;",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_locked_at TIMESTAMPTZ;",
         # Marketplace publisher layer: kepemilikan + lifecycle publish + monetisasi.
         # owner_org_id NULL = template platform (seeded). status default 'published'
         # supaya 170 template lama tetap tampil; template baru mulai 'draft'.

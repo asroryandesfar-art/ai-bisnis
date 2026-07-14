@@ -157,9 +157,11 @@ button,input,select,textarea{font:inherit}button{color:inherit}a{color:inherit;t
 .billing-plan-eyebrow.is-current{color:var(--green)}.billing-plan-eyebrow.is-popular{color:var(--text)}
 .billing-plan-name{margin:0 0 4px;font-size:17px;letter-spacing:-.03em}
 .billing-plan-desc{color:var(--text-3);font-size:10px;min-height:28px;line-height:1.55;margin:0 0 14px}
-.billing-plan-price{display:flex;align-items:baseline;gap:5px;margin:0 0 16px}
+.billing-plan-price{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin:0 0 16px}
 .billing-plan-price strong{font-size:26px;font-weight:800;letter-spacing:-.05em}
 .billing-plan-price span{color:var(--text-3);font-size:10px}
+.billing-plan-locked{flex-basis:100%;margin-top:4px;font-size:11px;font-weight:600;color:var(--accent,#7c3aed)}
+.billing-plan-locked s{color:var(--text-3);font-weight:400}
 .billing-feature-list{flex:1;display:grid;gap:8px;margin:0 0 18px;padding:0;list-style:none}
 .billing-feature-list li{display:flex;align-items:flex-start;gap:7px;color:var(--text-2);font-size:10px;line-height:1.5}
 .billing-feature-check{flex-shrink:0;display:grid;place-items:center;width:15px;height:15px;margin-top:1px;border-radius:50%;background:rgba(69,211,155,.14);color:var(--green);font-size:9px}
