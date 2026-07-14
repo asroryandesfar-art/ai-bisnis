@@ -42,6 +42,31 @@ async def _seed_org_user(pool, name):
     return oid, uid
 
 
+def test_uninstall_removes_install_record():
+    """Bug fix: uninstall HARUS menghapus record install (bukan cuma bot inactive),
+    supaya template kembali 'Available' dan bisa dipasang ulang."""
+    async def body(pool):
+        org, uid = await _seed_org_user(pool, "Uninst")
+        try:
+            key = await pool.fetchval(
+                "SELECT key FROM marketplace_templates WHERE is_paid=FALSE AND status='published' LIMIT 1")
+            r = await mp.install_template(pool, org_id=org, user_id=uid, template_key=key, bot_name="X")
+            assert len(await mp.list_installs(pool, org)) == 1
+            await mp.uninstall_install(pool, org_id=org, user_id=uid, install_id=r["install_id"])
+            # record install hilang → tidak lagi tampak terpasang
+            assert await pool.fetchval("SELECT COUNT(*) FROM tenant_template_installs WHERE org_id=$1", org) == 0
+            assert len(await mp.list_installs(pool, org)) == 0
+            # bisa dipasang ulang (install baru)
+            r2 = await mp.install_template(pool, org_id=org, user_id=uid, template_key=key, bot_name="Y")
+            assert r2["install_id"] != r["install_id"]
+        finally:
+            await pool.execute("DELETE FROM tenant_template_installs WHERE org_id=$1", org)
+            await pool.execute("DELETE FROM bots WHERE org_id=$1", org)
+            await pool.execute("DELETE FROM users WHERE org_id=$1", org)
+            await pool.execute("DELETE FROM organizations WHERE id=$1", org)
+    _run(body)
+
+
 def test_record_template_revenue_split():
     async def body(pool):
         pub = await _seed_org(pool, "Pub")

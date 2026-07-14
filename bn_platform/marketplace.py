@@ -532,6 +532,15 @@ async def uninstall_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, in
     if not bot:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
     bot_dict = dict(bot)
+    # HAPUS record instalasi supaya template kembali ke status "Available" dan
+    # bisa dipasang ulang. Bot di-nonaktifkan (data dipertahankan), tidak dihapus
+    # -- menghapus bot akan CASCADE ke knowledge/workflow/channel (destruktif).
+    await pool.execute(
+        "DELETE FROM tenant_template_installs WHERE id=$1 AND org_id=$2", install_id, org_id,
+    )
+    await pool.execute(
+        "DELETE FROM agent_installs WHERE bot_id=$1 AND org_id=$2", install["bot_id"], org_id,
+    )
     await write_audit_log(
         pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="delete",
         resource_type="marketplace_install", resource_id=str(install_id),
