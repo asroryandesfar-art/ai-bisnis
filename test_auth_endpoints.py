@@ -123,6 +123,20 @@ def test_login_success_returns_token(client):
     assert any("last_login_at" in s for s in client.fake_pool.executed)
 
 
+def test_login_success_writes_audit_log(client, monkeypatch):
+    # P2-11: login sukses harus tercatat di audit trail (action="login").
+    actions = []
+
+    async def rec(pool, **kw):
+        actions.append(kw.get("action"))
+
+    monkeypatch.setattr(main, "_platform_write_audit", rec)
+    client.fake_pool.fetchrow_value = _user_row(password="supersecret")
+    r = client.post("/auth/login", json={"email": "a@b.com", "password": "supersecret"})
+    assert r.status_code == 200, r.text
+    assert "login" in actions
+
+
 def test_login_unknown_email_is_401(client):
     client.fake_pool.fetchrow_value = None
     r = client.post("/auth/login", json={"email": "nobody@b.com", "password": "whatever1"})

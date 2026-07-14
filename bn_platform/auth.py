@@ -145,6 +145,20 @@ def build_auth_router(
             session_id = await start_session(
                 pool, user_id=str(row["id"]), org_id=str(row["org_id"]), email=email, request=request,
             )
+            # P2-11: audit login SUKSES (lengkapi jejak akses enterprise —
+            # register + login + login_failed + logout). IP/user-agent utk
+            # deteksi akses tak lazim; viewable via GET /api/security/audit-logs.
+            write_audit = get_write_audit()
+            if write_audit:
+                try:
+                    await write_audit(
+                        pool, org_id=str(row["org_id"]), actor_user_id=str(row["id"]),
+                        actor_email=email, action="login", resource_type="user",
+                        resource_id=str(row["id"]), ip_address=ip_address,
+                        user_agent=user_agent, metadata={},
+                    )
+                except Exception:
+                    pass
             return {"token": create_token(str(row["id"]), str(row["org_id"]), session_id)}
         except HTTPException:
             raise
