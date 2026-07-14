@@ -42,6 +42,29 @@ class FakePool:
         self.calls.append(("execute", sql, args))
         return "OK"
 
+    # Dukungan transaksi untuk uninstall atomik (pool.acquire() + conn.transaction()).
+    def acquire(self):
+        pool = self
+
+        class _AcquireCtx:
+            async def __aenter__(self_inner):
+                return pool
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _AcquireCtx()
+
+    def transaction(self):
+        class _TxCtx:
+            async def __aenter__(self_inner):
+                return None
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _TxCtx()
+
 
 def test_phase4_catalog_has_100_plus_professional_templates():
     names = {item["name"] for item in PROFESSIONAL_AGENT_TEMPLATES}

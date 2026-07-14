@@ -3167,6 +3167,23 @@ async function marketplacePublish(key, publish) {
   } catch (error) { toast(error.message, "error"); }
 }
 
+// Event "MarketplaceUninstalled": setelah backend menghapus bot+relasi secara
+// atomik, sinkronkan SEMUA view yang menurunkan data dari agent/bot supaya tak
+// ada data basi (agent yang sudah dihapus muncul di Pusat Agent / AI Workforce).
+async function onMarketplaceUninstalled() {
+  bustCache();               // bersihkan seluruh cache (workforce/dashboard/analytics/marketplace/agent-center)
+  await loadCore();          // reload state.bots → halaman agents/AI Workforce + counter + subscription
+  try { renderChrome(); } catch (_) {}   // sidebar + agent counter
+  await renderMarketplace();  // katalog + Template Saya
+  // Re-render halaman aktif jika sedang di view yang menampilkan agent.
+  const r = state.route;
+  try {
+    if (r === "agents" && typeof renderAgents === "function") await renderAgents();
+    else if ((r === "workforce" || r === "workforce-overview") && typeof route === "function") await route();
+    else if (r === "dashboard" && typeof route === "function") await route();
+  } catch (_) {}
+}
+
 function showCreateAgent() {
   el("#modal-root").innerHTML = modal({title:"Deploy new AI agent",body:`<form id="create-agent-form"><div class="form-grid"><label class="field"><span>Agent name</span><input name="name" required placeholder="Customer Success Agent"></label><label class="field"><span>Language</span><select name="language"><option value="id">Bahasa Indonesia</option><option value="en">English</option></select></label><label class="field full"><span>Greeting</span><textarea name="greeting" style="min-height:80px" placeholder="Halo! Ada yang bisa saya bantu?"></textarea></label><label class="field full"><span>System prompt</span><textarea name="system_prompt" placeholder="You are a professional customer success agent..."></textarea></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-create-agent">Deploy agent</button>`});
 }
@@ -3783,7 +3800,7 @@ document.addEventListener("click", async (event) => {
   const kbSopActionTarget=event.target.closest("[data-kb-sop-action]"); if(kbSopActionTarget){ await kbSopAction(kbSopActionTarget.dataset.kbSopId,kbSopActionTarget.dataset.kbSopAction); return; }
   const kbSopEdit=event.target.closest("[data-kb-sop-edit]"); if(kbSopEdit){ await editKbSop(kbSopEdit.dataset.kbSopEdit); return; }
   const marketplaceUpdate=event.target.closest("[data-marketplace-update]"); if(marketplaceUpdate){ const installId=marketplaceUpdate.dataset.marketplaceUpdate; const name=prompt("Nama agent baru (opsional, kosong untuk mempertahankan)") || null; try{ await api.updateMarketplaceInstall(installId, name?.trim() || null); toast("Marketplace agent updated.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
-  const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); toast("Marketplace agent uninstalled.","success"); await renderMarketplace(); }catch(error){ toast(error.message,"error"); } return; }
+  const marketplaceUninstall=event.target.closest("[data-marketplace-uninstall]"); if(marketplaceUninstall && confirm("Uninstall this marketplace agent?")){ try{ await api.uninstallMarketplaceInstall(marketplaceUninstall.dataset.marketplaceUninstall); await onMarketplaceUninstalled(); toast("Marketplace agent uninstalled.","success"); }catch(error){ toast(error.message,"error"); } return; }
   const plan=event.target.closest("[data-checkout-plan]"); if(plan){ await checkout(plan.dataset.checkoutPlan, false); return; }
   const contactSales=event.target.closest("[data-contact-sales]"); if(contactSales){
     // P0-4 quote flow: paket custom/Enterprise → email sales (bukan checkout).

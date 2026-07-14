@@ -524,15 +524,21 @@ async def uninstall_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, in
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Instalasi tidak ditemukan")
     bot_id = install["bot_id"]
     # Uninstall = HAPUS agent-nya (bukan cuma nonaktif) supaya benar-benar hilang
-    # dari Pusat Agent. agent_installs tak punya FK cascade ke bots → hapus manual.
-    await pool.execute("DELETE FROM agent_installs WHERE bot_id=$1 AND org_id=$2", bot_id, org_id)
-    # DELETE bot → CASCADE otomatis menghapus tenant_template_installs + knowledge/
-    # conversations/workflows/channel milik bot ini (semua FK ke bots = CASCADE/SET NULL).
-    deleted = await pool.fetchval(
-        "DELETE FROM bots WHERE id=$1 AND org_id=$2 RETURNING id", bot_id, org_id,
-    )
-    if not deleted:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
+    # dari Pusat Agent / AI Workforce. Dijalankan ATOMIK dalam satu transaksi:
+    # kalau ada langkah gagal, SELURUH uninstall di-rollback → tidak ada orphan
+    # (setengah terhapus). agent_installs tak punya FK cascade ke bots → hapus
+    # manual; DELETE bots meng-CASCADE tenant_template_installs + knowledge/
+    # conversations/workflows/channel/kg milik bot ini (semua FK ke bots =
+    # CASCADE/SET NULL, sudah diverifikasi tak ada RESTRICT).
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM agent_installs WHERE bot_id=$1 AND org_id=$2", bot_id, org_id)
+            deleted = await conn.fetchval(
+                "DELETE FROM bots WHERE id=$1 AND org_id=$2 RETURNING id", bot_id, org_id,
+            )
+            if not deleted:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
+    # Audit setelah commit (best-effort; kegagalan audit tak membatalkan uninstall).
     await write_audit_log(
         pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="delete",
         resource_type="marketplace_install", resource_id=str(install_id),
