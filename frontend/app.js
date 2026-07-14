@@ -2404,9 +2404,13 @@ async function renderBilling() {
     : '';
 
   // ── Invoice table ───────────────────────────────────────────────────────
-  const invoiceRows = state.invoices.map((inv) =>
-    `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`
-  ).join('');
+  const invoiceRows = state.invoices.map((inv) => {
+    // P2-9: tampilkan breakdown PPN bila invoice punya pajak (harga inclusive).
+    const taxNote = Number(inv.tax_idr) > 0
+      ? `<div class="subtle" style="font-size:10px;margin-top:2px">${t('billing.incl_tax')} ${idr(inv.tax_idr)}</div>`
+      : '';
+    return `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}${taxNote}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`;
+  }).join('');
 
   const trialBanner = isTrial && trialEnds
     ? `<div style="margin-bottom:16px;padding:12px 16px;background:#111111;border:1px solid #2e9e73;border-radius:8px;font-size:13px;color:var(--text-2)">

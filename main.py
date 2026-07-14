@@ -1227,6 +1227,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_doc_chunk_embeddings_org ON doc_chunk_embeddings(org_id);",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'file';",
+        # P2-9: breakdown pajak pada invoice (DPP + PPN). Default 0 => invoice
+        # lama & saat pajak nonaktif tetap konsisten (subtotal=amount, tax=0).
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_idr BIGINT;",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_idr BIGINT NOT NULL DEFAULT 0;",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,4) NOT NULL DEFAULT 0;",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url TEXT;",
         """
         CREATE TABLE IF NOT EXISTS knowledge_sources (

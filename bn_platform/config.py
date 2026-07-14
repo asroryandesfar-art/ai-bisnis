@@ -56,6 +56,16 @@ class PlatformSettings(BaseSettings):
     invoice_due_days: int = 3
     platform_fee_currency: str = "IDR"
 
+    # ── Pajak / PPN (P2-9) ──
+    # AKTIFKAN (TAX_ENABLED=1) hanya setelah perusahaan terdaftar sebagai PKP.
+    # Harga paket diperlakukan SUDAH TERMASUK PPN (tax-inclusive) supaya harga
+    # yang ditampilkan ke pelanggan tidak berubah; invoice memecahnya jadi
+    # DPP (subtotal) + PPN. seller_npwp/seller_name muncul di header faktur.
+    tax_enabled: bool = False
+    tax_rate: float = 0.11          # PPN Indonesia 11%
+    seller_name: str = "BotNesia"
+    seller_npwp: str = ""           # NPWP penjual (PKP) untuk faktur pajak
+
     # Kontak sales untuk paket Enterprise/custom (quote flow "Hubungi Sales").
     # Dipakai frontend (mailto) & guard checkout. Ubah via env SALES_EMAIL.
     sales_email: str = "sales@botnesia.id"

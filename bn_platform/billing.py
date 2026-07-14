@@ -259,16 +259,44 @@ async def add_credits(pool: asyncpg.Pool, *, org_id: str, conversations: int,
     return dict(row)
 
 
+def compute_invoice_tax(amount_idr: int) -> tuple[int, int, float]:
+    """P2-9 — pecah total menjadi (DPP/subtotal, PPN, tarif).
+
+    Harga tax-INCLUSIVE: total (amount_idr) tidak berubah; DPP = total/(1+tarif),
+    PPN = total - DPP. Saat pajak nonaktif → (total, 0, 0.0) sehingga invoice
+    lama/konteks non-PKP tetap konsisten. Tidak mengubah jumlah yang ditagih.
+    """
+    if not platform_cfg.tax_enabled or platform_cfg.tax_rate <= 0:
+        return amount_idr, 0, 0.0
+    rate = float(platform_cfg.tax_rate)
+    subtotal = round(amount_idr / (1 + rate))
+    tax = amount_idr - subtotal
+    return subtotal, tax, rate
+
+
+def tax_invoice_meta() -> dict:
+    """Info penjual untuk header faktur pajak (dari config PKP)."""
+    return {
+        "tax_enabled": bool(platform_cfg.tax_enabled),
+        "tax_rate": float(platform_cfg.tax_rate),
+        "seller_name": platform_cfg.seller_name,
+        "seller_npwp": platform_cfg.seller_npwp,
+    }
+
+
 async def create_invoice(
     pool: asyncpg.Pool, *, org_id: str, subscription_id: str | None,
     amount_idr: int, description: str, provider: str | None = None,
 ) -> dict:
+    subtotal_idr, tax_idr, tax_rate = compute_invoice_tax(amount_idr)
     row = await pool.fetchrow(
         """INSERT INTO invoices (org_id, subscription_id, invoice_number, status,
-                                 amount_idr, description, provider, due_date)
-           VALUES ($1, $2, $3, 'open', $4, $5, $6, $7)
+                                 amount_idr, subtotal_idr, tax_idr, tax_rate,
+                                 description, provider, due_date)
+           VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10)
            RETURNING *""",
-        org_id, subscription_id, _generate_invoice_number(), amount_idr, description,
+        org_id, subscription_id, _generate_invoice_number(), amount_idr,
+        subtotal_idr, tax_idr, tax_rate, description,
         provider, datetime.now(timezone.utc) + timedelta(days=platform_cfg.invoice_due_days),
     )
     return dict(row)
@@ -690,12 +718,13 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         limit: int = 20, offset: int = 0,
     ):
         rows = await pool.fetch(
-            """SELECT id, invoice_number, status, amount_idr, currency, description,
-                      provider, provider_payment_url, due_date, paid_at, created_at
+            """SELECT id, invoice_number, status, amount_idr, subtotal_idr, tax_idr,
+                      tax_rate, currency, description, provider, provider_payment_url,
+                      due_date, paid_at, created_at
                FROM invoices WHERE org_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
             user["org_id"], limit, offset,
         )
-        return {"invoices": [dict(r) for r in rows]}
+        return {"invoices": [dict(r) for r in rows], "tax": tax_invoice_meta()}
 
     @router.get("/invoices/by-number/{invoice_number}")
     async def get_invoice_by_number(
