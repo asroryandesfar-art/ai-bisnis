@@ -156,6 +156,36 @@ async def check_limit(pool: asyncpg.Pool, org_id: str, dimension: str) -> tuple[
     return used < limit_value, detail
 
 
+async def consume_conversation_quota(pool: asyncpg.Pool, org_id: str) -> tuple[bool, dict]:
+    """P1-5 — kuota percakapan dengan OVERAGE PRABAYAR via saldo top-up.
+
+    Urutan:
+      1. Masih dalam kuota paket → izinkan (source='plan', tanpa debit).
+      2. Lewat kuota TAPI ada saldo addon (top-up) → debit 1 percakapan dari
+         saldo lalu izinkan (source='addon' = overage). Ini yang membuat top-up
+         benar-benar TERPAKAI saat kuota habis (sebelumnya tidak pernah).
+      3. Kuota paket habis DAN saldo addon 0 → tolak (source='exhausted').
+
+    Dipanggil di jalur chat sebelum memproses percakapan (lihat bn_platform/chat.py).
+    """
+    ok, detail = await check_limit(pool, org_id, "conversations")
+    if ok:
+        detail["source"] = "plan"
+        return True, detail
+    addon = await get_addon_conversation_balance(pool, org_id)
+    if addon > 0:
+        await add_credits(
+            pool, org_id=org_id, conversations=-1, amount_idr=0, kind="debit",
+            description="Overage percakapan (dari saldo top-up)",
+        )
+        detail["source"] = "addon"
+        detail["addon_remaining"] = addon - 1
+        return True, detail
+    detail["source"] = "exhausted"
+    detail["addon_remaining"] = 0
+    return False, detail
+
+
 def _generate_invoice_number() -> str:
     now = datetime.now(timezone.utc)
     return f"INV-{now:%Y%m}-{uuid.uuid4().hex[:8].upper()}"

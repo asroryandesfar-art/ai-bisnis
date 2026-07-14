@@ -342,6 +342,7 @@ logger = logging.getLogger("botnesia")
 # Pola ini menghindari circular import: Phase 2 modules tidak boleh import
 # dari main.py, tapi main.py perlu panggil fungsi Phase 2 dari Phase 1 endpoints.
 _platform_check_limit = None   # (pool, org_id, dimension) → (bool, dict)
+_platform_consume_conversation = None  # P1-5: (pool, org_id) → (bool, detail); overage via top-up
 _platform_enqueue_handoff = None  # (pool, org_id, conv_id, reason, priority) → dict|None
 _platform_evaluate_handoff = None  # deterministic trigger evaluation
 _platform_write_audit = None   # (pool, org_id, actor_user_id, actor_email, action, ...) → None
@@ -4246,7 +4247,7 @@ except Exception as _e:
 # ═══════════════════════════════════════════════════════════════════════
 try:
     from bn_platform.rbac import make_permission_checker, build_rbac_router
-    from bn_platform.billing import build_billing_router, check_limit
+    from bn_platform.billing import build_billing_router, check_limit, consume_conversation_quota
     from bn_platform.handoff import build_handoff_router, enqueue_handoff, evaluate_handoff_trigger
     from bn_platform.omnichannel import build_omnichannel_router
     from bn_platform.lead_engine import build_lead_router
@@ -4287,6 +4288,7 @@ try:
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
     _platform_check_limit = check_limit
+    _platform_consume_conversation = consume_conversation_quota
     _platform_enqueue_handoff = enqueue_handoff
     _platform_evaluate_handoff = evaluate_handoff_trigger
     _platform_write_audit = _platform_audit_log_fn

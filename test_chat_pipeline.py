@@ -84,6 +84,7 @@ class FakePool:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main, "_platform_check_limit", None)
+    monkeypatch.setattr(main, "_platform_consume_conversation", None)
     # Force the supervisor pipeline path (not the opt-in DeepSeek-brain shortcut,
     # which would call a real API in envs where DEEPSEEK_BRAIN_ENABLED is set).
     monkeypatch.setattr(main.cfg, "deepseek_brain_enabled", False)

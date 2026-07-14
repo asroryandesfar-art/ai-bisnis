@@ -46,6 +46,7 @@ def _fake_rate_limiter(status):
 def client(monkeypatch):
     # Quota fallback path (no Phase 2 check_limit); rate limiter allows by default.
     monkeypatch.setattr(main, "_platform_check_limit", None)
+    monkeypatch.setattr(main, "_platform_consume_conversation", None)
     monkeypatch.setattr(main, "_rate_limiter", _fake_rate_limiter(main.LimitStatus.ALLOWED))
     c = TestClient(main.app)
     try:

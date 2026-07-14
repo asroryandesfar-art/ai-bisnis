@@ -73,14 +73,15 @@ def build_chat_router() -> APIRouter:
                 bot["org_id"], bot_id,
             )
 
-        # 2. Cek quota percakapan bulan ini (Phase 2: gunakan check_limit dari subscriptions/plans)
-        if main._platform_check_limit:
-            ok, detail = await main._platform_check_limit(pool, bot["org_id"], "conversations")
+        # 2. Cek quota percakapan bulan ini + OVERAGE prabayar via saldo top-up
+        # (P1-5: kalau kuota paket habis tapi ada saldo top-up, debit 1 & lanjut).
+        if main._platform_consume_conversation:
+            ok, detail = await main._platform_consume_conversation(pool, bot["org_id"])
             if not ok:
                 raise main.HTTPException(
                     429,
-                    f"Limit percakapan/bulan paket '{detail['plan']}' tercapai "
-                    f"({detail['used']}/{detail['limit']}). Upgrade di /api/billing/checkout.",
+                    f"Kuota percakapan paket '{detail['plan']}' dan saldo top-up habis "
+                    f"({detail['used']}/{detail['limit']}). Upgrade atau beli top-up di /api/billing.",
                 )
         else:
             conv_this_month = await pool.fetchval(
