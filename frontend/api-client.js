@@ -117,6 +117,7 @@ export const api = {
   updateMarketplaceTemplate: (key, data) => request(`/api/marketplace/templates/${key}`, { method: "PATCH", body: data }),
   publishMarketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}/publish`, { method: "POST" }),
   unpublishMarketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}/unpublish`, { method: "POST" }),
+  marketplaceEarnings: () => request("/api/marketplace/earnings"),
 
   transcribeAudio: (blob, filename = "recording.webm") => {
     const body = new FormData(); body.append("file", blob, filename);

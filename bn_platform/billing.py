@@ -495,6 +495,14 @@ async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str
             description=f"Top Up Percakapan Tambahan {label}",
             invoice_id=str(invoice["id"]),
         )
+    # Pembelian template marketplace berbayar → buat bot untuk pembeli + bagi
+    # hasil publisher (pola sama seperti top-up; lazy import cegah circular).
+    if isinstance(meta, dict) and meta.get("kind") == "marketplace_purchase":
+        try:
+            import bn_platform.marketplace as _mp
+            await _mp.complete_marketplace_purchase(pool, invoice=invoice, meta=meta)
+        except Exception:
+            logger.exception("marketplace purchase completion failed inv=%s", invoice.get("id"))
     await pool.execute(
         """INSERT INTO audit_logs (org_id, action, resource_type, resource_id, metadata)
            VALUES ($1, 'payment', 'invoice', $2, $3)""",

@@ -1243,6 +1243,23 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;",
         "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS submitted_by UUID;",
         "CREATE INDEX IF NOT EXISTS idx_mkt_templates_owner ON marketplace_templates(owner_org_id) WHERE owner_org_id IS NOT NULL;",
+        # Ledger pendapatan publisher template berbayar (payout disbursement =
+        # proses ops; entri di sini = kewajiban platform ke publisher).
+        """CREATE TABLE IF NOT EXISTS template_revenue_ledger (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            publisher_org_id UUID NOT NULL,
+            buyer_org_id UUID,
+            template_id UUID,
+            invoice_id UUID,
+            gross_idr BIGINT NOT NULL,
+            publisher_share_idr BIGINT NOT NULL,
+            platform_share_idr BIGINT NOT NULL,
+            revenue_share_pct NUMERIC(5,2) NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );""",
+        "CREATE INDEX IF NOT EXISTS idx_trev_publisher ON template_revenue_ledger(publisher_org_id, created_at DESC);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_trev_invoice ON template_revenue_ledger(invoice_id) WHERE invoice_id IS NOT NULL;",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url TEXT;",
         """
         CREATE TABLE IF NOT EXISTS knowledge_sources (

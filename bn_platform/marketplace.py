@@ -57,6 +57,7 @@ async def list_templates(pool: asyncpg.Pool) -> list[dict]:
         """SELECT id, key, category, name, description, preview_image, primary_color,
                   install_count, version, sample_faqs, icon, tools, knowledge_sources,
                   starter_questions, visibility, rating, popularity_score, created_at, updated_at,
+                  price_idr, is_paid,
                   CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
            FROM marketplace_templates
           WHERE is_active=TRUE AND status='published'
@@ -300,6 +301,149 @@ async def _fetch_install_by_template(pool: asyncpg.Pool, *, org_id: str, templat
     return dict(row) if row else None
 
 
+async def _do_install(pool: asyncpg.Pool, *, org_id: str, user_id: str,
+                      template: dict, bot_name: str | None = None) -> dict:
+    """Buat bot dari template + seed FAQ + catat install (bagian yang dijalankan
+    baik untuk install gratis maupun setelah pembayaran template berbayar)."""
+    name = bot_name or f"{template['name']} (dari Marketplace)"
+    bot = dict(await pool.fetchrow(
+        """INSERT INTO bots (org_id, name, status, primary_color, position, greeting,
+                             language, system_prompt, temperature)
+           VALUES ($1, $2, 'active', $3, 'bottom-right', $4, 'id', $5, 0.3)
+           RETURNING id, name, primary_color, greeting, system_prompt, status, created_at""",
+        org_id, name, template["primary_color"], template["greeting"], template["system_prompt"],
+    ))
+    seeded = await _seed_template_faqs(pool, bot_id=bot["id"], org_id=org_id, template=template)
+    install_row = await pool.fetchrow(
+        """INSERT INTO tenant_template_installs (org_id, template_id, bot_id, installed_by)
+           VALUES ($1, $2, $3, $4) RETURNING id, installed_at""",
+        org_id, template["id"], bot["id"], user_id,
+    )
+    await pool.execute("UPDATE marketplace_templates SET install_count = install_count + 1 WHERE id=$1", template["id"])
+    await pool.execute(
+        """INSERT INTO agent_installs (org_id, agent_id, template_id, bot_id, installed_by, status)
+           SELECT $1, a.id, $2, $3, $4, 'active' FROM agents a WHERE a.template_id=$2
+           ON CONFLICT DO NOTHING""",
+        org_id, template["id"], bot["id"], user_id,
+    )
+    await write_audit_log(
+        pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="create",
+        resource_type="marketplace_install", resource_id=str(install_row["id"]),
+        metadata={"template_key": template["key"], "bot_id": str(bot["id"]), "faqs_seeded": seeded},
+    )
+    return {
+        "install_id": str(install_row["id"]), "installed_at": install_row["installed_at"],
+        "template_key": template["key"], "template_version": template["version"],
+        "bot": bot, "faqs_seeded": seeded, "status": bot["status"],
+    }
+
+
+async def record_template_revenue(pool: asyncpg.Pool, *, publisher_org_id: str,
+                                  buyer_org_id: str, template_id: str, invoice_id: str,
+                                  gross_idr: int, revenue_share_pct: float) -> None:
+    """Catat bagi hasil publisher (idempoten per invoice). status='pending' =
+    kewajiban platform ke publisher (disbursement = proses ops terpisah)."""
+    pub_share = round(gross_idr * float(revenue_share_pct) / 100.0)
+    await pool.execute(
+        """INSERT INTO template_revenue_ledger
+             (publisher_org_id, buyer_org_id, template_id, invoice_id, gross_idr,
+              publisher_share_idr, platform_share_idr, revenue_share_pct, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
+           ON CONFLICT (invoice_id) WHERE invoice_id IS NOT NULL DO NOTHING""",
+        publisher_org_id, buyer_org_id, template_id, invoice_id,
+        gross_idr, pub_share, gross_idr - pub_share, revenue_share_pct,
+    )
+
+
+async def complete_marketplace_purchase(pool: asyncpg.Pool, *, invoice: dict, meta: dict) -> None:
+    """Dipanggil webhook saat invoice pembelian template LUNAS: buat bot dari
+    template untuk pembeli + catat bagi hasil publisher."""
+    template = await get_owned_template_by_id(pool, template_id=meta.get("template_id"))
+    if not template:
+        return
+    buyer_org = str(invoice["org_id"])
+    # Cegah dobel kalau webhook retry (install sudah ada untuk template ini).
+    already = await _fetch_install_by_template(pool, org_id=buyer_org, template_id=template["id"])
+    if not already:
+        await _do_install(pool, org_id=buyer_org, user_id=str(meta.get("buyer_user_id") or ""),
+                          template=template, bot_name=meta.get("bot_name"))
+    if template.get("owner_org_id"):
+        await record_template_revenue(
+            pool, publisher_org_id=str(template["owner_org_id"]), buyer_org_id=buyer_org,
+            template_id=str(template["id"]), invoice_id=str(invoice["id"]),
+            gross_idr=int(invoice["amount_idr"]),
+            revenue_share_pct=float(template.get("revenue_share_pct") or 0),
+        )
+
+
+async def get_owned_template_by_id(pool: asyncpg.Pool, *, template_id: str) -> dict | None:
+    row = await pool.fetchrow(
+        """SELECT id, key, name, category, system_prompt, greeting, primary_color, version,
+                  sample_faqs, owner_org_id, revenue_share_pct, is_paid, price_idr
+             FROM marketplace_templates WHERE id=$1""",
+        template_id,
+    )
+    return dict(row) if row else None
+
+
+async def publisher_earnings(pool: asyncpg.Pool, org_id: str) -> dict:
+    rows = await pool.fetch(
+        """SELECT id, gross_idr, publisher_share_idr, platform_share_idr, status,
+                  buyer_org_id, template_id, invoice_id, created_at
+             FROM template_revenue_ledger WHERE publisher_org_id=$1
+            ORDER BY created_at DESC LIMIT 100""",
+        org_id,
+    )
+    total = sum(int(r["publisher_share_idr"]) for r in rows)
+    pending = sum(int(r["publisher_share_idr"]) for r in rows if r["status"] == "pending")
+    return {
+        "total_earned_idr": total,
+        "pending_payout_idr": pending,
+        "sales_count": len(rows),
+        "entries": [dict(r) for r in rows],
+    }
+
+
+async def create_paid_install(pool: asyncpg.Pool, *, org_id: str, user: dict,
+                              template: dict, bot_name: str | None, provider: str = "midtrans") -> dict:
+    """Template berbayar: buat invoice (metadata kind='marketplace_purchase') lalu
+    mulai pembayaran. Bot BARU dibuat setelah LUNAS (via webhook →
+    complete_marketplace_purchase). provider='local' menyelesaikan langsung (dev)."""
+    import bn_platform.billing as billing
+    from .config import cfg as pcfg
+    price = int(template["price_idr"])
+    inv = await billing.create_invoice(
+        pool, org_id=org_id, subscription_id=None, amount_idr=price,
+        description=f"Beli template marketplace: {template['name']}",
+        provider=("manual" if provider == "local" else provider),
+    )
+    meta = {"kind": "marketplace_purchase", "template_id": str(template["id"]),
+            "template_key": template["key"], "buyer_user_id": str(user["id"]), "bot_name": bot_name}
+    await pool.execute("UPDATE invoices SET metadata = metadata || $2::jsonb WHERE id=$1",
+                       inv["id"], json.dumps(meta))
+    if provider == "local":
+        if not pcfg.local_billing_enabled:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Billing lokal dinonaktifkan")
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                inv2 = dict(await conn.fetchrow("SELECT * FROM invoices WHERE id=$1 FOR UPDATE", inv["id"]))
+                await billing._mark_invoice_paid(
+                    conn, inv2, provider="manual",
+                    provider_tx_id=f"local-{inv['invoice_number']}",
+                    payment_method="local-development",
+                    raw_payload={"mode": "local", "kind": "marketplace_purchase"},
+                )
+        return {"requires_payment": False, "paid": True, "invoice_number": inv["invoice_number"],
+                "template_key": template["key"]}
+    org = await pool.fetchrow("SELECT name FROM organizations WHERE id=$1", org_id)
+    result = await billing.midtrans_create_transaction(
+        order_id=inv["invoice_number"], amount_idr=price,
+        customer_name=(org["name"] if org else "Customer"), customer_email=user.get("email") or "",
+    )
+    return {"requires_payment": True, "redirect_url": result["redirect_url"],
+            "invoice_number": inv["invoice_number"], "template_key": template["key"]}
+
+
 async def install_template(pool: asyncpg.Pool, *, org_id: str, user_id: str,
                            template_key: str, bot_name: str | None = None) -> dict:
     template = await get_template(pool, template_key)
@@ -330,45 +474,7 @@ async def install_template(pool: asyncpg.Pool, *, org_id: str, user_id: str,
             "status": bot["status"],
         }
 
-    name = bot_name or f"{template['name']} (dari Marketplace)"
-    bot_row = await pool.fetchrow(
-        """INSERT INTO bots (org_id, name, status, primary_color, position, greeting,
-                             language, system_prompt, temperature)
-           VALUES ($1, $2, 'active', $3, 'bottom-right', $4, 'id', $5, 0.3)
-           RETURNING id, name, primary_color, greeting, system_prompt, status, created_at""",
-        org_id, name, template["primary_color"], template["greeting"], template["system_prompt"],
-    )
-    bot = dict(bot_row)
-
-    seeded = await _seed_template_faqs(pool, bot_id=bot["id"], org_id=org_id, template=template)
-
-    install_row = await pool.fetchrow(
-        """INSERT INTO tenant_template_installs (org_id, template_id, bot_id, installed_by)
-           VALUES ($1, $2, $3, $4) RETURNING id, installed_at""",
-        org_id, template["id"], bot["id"], user_id,
-    )
-    await pool.execute("UPDATE marketplace_templates SET install_count = install_count + 1 WHERE id=$1", template["id"])
-    await pool.execute(
-        """INSERT INTO agent_installs (org_id, agent_id, template_id, bot_id, installed_by, status)
-           SELECT $1, a.id, $2, $3, $4, 'active'
-             FROM agents a WHERE a.template_id=$2
-           ON CONFLICT DO NOTHING""",
-        org_id, template["id"], bot["id"], user_id,
-    )
-    await write_audit_log(
-        pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="create",
-        resource_type="marketplace_install", resource_id=str(install_row["id"]),
-        metadata={"template_key": template_key, "bot_id": str(bot["id"]), "faqs_seeded": seeded},
-    )
-    return {
-        "install_id": str(install_row["id"]),
-        "installed_at": install_row["installed_at"],
-        "template_key": template_key,
-        "template_version": template["version"],
-        "bot": bot,
-        "faqs_seeded": seeded,
-        "status": bot["status"],
-    }
+    return await _do_install(pool, org_id=org_id, user_id=user_id, template=template, bot_name=bot_name)
 
 
 async def list_installs(pool: asyncpg.Pool, org_id: str) -> list[dict]:
@@ -560,6 +666,7 @@ async def supervisor_route(pool: asyncpg.Pool, message: str) -> dict:
 class InstallReq(BaseModel):
     template_key: str
     bot_name: str | None = None
+    provider: str = "midtrans"  # 'midtrans' | 'xendit' | 'local' (template berbayar)
 
 
 class InstallUpdateReq(BaseModel):
@@ -619,16 +726,23 @@ def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         user: Annotated[dict, Depends(require_permission("marketplace.install"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        if check_limit:
-            existing = await _fetch_install_by_template(pool, org_id=user["org_id"], template_id=(await get_template(pool, body.template_key) or {}).get("id"))
-            if not existing:
-                ok, detail = await check_limit(pool, user["org_id"], "agents")
-                if not ok:
-                    raise HTTPException(
-                        status.HTTP_402_PAYMENT_REQUIRED,
-                        f"Limit jumlah AI agent paket '{detail['plan']}' tercapai "
-                        f"({detail['used']}/{detail['limit']}). Upgrade paket untuk menambah agent.",
-                    )
+        template = await get_template(pool, body.template_key)
+        if not template:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Template '{body.template_key}' tidak ditemukan")
+        existing = await _fetch_install_by_template(pool, org_id=user["org_id"], template_id=template["id"])
+        # Quota agent hanya untuk install BARU.
+        if check_limit and not existing:
+            ok, detail = await check_limit(pool, user["org_id"], "agents")
+            if not ok:
+                raise HTTPException(
+                    status.HTTP_402_PAYMENT_REQUIRED,
+                    f"Limit jumlah AI agent paket '{detail['plan']}' tercapai "
+                    f"({detail['used']}/{detail['limit']}). Upgrade paket untuk menambah agent.",
+                )
+        # Template BERBAYAR & belum pernah dibeli → bayar dulu (bot dibuat setelah lunas).
+        if not existing and template.get("is_paid") and int(template.get("price_idr") or 0) > 0:
+            return await create_paid_install(pool, org_id=user["org_id"], user=user,
+                                             template=template, bot_name=body.bot_name, provider=body.provider)
         return await install_template(pool, org_id=user["org_id"], user_id=user["id"],
                                        template_key=body.template_key, bot_name=body.bot_name)
 
@@ -733,5 +847,12 @@ def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         return await set_template_status(pool, org_id=user["org_id"], user_id=user["id"], key=key, publish=False)
+
+    @router.get("/earnings")
+    async def get_earnings(
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await publisher_earnings(pool, user["org_id"])
 
     return router

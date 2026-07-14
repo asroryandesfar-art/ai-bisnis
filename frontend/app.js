@@ -610,9 +610,11 @@ async function renderMarketplace() {
     };
   } catch (error) { setPage(errorState(error.message)); return; }
 
-  // Publisher: template milik org (toleran — 403 utk non-publisher).
+  // Publisher: template milik org + earnings (toleran — 403 utk non-publisher).
   try { state.marketplace.myTemplates = (await api.marketplaceMyTemplates()).templates || []; }
   catch { state.marketplace.myTemplates = []; }
+  try { state.marketplace.earnings = await api.marketplaceEarnings(); }
+  catch { state.marketplace.earnings = null; }
 
   state.marketplaceFilters ||= { search:"", category:"" };
   const filters = state.marketplaceFilters;
@@ -644,7 +646,7 @@ async function renderMarketplace() {
       <div class="marketplace-agent-meta"><span>★ ${Number(template.rating || 0).toFixed(1)}</span><span>${formatNumber(template.install_count || 0)} installs</span><span>v${esc(template.version || '1.0.0')}</span></div>
       <div class="marketplace-tool-tags">${tools || '<span>knowledge base</span><span>prompt</span><span>workflow</span>'}</div>
       ${starters ? `<ul class="marketplace-starters">${starters}</ul>` : ''}
-      <div class="marketplace-agent-actions"><span class="status-badge ${installed ? 'active' : 'ready'}">${installed ? 'Installed' : 'Available'}</span><div>${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-action="marketplace-install" data-marketplace-install="${esc(template.key)}">Install</button>`}</div></div>
+      <div class="marketplace-agent-actions"><span class="status-badge ${installed ? 'active' : template.is_paid ? 'pending' : 'ready'}">${installed ? 'Installed' : template.is_paid ? idr(template.price_idr) : 'Gratis'}</span><div>${installed ? `<button class="button" data-marketplace-update="${esc(install.id)}">Update</button><button class="button button-danger" data-marketplace-uninstall="${esc(install.id)}">Uninstall</button>` : `<button class="button button-primary" data-action="marketplace-install" data-marketplace-install="${esc(template.key)}">${template.is_paid ? 'Beli' : 'Install'}</button>`}</div></div>
     </article>`;
   };
 
@@ -670,7 +672,13 @@ async function renderMarketplace() {
         : `<button class="button button-primary" data-mkt-publish="${esc(t.key)}">Publish</button>`}
       <button class="button" data-mkt-edit="${esc(t.key)}">Edit</button>
     </div></td></tr>`).join('');
-  const myTemplatesSection = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Template Saya</h3><span class="subtle" style="font-size:9px">Buat & publish agent template Anda sendiri ke marketplace</span></div><button class="button button-primary" data-action="mkt-create">+ Buat Template</button></div>${myRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Harga</th><th>Status</th><th>Install</th><th>Aksi</th></tr></thead><tbody>${myRows}</tbody></table></div>` : emptyState("Belum ada template buatan Anda","Klik “Buat Template” untuk membuat & publish agent Anda sendiri.")}</div>`;
+  const earn = state.marketplace?.earnings;
+  const earningsBar = earn ? `<div style="display:flex;gap:24px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px">
+    <div><span class="subtle">Total pendapatan</span><br><b style="font-size:15px">${idr(earn.total_earned_idr || 0)}</b></div>
+    <div><span class="subtle">Menunggu payout</span><br><b style="font-size:15px">${idr(earn.pending_payout_idr || 0)}</b></div>
+    <div><span class="subtle">Terjual</span><br><b style="font-size:15px">${formatNumber(earn.sales_count || 0)}</b></div>
+  </div>` : '';
+  const myTemplatesSection = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Template Saya</h3><span class="subtle" style="font-size:9px">Buat & publish agent template Anda sendiri ke marketplace · bagi hasil 70% publisher</span></div><button class="button button-primary" data-action="mkt-create">+ Buat Template</button></div>${earningsBar}${myRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Harga</th><th>Status</th><th>Install</th><th>Aksi</th></tr></thead><tbody>${myRows}</tbody></table></div>` : emptyState("Belum ada template buatan Anda","Klik “Buat Template” untuk membuat & publish agent Anda sendiri.")}</div>`;
 
   setPage(`${pageHeader("Agent Marketplace","Pasang agent siap pakai, tambahkan knowledge, dan biarkan Supervisor Routing memilih spesialis terbaik.",actions)}${hero}<div class="marketplace-chips"><button class="marketplace-chip ${!filters.category?'active':''}" data-marketplace-category="">${icon('marketplace',15)}<span>Semua</span><span class="chip-count">${formatNumber(templates.length)}</span></button>${categoryCards}</div>${featuredSection}${catalogSection}${myTemplatesSection}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent terpasang</h3><span class="subtle" style="font-size:9px">Kelola install per-tenant</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Kategori</th><th>Status</th><th>Bot</th><th>Dipasang</th><th>Aksi</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("Belum ada agent terpasang","Pasang template untuk membuat AI agent pertama Anda.")}</div>`);
 }
@@ -3084,9 +3092,16 @@ async function submitMarketplaceInstall() {
   const button = el('[data-action="submit-marketplace-install"]');
   if (button) { button.disabled = true; button.textContent = "Installing..."; }
   try {
-    await api.installMarketplaceTemplate(templateKey, botName);
+    const res = await api.installMarketplaceTemplate(templateKey, botName);
+    // Template berbayar: arahkan ke pembayaran; bot dibuat setelah lunas.
+    if (res && res.requires_payment && res.redirect_url) {
+      el("#modal-root").innerHTML = "";
+      toast("Mengarahkan ke pembayaran…", "success");
+      location.href = res.redirect_url;
+      return;
+    }
     el("#modal-root").innerHTML = "";
-    toast("Agent marketplace installed.", "success");
+    toast(res && res.paid ? "Template berbayar dibeli & terpasang." : "Agent marketplace installed.", "success");
     await renderMarketplace();
     await loadCore();
   } catch (error) {
