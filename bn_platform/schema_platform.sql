@@ -194,6 +194,21 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_monthly_idr BIGI
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_yearly_idr  BIGINT;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_locked_at TIMESTAMPTZ;
 
+-- Add-on kapasitas (P2): pembelian tambahan slot agent/anggota/channel/dokumen
+-- knowledge di atas limit paket. quantity = total unit kapasitas tambahan untuk
+-- dimensi tsb; check_limit menjumlahkan ini ke limit plan. Satu baris per
+-- (org, addon_key); pembelian ulang menambah quantity.
+CREATE TABLE IF NOT EXISTS org_addons (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    addon_key  TEXT NOT NULL,     -- 'extra_agents' | 'extra_users' | 'extra_channels' | 'extra_knowledge'
+    dimension  TEXT NOT NULL,     -- dimensi limit yang ditambah (LIMIT_FIELDS key)
+    quantity   INT  NOT NULL DEFAULT 0,   -- total unit kapasitas tambahan
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, addon_key)
+);
+CREATE INDEX IF NOT EXISTS idx_org_addons_org ON org_addons(org_id);
+
 CREATE TABLE IF NOT EXISTS invoices (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

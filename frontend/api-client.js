@@ -202,6 +202,10 @@ export const api = {
   topupCredits: (amountIdr, provider = "midtrans") => request("/api/billing/credits/topup", {
     method: "POST", body: { amount_idr: amountIdr, provider },
   }),
+  addons: () => request("/api/billing/addons"),
+  checkoutAddon: (addonKey, quantity = 1, provider = "midtrans") => request("/api/billing/addons/checkout", {
+    method: "POST", body: { addon_key: addonKey, quantity, provider },
+  }),
 
   inbox: (params = {}) => request(`/api/inbox${encodeQuery(params)}`),
   inboxSummary: () => request("/api/inbox/summary"),

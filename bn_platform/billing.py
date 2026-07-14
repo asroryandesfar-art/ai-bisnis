@@ -181,10 +181,14 @@ async def check_limit(pool: asyncpg.Pool, org_id: str, dimension: str) -> tuple[
     limit_value = sub[LIMIT_FIELDS[dimension]]
     usage = await current_usage(pool, org_id)
     used = usage[dimension]
-    detail = {"plan": sub["plan_key"], "dimension": dimension, "used": used, "limit": limit_value}
     if limit_value == -1:
-        return True, detail
-    return used < limit_value, detail
+        return True, {"plan": sub["plan_key"], "dimension": dimension, "used": used, "limit": -1}
+    # Add-on kapasitas: unit yang dibeli menaikkan limit efektif dimensi ini.
+    addon_extra = await get_addon_capacity(pool, org_id, dimension)
+    effective_limit = limit_value + addon_extra
+    detail = {"plan": sub["plan_key"], "dimension": dimension, "used": used,
+              "limit": effective_limit, "plan_limit": limit_value, "addon_extra": addon_extra}
+    return used < effective_limit, detail
 
 
 async def consume_conversation_quota(pool: asyncpg.Pool, org_id: str) -> tuple[bool, dict]:
@@ -282,6 +286,54 @@ async def add_credits(pool: asyncpg.Pool, *, org_id: str, conversations: int,
         org_id, conversations,
     )
     return dict(row)
+
+
+# ============================================================
+# ADD-ON KAPASITAS (P2)
+# ============================================================
+# Pembelian tambahan kapasitas di atas limit paket. Bayar satu kali → kapasitas
+# menetap (tak ada auto-renew engine; recurring = follow-up). unit = besar 1
+# pembelian untuk dimensi tsb. Dimensi 'conversations' TIDAK di sini — itu
+# ditangani top-up/overage (consume_conversation_quota).
+ADDON_CATALOG = [
+    {"key": "extra_agents",    "dimension": "agents",    "unit": 1,  "price_idr": 49_000,  "label": "Agent Tambahan"},
+    {"key": "extra_users",     "dimension": "users",     "unit": 1,  "price_idr": 39_000,  "label": "Anggota Tim Tambahan"},
+    {"key": "extra_channels",  "dimension": "channels",  "unit": 1,  "price_idr": 59_000,  "label": "Channel Tambahan"},
+    {"key": "extra_knowledge", "dimension": "knowledge", "unit": 50, "price_idr": 49_000,  "label": "Paket 50 Dokumen Knowledge"},
+]
+_ADDON_BY_KEY: dict = {a["key"]: a for a in ADDON_CATALOG}
+
+
+async def get_addon_capacity(pool: asyncpg.Pool, org_id: str, dimension: str) -> int:
+    """Total unit kapasitas add-on aktif untuk sebuah dimensi limit."""
+    val = await pool.fetchval(
+        "SELECT COALESCE(SUM(quantity), 0) FROM org_addons WHERE org_id=$1 AND dimension=$2",
+        org_id, dimension,
+    )
+    return int(val or 0)
+
+
+async def get_org_addons(pool: asyncpg.Pool, org_id: str) -> dict:
+    """Map addon_key → {dimension, quantity} yang dimiliki org."""
+    rows = await pool.fetch(
+        "SELECT addon_key, dimension, quantity FROM org_addons WHERE org_id=$1", org_id,
+    )
+    return {r["addon_key"]: {"dimension": r["dimension"], "quantity": int(r["quantity"])} for r in rows}
+
+
+async def grant_addon(pool: asyncpg.Pool, *, org_id: str, addon_key: str, units: int) -> None:
+    """Tambah `units` kapasitas untuk add-on (idempoten per pembayaran via invoice)."""
+    spec = _ADDON_BY_KEY.get(addon_key)
+    if not spec:
+        raise ValueError(f"addon_key tidak dikenal: {addon_key}")
+    await pool.execute(
+        """INSERT INTO org_addons (org_id, addon_key, dimension, quantity, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (org_id, addon_key) DO UPDATE SET
+               quantity = org_addons.quantity + EXCLUDED.quantity,
+               updated_at = NOW()""",
+        org_id, addon_key, spec["dimension"], units,
+    )
 
 
 def compute_invoice_tax(amount_idr: int) -> tuple[int, int, float]:
@@ -547,6 +599,12 @@ async def _mark_invoice_paid(pool: asyncpg.Pool, invoice: dict, *, provider: str
             await _mp.complete_marketplace_purchase(pool, invoice=invoice, meta=meta)
         except Exception:
             logger.exception("marketplace purchase completion failed inv=%s", invoice.get("id"))
+    # Add-on kapasitas → tambahkan unit ke org_addons (pola sama seperti top-up).
+    if isinstance(meta, dict) and meta.get("kind") == "addon_purchase":
+        await grant_addon(
+            pool, org_id=invoice["org_id"],
+            addon_key=meta["addon_key"], units=int(meta["units"]),
+        )
     await pool.execute(
         """INSERT INTO audit_logs (org_id, action, resource_type, resource_id, metadata)
            VALUES ($1, 'payment', 'invoice', $2, $3)""",
@@ -571,6 +629,12 @@ class TopupReq(BaseModel):
     provider:   str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
 
 
+class AddonCheckoutReq(BaseModel):
+    addon_key: str
+    quantity:  int = Field(default=1, ge=1, le=100)
+    provider:  str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
+
+
 class CancelReq(BaseModel):
     at_period_end: bool = True
 
@@ -591,7 +655,13 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
     ):
         sub = await ensure_subscription(pool, user["org_id"])
         usage = await current_usage(pool, user["org_id"])
-        limits = {dim: sub[field] for dim, field in LIMIT_FIELDS.items()}
+        addons = await get_org_addons(pool, user["org_id"])
+        # Limit efektif = limit paket + kapasitas add-on (unlimited tetap -1).
+        limits = {}
+        for dim, field in LIMIT_FIELDS.items():
+            base = sub[field]
+            extra = sum(a["quantity"] for a in addons.values() if a["dimension"] == dim)
+            limits[dim] = base if base == -1 else base + extra
         cycle = sub.get("billing_cycle") or "monthly"
         # Grandfathering: harga efektif (locked bila ada) + harga live plan untuk
         # ditampilkan sebagai referensi (strikethrough) + flag badge di UI.
@@ -603,7 +673,7 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             "list_price_yearly_idr": int(sub.get("price_yearly_idr") or 0),
             "is_grandfathered": is_grandfathered(sub, cycle),
         }
-        return {"subscription": sub, "usage": usage, "limits": limits}
+        return {"subscription": sub, "usage": usage, "limits": limits, "addons": addons}
 
     @router.get("/usage")
     async def get_usage(
@@ -932,6 +1002,101 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
             "invoice_number": invoice["invoice_number"],
             "amount_idr": body.amount_idr,
             "conversations_pending": conv_count,
+            "provider": body.provider,
+            "redirect_url": redirect_url,
+        }
+
+    # ── Add-on kapasitas ───────────────────────────────────────
+    @router.get("/addons")
+    async def get_addons(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return {"catalog": ADDON_CATALOG, "owned": await get_org_addons(pool, user["org_id"])}
+
+    @router.post("/addons/checkout", status_code=status.HTTP_201_CREATED)
+    async def checkout_addon(
+        body: AddonCheckoutReq,
+        user: Annotated[dict, Depends(require_permission("billing.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        spec = _ADDON_BY_KEY.get(body.addon_key)
+        if not spec:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Add-on tidak dikenal. Pilihan: {sorted(_ADDON_BY_KEY)}",
+            )
+        units = spec["unit"] * body.quantity          # total unit kapasitas ditambahkan
+        amount = spec["price_idr"] * body.quantity
+        label = f"{spec['label']} ×{body.quantity}" if body.quantity > 1 else spec["label"]
+        sub = await ensure_subscription(pool, user["org_id"])
+        invoice = await create_invoice(
+            pool, org_id=user["org_id"], subscription_id=sub["id"], amount_idr=amount,
+            description=f"Add-on Kapasitas: {label}",
+            provider=("manual" if body.provider == "local" else body.provider),
+        )
+        await pool.execute(
+            "UPDATE invoices SET metadata = metadata || $2::jsonb WHERE id=$1",
+            invoice["id"], json.dumps({"kind": "addon_purchase", "addon_key": body.addon_key,
+                                       "units": units, "quantity": body.quantity}),
+        )
+
+        org = await pool.fetchrow("SELECT name FROM organizations WHERE id=$1", user["org_id"])
+        customer_name = (org["name"] if org else None) or user.get("full_name") or "Customer"
+        customer_email = user.get("email") or ""
+
+        if body.provider == "local":
+            if not platform_cfg.local_billing_enabled:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Billing lokal dinonaktifkan")
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    inv = dict(await conn.fetchrow(
+                        "SELECT * FROM invoices WHERE id=$1 FOR UPDATE", invoice["id"],
+                    ))
+                    # grant_addon dijalankan di _mark_invoice_paid (branch addon_purchase).
+                    await _mark_invoice_paid(
+                        conn, inv, provider="manual",
+                        provider_tx_id=f"local-{inv['invoice_number']}",
+                        payment_method="local-development",
+                        raw_payload={"mode": "local", "approved_by": user.get("email")},
+                    )
+            return {
+                "requires_payment": False,
+                "local": True,
+                "addon_key": body.addon_key,
+                "units_added": units,
+                "owned": await get_org_addons(pool, user["org_id"]),
+                "invoice_id": str(invoice["id"]),
+            }
+
+        if body.provider == "midtrans":
+            result = await midtrans_create_transaction(
+                order_id=invoice["invoice_number"], amount_idr=amount,
+                customer_name=customer_name, customer_email=customer_email,
+            )
+            redirect_url = result["redirect_url"]
+            provider_id = invoice["invoice_number"]
+        else:
+            result = await xendit_create_invoice(
+                external_id=invoice["invoice_number"], amount_idr=amount,
+                customer_name=customer_name, customer_email=customer_email,
+                description=invoice["description"],
+            )
+            redirect_url = result["invoice_url"]
+            provider_id = result["id"]
+
+        await pool.execute(
+            "UPDATE invoices SET provider_invoice_id=$1, provider_payment_url=$2 WHERE id=$3",
+            provider_id, redirect_url, invoice["id"],
+        )
+        return {
+            "requires_payment": True,
+            "invoice_id": str(invoice["id"]),
+            "invoice_number": invoice["invoice_number"],
+            "amount_idr": amount,
+            "addon_key": body.addon_key,
+            "units_pending": units,
             "provider": body.provider,
             "redirect_url": redirect_url,
         }

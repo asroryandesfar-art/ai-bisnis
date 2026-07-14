@@ -2236,12 +2236,13 @@ async function resolveBillingPaymentBanner() {
 async function renderBilling() {
   loadingPage(t('billing.title'), t('billing.subtitle'));
   const paymentBanner = await resolveBillingPaymentBanner();
-  const [plansResult, subResult, usageResult, invoicesResult, creditsResult] = await Promise.all([
+  const [plansResult, subResult, usageResult, invoicesResult, creditsResult, addonsResult] = await Promise.all([
     cachedSettle("plans", () => api.plans(), 300),
     cachedSettle("subscription", () => api.subscription(), 120),
     cachedSettle("usage", () => api.usage(), 45),
     cachedSettle("invoices", () => api.invoices(), 60),
     settle("credits", api.credits()),
+    cachedSettle("addons", () => api.addons(), 120),
   ]);
   state.plans = plansResult.ok ? plansResult.data.plans || [] : [];
   state.salesEmail = (plansResult.ok && plansResult.data.sales_email) || 'sales@botnesia.id';
@@ -2250,6 +2251,7 @@ async function renderBilling() {
   state.channelUsage = usageResult.ok ? usageResult.data.channel_usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
   const credits = creditsResult.ok ? creditsResult.data : { addon_conversation_balance: 0, topup_packages: [], history: [] };
+  const addonsData = addonsResult.ok ? addonsResult.data : { catalog: [], owned: {} };
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
   const currentStatus = state.subscription?.subscription?.status || state.org?.billing_status || 'active';
   const isTrial = state.subscription?.subscription?.is_free_trial || currentStatus === 'trialing';
@@ -2422,6 +2424,33 @@ async function renderBilling() {
     }
   </div>`;
 
+  // ── Add-on kapasitas section ────────────────────────────────────────────
+  // Beli slot agent/anggota/channel/dokumen tambahan di atas limit paket.
+  const addonCatalog = addonsData.catalog || [];
+  const addonOwned = addonsData.owned || {};
+  const addonCards = addonCatalog.map(a => {
+    const owned = Number(addonOwned[a.key]?.quantity || 0);
+    const nameKey = `billing.addon.${a.key}`;
+    const name = t(nameKey) !== nameKey ? t(nameKey) : a.label;
+    const unitNote = a.unit > 1 ? ` · +${formatNumber(a.unit)}/${t('billing.addon_unit')}` : '';
+    const ownedNote = owned > 0
+      ? `<div style="font-size:11px;color:#2e9e73;margin-top:4px">${t('billing.addon_owned')}: +${formatNumber(owned)}</div>` : '';
+    return `<div class="card" style="padding:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">${esc(name)}</div>
+      <div class="billing-plan-price" style="margin:0 0 10px"><strong style="font-size:20px">${idr(a.price_idr)}</strong><span>${unitNote}</span></div>
+      <button class="button button-primary" style="width:100%;font-size:12px" data-addon-buy="${esc(a.key)}">${t('billing.addon_buy')}</button>
+      ${ownedNote}
+    </div>`;
+  }).join('');
+  const addonSection = addonCatalog.length ? `
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-head"><h3>${t('billing.addons_title')}</h3></div>
+    <div style="padding:0 20px 20px">
+      <p style="font-size:12px;color:var(--text-2);margin:0 0 14px">${t('billing.addons_desc')}</p>
+      <div class="grid grid-4" style="gap:12px">${addonCards}</div>
+    </div>
+  </div>` : '';
+
   // ── Usage section ───────────────────────────────────────────────────────
   const usageEntries = Object.entries(state.usage || {});
   const usageHtml = usageEntries.length ? usageEntries.map(([key, item]) => {
@@ -2478,6 +2507,7 @@ async function renderBilling() {
   ${enterpriseCard ? `<div style="margin-top:8px">${enterpriseCard}</div>` : ''}
   ${pricingNote}
   ${creditSection}
+  ${addonSection}
   <div class="grid grid-2">
     <div class="card">
       <div class="card-head"><h3>${t('billing.usage_title')}</h3><span class="subtle mono" style="font-size:9px">${esc(currentKey.toUpperCase())}</span></div>
@@ -3611,6 +3641,25 @@ async function topupCredits(amountIdr, convCountRaw) {
   catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
+async function buyAddon(addonKey) {
+  // Ambil spesifikasi add-on dari cache /addons (nama + harga) untuk konfirmasi.
+  const cat = (_cache.get("addons")?.data?.catalog || []).find(a => a.key === addonKey);
+  const nameKey = `billing.addon.${addonKey}`;
+  const name = (cat && t(nameKey) !== nameKey) ? t(nameKey) : (cat?.label || addonKey);
+  const priceLabel = cat ? `Rp${Number(cat.price_idr).toLocaleString('id-ID')}` : '';
+  if (!confirm(`${t('billing.addon_confirm')} ${name}${priceLabel ? ` — ${priceLabel}` : ''}?`)) return;
+  try {
+    const result = await api.checkoutAddon(addonKey, 1, "midtrans");
+    bustCache("addons", "subscription", "usage");
+    if (result.redirect_url) location.href = result.redirect_url;
+    else {
+      toast(`✓ ${name} ${t('billing.addon_added')}`, "success");
+      await renderBilling();
+    }
+  }
+  catch(error){ toast(humanizeCheckoutError(error), "error"); }
+}
+
 async function sendPlayground(form) {
   if (!form || form.dataset.sending === "true") return;
   const input = form.elements.message;
@@ -3828,6 +3877,7 @@ document.addEventListener("click", async (event) => {
   }
   const trialPlan=event.target.closest("[data-checkout-trial]"); if(trialPlan){ await checkout(trialPlan.dataset.checkoutTrial, true); return; }
   const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup, topup.dataset.topupConv); return; }
+  const addonBuy=event.target.closest("[data-addon-buy]"); if(addonBuy){ await buyAddon(addonBuy.dataset.addonBuy); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();
   if(action==="finance-new-expense") await createExpensePrompt();
   if(action==="finance-ask-ai") await askFinanceAiPrompt();

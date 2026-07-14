@@ -1238,6 +1238,18 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_monthly_idr BIGINT;",
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_price_yearly_idr BIGINT;",
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_locked_at TIMESTAMPTZ;",
+        # Add-on kapasitas: slot agent/anggota/channel/dokumen tambahan di atas
+        # limit paket. quantity dijumlahkan ke limit plan di check_limit.
+        """CREATE TABLE IF NOT EXISTS org_addons (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            addon_key TEXT NOT NULL,
+            dimension TEXT NOT NULL,
+            quantity INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (org_id, addon_key)
+        );""",
+        "CREATE INDEX IF NOT EXISTS idx_org_addons_org ON org_addons(org_id);",
         # Marketplace publisher layer: kepemilikan + lifecycle publish + monetisasi.
         # owner_org_id NULL = template platform (seeded). status default 'published'
         # supaya 170 template lama tetap tampil; template baru mulai 'draft'.
