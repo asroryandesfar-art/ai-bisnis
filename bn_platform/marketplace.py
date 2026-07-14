@@ -522,36 +522,28 @@ async def uninstall_install(pool: asyncpg.Pool, *, org_id: str, user_id: str, in
     install = await _fetch_install(pool, org_id=org_id, install_id=install_id)
     if not install:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Instalasi tidak ditemukan")
-    bot = await pool.fetchrow(
-        """UPDATE bots
-              SET status='inactive', updated_at=NOW()
-            WHERE id=$1 AND org_id=$2
-         RETURNING id, name, status, primary_color, greeting, system_prompt, created_at""",
-        install["bot_id"], org_id,
+    bot_id = install["bot_id"]
+    # Uninstall = HAPUS agent-nya (bukan cuma nonaktif) supaya benar-benar hilang
+    # dari Pusat Agent. agent_installs tak punya FK cascade ke bots → hapus manual.
+    await pool.execute("DELETE FROM agent_installs WHERE bot_id=$1 AND org_id=$2", bot_id, org_id)
+    # DELETE bot → CASCADE otomatis menghapus tenant_template_installs + knowledge/
+    # conversations/workflows/channel milik bot ini (semua FK ke bots = CASCADE/SET NULL).
+    deleted = await pool.fetchval(
+        "DELETE FROM bots WHERE id=$1 AND org_id=$2 RETURNING id", bot_id, org_id,
     )
-    if not bot:
+    if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot instalasi tidak ditemukan")
-    bot_dict = dict(bot)
-    # HAPUS record instalasi supaya template kembali ke status "Available" dan
-    # bisa dipasang ulang. Bot di-nonaktifkan (data dipertahankan), tidak dihapus
-    # -- menghapus bot akan CASCADE ke knowledge/workflow/channel (destruktif).
-    await pool.execute(
-        "DELETE FROM tenant_template_installs WHERE id=$1 AND org_id=$2", install_id, org_id,
-    )
-    await pool.execute(
-        "DELETE FROM agent_installs WHERE bot_id=$1 AND org_id=$2", install["bot_id"], org_id,
-    )
     await write_audit_log(
         pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="delete",
         resource_type="marketplace_install", resource_id=str(install_id),
-        metadata={"template_key": install["template_key"], "bot_id": str(install["bot_id"]), "mode": "uninstall"},
+        metadata={"template_key": install["template_key"], "bot_id": str(bot_id), "mode": "uninstall"},
     )
     return {
         "install_id": install_id,
         "template_key": install["template_key"],
         "template_version": install["template_version"],
-        "bot": bot_dict,
-        "status": bot_dict["status"],
+        "bot_id": str(bot_id),
+        "status": "removed",
     }
 
 

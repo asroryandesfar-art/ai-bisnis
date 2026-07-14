@@ -14,9 +14,10 @@ from bn_platform.marketplace import (
 
 
 class FakePool:
-    def __init__(self, fetch_rows=None, fetchrow_map=None):
+    def __init__(self, fetch_rows=None, fetchrow_map=None, fetchval_map=None):
         self.fetch_rows = list(fetch_rows or [])
         self.fetchrow_map = {key: list(value) for key, value in (fetchrow_map or {}).items()}
+        self.fetchval_map = dict(fetchval_map or {})
         self.calls = []
 
     async def fetch(self, sql, *args):
@@ -28,6 +29,13 @@ class FakePool:
         for key, values in self.fetchrow_map.items():
             if key in sql and values:
                 return values.pop(0)
+        return None
+
+    async def fetchval(self, sql, *args):
+        self.calls.append(("fetchval", sql, args))
+        for key, value in self.fetchval_map.items():
+            if key in sql:
+                return value
         return None
 
     async def execute(self, sql, *args):
@@ -90,16 +98,18 @@ def test_update_and_uninstall_use_existing_install():
     assert "org-1" in update_bot_calls[0][1]
     assert "AND org_id=" in update_bot_calls[0][0]
 
-    uninstall_pool = FakePool(fetchrow_map={
-        "FROM tenant_template_installs": [install_row],
-        "UPDATE bots": [{"id": "bot-1", "name": "Sales Agent", "status": "inactive", "primary_color": "#111", "greeting": "hi", "system_prompt": "prompt", "created_at": "2026-01-01"}],
-    })
+    uninstall_pool = FakePool(
+        fetchrow_map={"FROM tenant_template_installs": [install_row]},
+        fetchval_map={"DELETE FROM bots": "bot-1"},
+    )
     result = asyncio.run(uninstall_install(uninstall_pool, org_id="org-1", user_id="user-1", install_id="install-1"))
-    assert result["status"] == "inactive"
-    uninstall_bot_calls = [(sql, args) for kind, sql, args in uninstall_pool.calls if kind == "fetchrow" and "status='inactive'" in sql]
-    assert uninstall_bot_calls
-    assert "AND org_id=" in uninstall_bot_calls[0][0]
-    assert "org-1" in uninstall_bot_calls[0][1]
+    # Uninstall sekarang MENGHAPUS bot (hilang dari Pusat Agent), bukan menonaktifkan.
+    assert result["status"] == "removed"
+    delete_bot_calls = [(sql, args) for kind, sql, args in uninstall_pool.calls if kind == "fetchval" and "DELETE FROM bots" in sql]
+    assert delete_bot_calls
+    # Scoped by org_id (defense-in-depth di samping kepemilikan install_id).
+    assert "AND org_id=" in delete_bot_calls[0][0]
+    assert "org-1" in delete_bot_calls[0][1]
 
 
 def test_marketplace_routes_and_schema_contract_are_present():

@@ -42,18 +42,21 @@ async def _seed_org_user(pool, name):
     return oid, uid
 
 
-def test_uninstall_removes_install_record():
-    """Bug fix: uninstall HARUS menghapus record install (bukan cuma bot inactive),
-    supaya template kembali 'Available' dan bisa dipasang ulang."""
+def test_uninstall_removes_agent_and_install():
+    """Bug fix: uninstall HARUS menghapus bot (hilang dari Pusat Agent) + record
+    install, supaya template kembali 'Available' dan bisa dipasang ulang."""
     async def body(pool):
         org, uid = await _seed_org_user(pool, "Uninst")
         try:
             key = await pool.fetchval(
                 "SELECT key FROM marketplace_templates WHERE is_paid=FALSE AND status='published' LIMIT 1")
             r = await mp.install_template(pool, org_id=org, user_id=uid, template_key=key, bot_name="X")
+            bot_id = r["bot"]["id"]
             assert len(await mp.list_installs(pool, org)) == 1
             await mp.uninstall_install(pool, org_id=org, user_id=uid, install_id=r["install_id"])
-            # record install hilang → tidak lagi tampak terpasang
+            # bot dihapus → hilang dari Pusat Agent
+            assert await pool.fetchval("SELECT COUNT(*) FROM bots WHERE id=$1", bot_id) == 0
+            # record install ikut hilang (CASCADE) → template Available lagi
             assert await pool.fetchval("SELECT COUNT(*) FROM tenant_template_installs WHERE org_id=$1", org) == 0
             assert len(await mp.list_installs(pool, org)) == 0
             # bisa dipasang ulang (install baru)
