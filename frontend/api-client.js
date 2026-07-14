@@ -111,6 +111,12 @@ export const api = {
   uninstallMarketplaceInstall: (install_id) => request(`/api/marketplace/installs/${install_id}/uninstall`, {
     method: "POST",
   }),
+  // Publisher: template milik org
+  marketplaceMyTemplates: () => request("/api/marketplace/my-templates"),
+  createMarketplaceTemplate: (data) => request("/api/marketplace/templates", { method: "POST", body: data }),
+  updateMarketplaceTemplate: (key, data) => request(`/api/marketplace/templates/${key}`, { method: "PATCH", body: data }),
+  publishMarketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}/publish`, { method: "POST" }),
+  unpublishMarketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}/unpublish`, { method: "POST" }),
 
   transcribeAudio: (blob, filename = "recording.webm") => {
     const body = new FormData(); body.append("file", blob, filename);

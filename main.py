@@ -1232,6 +1232,17 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_idr BIGINT;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_idr BIGINT NOT NULL DEFAULT 0;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,4) NOT NULL DEFAULT 0;",
+        # Marketplace publisher layer: kepemilikan + lifecycle publish + monetisasi.
+        # owner_org_id NULL = template platform (seeded). status default 'published'
+        # supaya 170 template lama tetap tampil; template baru mulai 'draft'.
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS owner_org_id UUID;",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS price_idr BIGINT NOT NULL DEFAULT 0;",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS is_paid BOOLEAN NOT NULL DEFAULT FALSE;",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS revenue_share_pct NUMERIC(5,2) NOT NULL DEFAULT 0;",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;",
+        "ALTER TABLE marketplace_templates ADD COLUMN IF NOT EXISTS submitted_by UUID;",
+        "CREATE INDEX IF NOT EXISTS idx_mkt_templates_owner ON marketplace_templates(owner_org_id) WHERE owner_org_id IS NOT NULL;",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url TEXT;",
         """
         CREATE TABLE IF NOT EXISTS knowledge_sources (

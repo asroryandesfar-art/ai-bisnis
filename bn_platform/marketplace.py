@@ -9,6 +9,8 @@ without rebuild. Canonical storage tetap memakai `marketplace_templates` dan
 
 import json
 import logging
+import re
+import uuid
 from collections import Counter
 from typing import Annotated, Awaitable, Callable
 
@@ -57,7 +59,7 @@ async def list_templates(pool: asyncpg.Pool) -> list[dict]:
                   starter_questions, visibility, rating, popularity_score, created_at, updated_at,
                   CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status
            FROM marketplace_templates
-          WHERE is_active=TRUE
+          WHERE is_active=TRUE AND status='published'
           ORDER BY (visibility->>'featured')::boolean DESC, popularity_score DESC, install_count DESC, name""",
     )
     return [_enrich_template(dict(r)) for r in rows]
@@ -68,13 +70,150 @@ async def get_template(pool: asyncpg.Pool, key: str) -> dict | None:
         """SELECT id, key, category, name, description, preview_image, system_prompt,
                   greeting, primary_color, sample_faqs, install_count, version, icon, tools,
                   knowledge_sources, starter_questions, visibility, rating, popularity_score,
+                  price_idr, is_paid, revenue_share_pct, owner_org_id,
                   CASE WHEN is_active THEN 'active' ELSE 'inactive' END AS status,
                   is_active
            FROM marketplace_templates
-          WHERE key=$1 AND is_active=TRUE""",
+          WHERE key=$1 AND is_active=TRUE AND status='published'""",
         key,
     )
     return _enrich_template(dict(row)) if row else None
+
+
+# ============================================================
+# PUBLISHER — authoring & publish lifecycle (org-owned templates)
+# ============================================================
+
+_DEFAULT_REVENUE_SHARE_PCT = 70.0  # bagian publisher dari harga template berbayar
+
+
+def _slugify_key(name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return f"{(base or 'template')[:40]}-{uuid.uuid4().hex[:6]}"
+
+
+async def get_owned_template(pool: asyncpg.Pool, *, org_id: str, key: str) -> dict | None:
+    """Ambil template milik org (semua status — untuk edit/publish oleh pemilik)."""
+    row = await pool.fetchrow(
+        """SELECT id, key, category, name, description, preview_image, system_prompt,
+                  greeting, primary_color, sample_faqs, install_count, version, icon, tools,
+                  knowledge_sources, starter_questions, visibility, rating, popularity_score,
+                  price_idr, is_paid, revenue_share_pct, owner_org_id, status, published_at,
+                  is_active
+             FROM marketplace_templates
+            WHERE key=$1 AND owner_org_id=$2""",
+        key, org_id,
+    )
+    return dict(row) if row else None
+
+
+async def list_my_templates(pool: asyncpg.Pool, org_id: str) -> list[dict]:
+    rows = await pool.fetch(
+        """SELECT id, key, category, name, description, system_prompt, greeting,
+                  primary_color, icon, status, price_idr, is_paid, revenue_share_pct,
+                  install_count, version, published_at, created_at, updated_at
+             FROM marketplace_templates
+            WHERE owner_org_id=$1 ORDER BY updated_at DESC""",
+        org_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def create_template(pool: asyncpg.Pool, *, org_id: str, user_id: str, data: dict) -> dict:
+    """Buat template agent milik org (status 'draft' — belum tampil publik sampai
+    di-publish). price_idr>0 => is_paid; revenue_share_pct default 70% publisher."""
+    price = max(0, int(data.get("price_idr") or 0))
+    rev_share = float(data.get("revenue_share_pct") if data.get("revenue_share_pct") is not None
+                      else (_DEFAULT_REVENUE_SHARE_PCT if price > 0 else 0.0))
+    key = _slugify_key(data["name"])
+    row = await pool.fetchrow(
+        """INSERT INTO marketplace_templates
+             (key, category, name, description, system_prompt, greeting, primary_color,
+              icon, sample_faqs, tools, knowledge_sources, starter_questions, visibility,
+              version, is_active, status, owner_org_id, submitted_by,
+              price_idr, is_paid, revenue_share_pct)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,
+                   '1.0.0', TRUE, 'draft', $14, $15, $16, $17, $18)
+           RETURNING id, key, name, status, price_idr, is_paid, revenue_share_pct""",
+        key, data["category"], data["name"], data.get("description", ""),
+        data["system_prompt"], data.get("greeting", "Halo, ada yang bisa saya bantu?"),
+        data.get("primary_color", "#2563EB"), data.get("icon", "agents"),
+        json.dumps(data.get("sample_faqs", [])), json.dumps(data.get("tools", [])),
+        json.dumps(data.get("knowledge_sources", [])), json.dumps(data.get("starter_questions", [])),
+        json.dumps({"public": False, "featured": False, "recommended": True}),
+        org_id, user_id, price, price > 0, rev_share,
+    )
+    await write_audit_log(
+        pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="create",
+        resource_type="marketplace_template", resource_id=str(row["id"]),
+        metadata={"key": row["key"], "is_paid": row["is_paid"], "price_idr": price},
+    )
+    return dict(row)
+
+
+async def update_template(pool: asyncpg.Pool, *, org_id: str, user_id: str, key: str, data: dict) -> dict:
+    """Ubah template milik org. Hanya field yang dikirim yang diupdate."""
+    owned = await get_owned_template(pool, org_id=org_id, key=key)
+    if not owned:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template tidak ditemukan / bukan milik Anda")
+    fields = {
+        "category": data.get("category"), "name": data.get("name"),
+        "description": data.get("description"), "system_prompt": data.get("system_prompt"),
+        "greeting": data.get("greeting"), "primary_color": data.get("primary_color"),
+        "icon": data.get("icon"),
+    }
+    sets, args = [], []
+    for col, val in fields.items():
+        if val is not None:
+            args.append(val)
+            sets.append(f"{col}=${len(args)}")
+    for jcol in ("sample_faqs", "tools", "knowledge_sources", "starter_questions"):
+        if data.get(jcol) is not None:
+            args.append(json.dumps(data[jcol]))
+            sets.append(f"{jcol}=${len(args)}::jsonb")
+    if data.get("price_idr") is not None:
+        price = max(0, int(data["price_idr"]))
+        args.append(price); sets.append(f"price_idr=${len(args)}")
+        args.append(price > 0); sets.append(f"is_paid=${len(args)}")
+    if data.get("revenue_share_pct") is not None:
+        args.append(float(data["revenue_share_pct"])); sets.append(f"revenue_share_pct=${len(args)}")
+    if not sets:
+        return {"key": key, "updated": False}
+    args.extend([key, org_id])
+    row = await pool.fetchrow(
+        f"""UPDATE marketplace_templates SET {', '.join(sets)}, updated_at=NOW()
+             WHERE key=${len(args)-1} AND owner_org_id=${len(args)}
+          RETURNING id, key, name, status, price_idr, is_paid, revenue_share_pct""",
+        *args,
+    )
+    await write_audit_log(
+        pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="update",
+        resource_type="marketplace_template", resource_id=str(row["id"]),
+        metadata={"key": key, "fields": [s.split("=")[0] for s in sets]},
+    )
+    return dict(row)
+
+
+async def set_template_status(pool: asyncpg.Pool, *, org_id: str, user_id: str, key: str, publish: bool) -> dict:
+    """Publish (tampil di marketplace) / unpublish (kembali draft) template milik org."""
+    owned = await get_owned_template(pool, org_id=org_id, key=key)
+    if not owned:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template tidak ditemukan / bukan milik Anda")
+    new_status = "published" if publish else "draft"
+    row = await pool.fetchrow(
+        """UPDATE marketplace_templates
+              SET status=$3, published_at=CASE WHEN $3='published' THEN NOW() ELSE published_at END,
+                  updated_at=NOW()
+            WHERE key=$1 AND owner_org_id=$2
+         RETURNING id, key, name, status, published_at""",
+        key, org_id, new_status,
+    )
+    await write_audit_log(
+        pool, org_id=org_id, actor_user_id=user_id, actor_email=None, action="update",
+        resource_type="marketplace_template", resource_id=str(row["id"]),
+        metadata={"key": key, "status": new_status},
+    )
+    return dict(row)
 
 
 async def _parse_sample_faqs(template: dict) -> list[dict]:
@@ -427,6 +566,38 @@ class InstallUpdateReq(BaseModel):
     bot_name: str | None = None
 
 
+class TemplateCreateReq(BaseModel):
+    name: str
+    category: str
+    system_prompt: str
+    description: str | None = ""
+    greeting: str | None = None
+    primary_color: str | None = None
+    icon: str | None = None
+    sample_faqs: list | None = None
+    tools: list | None = None
+    knowledge_sources: list | None = None
+    starter_questions: list | None = None
+    price_idr: int | None = None
+    revenue_share_pct: float | None = None
+
+
+class TemplateUpdateReq(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    system_prompt: str | None = None
+    description: str | None = None
+    greeting: str | None = None
+    primary_color: str | None = None
+    icon: str | None = None
+    sample_faqs: list | None = None
+    tools: list | None = None
+    knowledge_sources: list | None = None
+    starter_questions: list | None = None
+    price_idr: int | None = None
+    revenue_share_pct: float | None = None
+
+
 def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
                               require_permission, check_limit: CheckLimit | None = None) -> APIRouter:
     router = APIRouter(prefix="/marketplace", tags=["marketplace"])
@@ -519,5 +690,48 @@ def build_marketplace_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         _user: Annotated[dict, Depends(get_current_user)],
     ):
         return await agent_health_report(pool)
+
+    # ── Publisher: authoring & publish lifecycle (org-owned templates) ──
+    @router.get("/my-templates")
+    async def get_my_templates(
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return {"templates": await list_my_templates(pool, user["org_id"])}
+
+    @router.post("/templates", status_code=status.HTTP_201_CREATED)
+    async def create_my_template(
+        body: TemplateCreateReq,
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await create_template(pool, org_id=user["org_id"], user_id=user["id"],
+                                     data=body.model_dump(exclude_none=True))
+
+    @router.patch("/templates/{key}")
+    async def update_my_template(
+        key: str,
+        body: TemplateUpdateReq,
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await update_template(pool, org_id=user["org_id"], user_id=user["id"],
+                                     key=key, data=body.model_dump(exclude_none=True))
+
+    @router.post("/templates/{key}/publish")
+    async def publish_my_template(
+        key: str,
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await set_template_status(pool, org_id=user["org_id"], user_id=user["id"], key=key, publish=True)
+
+    @router.post("/templates/{key}/unpublish")
+    async def unpublish_my_template(
+        key: str,
+        user: Annotated[dict, Depends(require_permission("marketplace.publish"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        return await set_template_status(pool, org_id=user["org_id"], user_id=user["id"], key=key, publish=False)
 
     return router

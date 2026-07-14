@@ -610,6 +610,10 @@ async function renderMarketplace() {
     };
   } catch (error) { setPage(errorState(error.message)); return; }
 
+  // Publisher: template milik org (toleran — 403 utk non-publisher).
+  try { state.marketplace.myTemplates = (await api.marketplaceMyTemplates()).templates || []; }
+  catch { state.marketplace.myTemplates = []; }
+
   state.marketplaceFilters ||= { search:"", category:"" };
   const filters = state.marketplaceFilters;
   const templates = state.marketplace?.templates || [];
@@ -652,7 +656,23 @@ async function renderMarketplace() {
   const featuredSection = featured.length ? `<section class="marketplace-section"><div class="section-head"><div><h3>Featured</h3><p>Agent paling populer untuk memulai</p></div><span class="status-badge active">${featured.length} pilihan</span></div><div class="marketplace-agent-grid">${featured.slice(0,4).map(marketplaceAgentCard).join('')}</div></section>` : '';
   const catalogSection = `<section class="marketplace-section"><div class="section-head"><div><h3>Semua agent</h3><p>${formatNumber(filteredTemplates.length)} template · knowledge &amp; prompt terisolasi per agent</p></div></div>${filteredTemplates.length ? `<div class="marketplace-agent-grid">${filteredTemplates.map(marketplaceAgentCard).join('')}</div>` : emptyState("Tidak ada agent yang cocok","Coba kata kunci atau kategori lain.")}</section>`;
 
-  setPage(`${pageHeader("Agent Marketplace","Pasang agent siap pakai, tambahkan knowledge, dan biarkan Supervisor Routing memilih spesialis terbaik.",actions)}${hero}<div class="marketplace-chips"><button class="marketplace-chip ${!filters.category?'active':''}" data-marketplace-category="">${icon('marketplace',15)}<span>Semua</span><span class="chip-count">${formatNumber(templates.length)}</span></button>${categoryCards}</div>${featuredSection}${catalogSection}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent terpasang</h3><span class="subtle" style="font-size:9px">Kelola install per-tenant</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Kategori</th><th>Status</th><th>Bot</th><th>Dipasang</th><th>Aksi</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("Belum ada agent terpasang","Pasang template untuk membuat AI agent pertama Anda.")}</div>`);
+  // Publisher: template milik org (buat → publish/unpublish → edit).
+  const myTemplates = state.marketplace?.myTemplates || [];
+  const myRows = myTemplates.map((t) => `<tr>
+    <td><span class="table-title">${esc(t.name)}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(t.key)}</div></td>
+    <td>${esc(t.category || '—')}</td>
+    <td>${t.is_paid ? idr(t.price_idr) : '<span class="subtle">Gratis</span>'}</td>
+    <td>${statusBadge(t.status === 'published' ? 'active' : 'pending', t.status)}</td>
+    <td>${formatNumber(t.install_count || 0)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${t.status === 'published'
+        ? `<button class="button" data-mkt-unpublish="${esc(t.key)}">Unpublish</button>`
+        : `<button class="button button-primary" data-mkt-publish="${esc(t.key)}">Publish</button>`}
+      <button class="button" data-mkt-edit="${esc(t.key)}">Edit</button>
+    </div></td></tr>`).join('');
+  const myTemplatesSection = `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Template Saya</h3><span class="subtle" style="font-size:9px">Buat & publish agent template Anda sendiri ke marketplace</span></div><button class="button button-primary" data-action="mkt-create">+ Buat Template</button></div>${myRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Harga</th><th>Status</th><th>Install</th><th>Aksi</th></tr></thead><tbody>${myRows}</tbody></table></div>` : emptyState("Belum ada template buatan Anda","Klik “Buat Template” untuk membuat & publish agent Anda sendiri.")}</div>`;
+
+  setPage(`${pageHeader("Agent Marketplace","Pasang agent siap pakai, tambahkan knowledge, dan biarkan Supervisor Routing memilih spesialis terbaik.",actions)}${hero}<div class="marketplace-chips"><button class="marketplace-chip ${!filters.category?'active':''}" data-marketplace-category="">${icon('marketplace',15)}<span>Semua</span><span class="chip-count">${formatNumber(templates.length)}</span></button>${categoryCards}</div>${featuredSection}${catalogSection}${myTemplatesSection}<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>Agent terpasang</h3><span class="subtle" style="font-size:9px">Kelola install per-tenant</span></div></div>${installedRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Template</th><th>Kategori</th><th>Status</th><th>Bot</th><th>Dipasang</th><th>Aksi</th></tr></thead><tbody>${installedRows}</tbody></table></div>` : emptyState("Belum ada agent terpasang","Pasang template untuk membuat AI agent pertama Anda.")}</div>`);
 }
 
 async function renderKnowledge() {
@@ -3075,6 +3095,63 @@ async function submitMarketplaceInstall() {
   }
 }
 
+// ── Publisher: buat/edit/publish template sendiri ──
+function showTemplateEditor(key) {
+  const existing = key ? (state.marketplace?.myTemplates || []).find((t) => t.key === key) : null;
+  const cats = state.marketplace?.categories || [];
+  const v = (x) => esc(x == null ? "" : String(x));
+  el("#modal-root").innerHTML = modal({
+    title: existing ? `Edit template — ${existing.name}` : "Buat template agent",
+    wide: true,
+    body: `<form id="mkt-template-form" ${existing ? `data-edit-key="${esc(existing.key)}"` : ""}>
+      <div class="form-grid">
+        <label class="field"><span>Nama</span><input name="name" required value="${v(existing?.name)}" placeholder="Agen Toko Kopi"></label>
+        <label class="field"><span>Kategori</span><input name="category" required list="mkt-cats" value="${v(existing?.category)}" placeholder="Ecommerce"></label>
+        <datalist id="mkt-cats">${cats.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+        <label class="field full"><span>Deskripsi</span><textarea name="description" style="min-height:60px" placeholder="Deskripsi singkat template">${v(existing?.description)}</textarea></label>
+        <label class="field full"><span>Greeting</span><textarea name="greeting" style="min-height:60px" placeholder="Halo, ada yang bisa saya bantu?">${v(existing?.greeting)}</textarea></label>
+        <label class="field full"><span>System prompt</span><textarea name="system_prompt" required style="min-height:130px" placeholder="Kamu adalah asisten...">${v(existing?.system_prompt)}</textarea></label>
+        <label class="field"><span>Harga (Rp, 0 = gratis)</span><input name="price_idr" type="number" min="0" value="${existing?.price_idr || 0}"></label>
+      </div>
+      <p class="subtle" style="font-size:11px;margin-top:8px">Template berbayar: pembagian pendapatan 70% publisher (penagihan & payout menyusul). Setelah dibuat, klik <b>Publish</b> agar tampil di marketplace.</p>
+    </form>`,
+    footer: `<button class="button" data-action="close-modal">Batal</button><button class="button button-primary" data-action="submit-mkt-template">${existing ? "Simpan" : "Buat template"}</button>`,
+  });
+}
+
+async function submitTemplateEditor() {
+  const form = el("#mkt-template-form");
+  if (!form || !form.reportValidity()) return;
+  const raw = Object.fromEntries(new FormData(form));
+  const data = {
+    name: raw.name?.trim(), category: raw.category?.trim(),
+    system_prompt: raw.system_prompt?.trim(), description: raw.description?.trim() || "",
+    greeting: raw.greeting?.trim() || null, price_idr: Number(raw.price_idr || 0),
+  };
+  const editKey = form.dataset.editKey;
+  const button = el('[data-action="submit-mkt-template"]');
+  if (button) { button.disabled = true; button.textContent = "Menyimpan..."; }
+  try {
+    if (editKey) await api.updateMarketplaceTemplate(editKey, data);
+    else await api.createMarketplaceTemplate(data);
+    el("#modal-root").innerHTML = "";
+    toast(editKey ? "Template diperbarui." : "Template dibuat (draft). Klik Publish untuk menayangkan.", "success");
+    await renderMarketplace();
+  } catch (error) {
+    toast(error.message, "error");
+    if (button) { button.disabled = false; button.textContent = editKey ? "Simpan" : "Buat template"; }
+  }
+}
+
+async function marketplacePublish(key, publish) {
+  try {
+    if (publish) await api.publishMarketplaceTemplate(key);
+    else await api.unpublishMarketplaceTemplate(key);
+    toast(publish ? "Template dipublish ke marketplace." : "Template di-unpublish (kembali draft).", "success");
+    await renderMarketplace();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function showCreateAgent() {
   el("#modal-root").innerHTML = modal({title:"Deploy new AI agent",body:`<form id="create-agent-form"><div class="form-grid"><label class="field"><span>Agent name</span><input name="name" required placeholder="Customer Success Agent"></label><label class="field"><span>Language</span><select name="language"><option value="id">Bahasa Indonesia</option><option value="en">English</option></select></label><label class="field full"><span>Greeting</span><textarea name="greeting" style="min-height:80px" placeholder="Halo! Ada yang bisa saya bantu?"></textarea></label><label class="field full"><span>System prompt</span><textarea name="system_prompt" placeholder="You are a professional customer success agent..."></textarea></label></div></form>`,footer:`<button class="button" data-action="close-modal">Cancel</button><button class="button button-primary" data-action="submit-create-agent">Deploy agent</button>`});
 }
@@ -3608,6 +3685,11 @@ document.addEventListener("click", async (event) => {
   if(action==="submit-create-agent") await submitCreateAgent();
   if(action==="marketplace-install") showMarketplaceInstall(event.target.closest("[data-marketplace-install]")?.dataset.marketplaceInstall);
   if(action==="submit-marketplace-install") await submitMarketplaceInstall();
+  if(action==="mkt-create") { showTemplateEditor(null); return; }
+  if(action==="submit-mkt-template") { await submitTemplateEditor(); return; }
+  const mktPub=event.target.closest("[data-mkt-publish]"); if(mktPub){ await marketplacePublish(mktPub.dataset.mktPublish, true); return; }
+  const mktUnpub=event.target.closest("[data-mkt-unpublish]"); if(mktUnpub){ await marketplacePublish(mktUnpub.dataset.mktUnpublish, false); return; }
+  const mktEdit=event.target.closest("[data-mkt-edit]"); if(mktEdit){ showTemplateEditor(mktEdit.dataset.mktEdit); return; }
   if(action==="close-modal") {
     const closeTarget = event.target.closest('[data-action="close-modal"]');
     if(closeTarget?.matches('button') || event.target === closeTarget) el("#modal-root").innerHTML="";

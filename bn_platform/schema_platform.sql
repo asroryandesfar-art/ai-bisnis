@@ -1229,6 +1229,7 @@ INSERT INTO permissions (key, category, description) VALUES
  ('apikeys.manage',     'settings',      'Membuat & mencabut API key'),
  ('audit.read',         'security',      'Melihat audit log'),
  ('marketplace.install','settings',      'Memasang template dari marketplace'),
+ ('marketplace.publish','settings',      'Membuat, mengubah, dan mem-publish template agent sendiri ke marketplace'),
  ('finance.read',       'finance',       'Melihat invoice, expense, dan laporan keuangan tenant'),
  ('finance.write',      'finance',       'Membuat/mengubah invoice, expense, dan pembayaran tenant'),
  ('finance.approve',    'finance',       'Menyetujui/menolak expense dan keputusan keuangan penting'),
