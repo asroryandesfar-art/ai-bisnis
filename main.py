@@ -1250,6 +1250,30 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
             UNIQUE (org_id, addon_key)
         );""",
         "CREATE INDEX IF NOT EXISTS idx_org_addons_org ON org_addons(org_id);",
+        # SSO enterprise (OIDC): config per-org + state/nonce sekali-pakai + kolom
+        # sumber-auth pada users. client_secret disimpan terenkripsi (Fernet).
+        """CREATE TABLE IF NOT EXISTS org_sso_config (
+            org_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+            provider TEXT NOT NULL DEFAULT 'oidc',
+            issuer TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            client_secret_enc TEXT NOT NULL,
+            allowed_domains TEXT[] NOT NULL DEFAULT '{}',
+            jit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            default_role TEXT NOT NULL DEFAULT 'member',
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );""",
+        """CREATE TABLE IF NOT EXISTS sso_login_state (
+            state TEXT PRIMARY KEY,
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            nonce TEXT NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );""",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;",
         # Marketplace publisher layer: kepemilikan + lifecycle publish + monetisasi.
         # owner_org_id NULL = template platform (seeded). status default 'published'
         # supaya 170 template lama tetap tampil; template baru mulai 'draft'.
@@ -4408,6 +4432,19 @@ try:
         ),
         prefix="/api",
     )
+    # SSO enterprise (OIDC): jalur login tambahan + admin config. Include TANPA
+    # prefix "/api" — path sudah eksplisit (/auth/sso/* dan /api/sso/config),
+    # sama seperti _auth_router. create_token/_start_session/hash_password
+    # dipakai ulang agar sesi identik dengan login biasa.
+    from bn_platform.sso import build_sso_router
+    from bn_platform.config import cfg as _platform_cfg_for_sso
+    app.include_router(build_sso_router(
+        get_pool=get_pool, get_current_user=get_current_user,
+        require_permission=require_permission,
+        create_token=create_token, start_session=_start_session,
+        hash_password=hash_password, cfg=cfg, platform_cfg=_platform_cfg_for_sso,
+        logger=logger,
+    ))
     app.include_router(
         build_omnichannel_router(
             get_pool=get_pool, get_current_user=get_current_user,

@@ -2845,10 +2845,14 @@ async function runInvestorDemoSequence() {
 
 async function renderSettings() {
   loadingPage(t('settings.title'), t('settings.subtitle'));
-  const integrationResult = await settle("integrations", api.integrations());
+  const [integrationResult, ssoResult] = await Promise.all([
+    settle("integrations", api.integrations()),
+    settle("ssoConfig", api.ssoConfig()),
+  ]);
   state.integrations = integrationResult.ok ? integrationResult.data : {};
   const gmail = state.integrations?.gmail || {};
   const gmailConnected = !!gmail.connected;
+  const ssoData = ssoResult.ok ? ssoResult.data : { configured: false, config: null, sso_enabled: true };
 
   // ── Section: Workspace Identity ─────────────────────────────────────────
   const workspaceSection = settingSection(
@@ -2880,6 +2884,47 @@ async function renderSettings() {
     <div style="padding:14px 18px">${gmailActions}</div>
   </section>`;
 
+  // ── Section: SSO Enterprise (OIDC) ──────────────────────────────────────
+  const ssoConf = ssoData.config || {};
+  const ssoConfigured = !!ssoData.configured;
+  const ssoSlug = state.org?.slug || '';
+  const callbackUrl = `${location.origin}/auth/sso/callback`;
+  const loginUrl = ssoSlug ? `${location.origin}/auth/sso/${ssoSlug}/login` : '';
+  const ssoSection = ssoData.sso_enabled === false
+    ? settingSection(t('settings.sso_title'), t('settings.sso_desc'),
+        `<div class="setting-row"><div class="setting-row-left"><p>${t('settings.sso_platform_off')}</p></div></div>`)
+    : `<section class="settings-section">
+      <div class="settings-section-head"><h3>${t('settings.sso_title')}</h3><p>${t('settings.sso_desc')}</p></div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          ${statusBadge(ssoConfigured && ssoConf.enabled ? 'active' : 'inactive', ssoConfigured && ssoConf.enabled ? t('settings.sso_active') : t('settings.sso_inactive'))}
+          ${ssoConfigured ? `<span class="subtle" style="font-size:11px">${esc(ssoConf.issuer || '')}</span>` : ''}
+        </div>
+        <div style="background:var(--surface-2,#111);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:var(--text-2)">
+          <div style="margin-bottom:4px">${t('settings.sso_callback_hint')}</div>
+          <code style="font-size:11px;word-break:break-all;color:var(--text)">${esc(callbackUrl)}</code>
+          ${loginUrl ? `<div style="margin-top:8px">${t('settings.sso_login_url')}</div><code style="font-size:11px;word-break:break-all;color:var(--text)">${esc(loginUrl)}</code>` : ''}
+        </div>
+        <form id="sso-config-form" class="auth-form" style="gap:10px">
+          <label>${t('settings.sso_issuer')}<input name="issuer" value="${esc(ssoConf.issuer || '')}" placeholder="https://idp.example.com" required></label>
+          <label>${t('settings.sso_client_id')}<input name="client_id" value="${esc(ssoConf.client_id || '')}" required></label>
+          <label>${t('settings.sso_client_secret')}<input name="client_secret" type="password" placeholder="${ssoConf.has_secret ? '••••••• ('+t('settings.sso_secret_keep')+')' : ''}"></label>
+          <label>${t('settings.sso_domains')}<input name="allowed_domains" value="${esc((ssoConf.allowed_domains||[]).join(', '))}" placeholder="example.com, corp.example.com"></label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+            <label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="jit_enabled" ${ssoConf.jit_enabled!==false?'checked':''} style="width:auto"> ${t('settings.sso_jit')}</label>
+            <label style="flex-direction:row;align-items:center;gap:6px;font-size:13px">${t('settings.sso_default_role')}
+              <select name="default_role" style="width:auto"><option value="member" ${ssoConf.default_role!=='admin'?'selected':''}>member</option><option value="admin" ${ssoConf.default_role==='admin'?'selected':''}>admin</option></select></label>
+            <label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="enabled" ${ssoConf.enabled?'checked':''} style="width:auto"> ${t('settings.sso_enable')}</label>
+          </div>
+          <p class="form-error" data-form-error></p>
+          <div style="display:flex;gap:8px">
+            <button class="button button-primary button-sm" type="submit">${t('settings.sso_save')}</button>
+            ${ssoConfigured ? `<button class="button button-danger button-sm" type="button" data-action="sso-delete">${t('settings.sso_delete')}</button>` : ''}
+          </div>
+        </form>
+      </div>
+    </section>`;
+
   // ── Section: Appearance & Language ──────────────────────────────────────
   const appearanceSection = settingSection(
     t('settings.appearance_title'), t('settings.appearance_desc'),
@@ -2900,6 +2945,7 @@ async function renderSettings() {
     ['workspace', t('settings.workspace_title'), 'settings'],
     ['system', t('settings.system_title'), 'observability'],
     ['integrations', t('settings.integrations_title'), 'channels'],
+    ['sso', t('settings.sso_title'), 'security'],
     ['appearance', t('settings.appearance_title'), 'about'],
     ['session', t('settings.session_title'), 'security'],
   ].map(([key, label, ico]) =>
@@ -2918,6 +2964,7 @@ async function renderSettings() {
       ${workspaceSection}
       ${systemSection}
       ${integrationsSection}
+      ${ssoSection}
       ${appearanceSection}
       ${sessionSection}
     </div>
@@ -3660,6 +3707,33 @@ async function buyAddon(addonKey) {
   catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
+async function saveSsoConfig(form) {
+  const error = form.querySelector("[data-form-error]"); if(error) error.textContent="";
+  const fd = new FormData(form);
+  const body = {
+    issuer: String(fd.get("issuer")||"").trim(),
+    client_id: String(fd.get("client_id")||"").trim(),
+    allowed_domains: String(fd.get("allowed_domains")||"").split(",").map(s=>s.trim()).filter(Boolean),
+    jit_enabled: fd.get("jit_enabled")==="on",
+    default_role: String(fd.get("default_role")||"member"),
+    enabled: fd.get("enabled")==="on",
+  };
+  const secret = String(fd.get("client_secret")||"").trim();
+  if(secret) body.client_secret = secret;   // kosong = pertahankan secret lama
+  try{
+    await api.saveSsoConfig(body);
+    bustCache("ssoConfig");
+    toast(t('settings.sso_saved'), "success");
+    await renderSettings();
+  }catch(err){ if(error) error.textContent=err.message; else toast(err.message,"error"); }
+}
+
+async function deleteSsoConfig() {
+  if(!confirm(t('settings.sso_delete_confirm'))) return;
+  try{ await api.deleteSsoConfig(); bustCache("ssoConfig"); toast(t('settings.sso_deleted'),"success"); await renderSettings(); }
+  catch(err){ toast(err.message,"error"); }
+}
+
 async function sendPlayground(form) {
   if (!form || form.dataset.sending === "true") return;
   const input = form.elements.message;
@@ -3795,6 +3869,7 @@ document.addEventListener("click", async (event) => {
   if(action==="gmail-start") await startGmail();
   if(action==="gmail-map") await mapGmail();
   if(action==="gmail-poll") await pollGmail();
+  if(action==="sso-delete") await deleteSsoConfig();
   if(action==="connect-whatsapp") showWhatsAppConnect();
   if(action==="submit-meta-asset") await submitMetaAssetSelection();
   if(action==="confirm-meta-redirect" && state.pendingMetaAuthUrl) location.href = state.pendingMetaAuthUrl;
@@ -4064,6 +4139,14 @@ document.addEventListener("submit", async (event) => {
     event.preventDefault(); const form=event.target; const error=form.querySelector("[data-form-error]"); const data=Object.fromEntries(new FormData(form)); error.textContent="";
     try{ const result=await api.register(data.org_name,data.email,data.password); tokenStore.set(result.token); await boot(); }catch(err){ error.textContent=err.message; }
   }
+  if(event.target.id==="sso-form"){
+    // Alur OIDC dimulai di backend; navigasi penuh ke endpoint login SSO org.
+    event.preventDefault(); const form=event.target; const error=form.querySelector("[data-form-error]"); error.textContent="";
+    const slug=String(new FormData(form).get("org_slug")||"").trim().toLowerCase();
+    if(!slug){ error.textContent="Masukkan slug workspace Anda"; return; }
+    location.href=`/auth/sso/${encodeURIComponent(slug)}/login`;
+  }
+  if(event.target.id==="sso-config-form"){ event.preventDefault(); await saveSsoConfig(event.target); }
   if(event.target.id==="agent-detail-form"){ event.preventDefault(); await submitAgentDetail(event.target); }
   if(event.target.matches("[data-playground-form]")){ event.preventDefault(); await sendPlayground(event.target); }
   if(event.target.matches("[data-kb-url-form]")){ event.preventDefault(); await uploadKnowledgeUrl(event.target); }
@@ -4128,7 +4211,21 @@ window.addEventListener("hashchange",()=>route());
 window.addEventListener("botnesia:unauthorized",showAuth);
 window.addEventListener("keydown",(event)=>{ if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();el('[data-global-search]')?.focus();} if(event.key==='Escape'){closeDrawer();el('#modal-root').innerHTML='';} });
 
+// SSO callback mendarat di /ui/?sso_token=... (sukses) atau ?sso_error=... (gagal).
+// Ambil token → simpan → bersihkan URL sebelum boot; tampilkan error di layar login.
+function handleSsoRedirect() {
+  const params = new URLSearchParams(location.search);
+  const token = params.get("sso_token");
+  const err = params.get("sso_error");
+  if(!token && !err) return false;
+  history.replaceState(null, "", location.pathname);   // strip query
+  if(token){ tokenStore.set(token); return false; }
+  if(err){ showAuth(); setTimeout(()=>{ const e=document.querySelector("#sso-form [data-form-error]"); if(e) e.textContent=err; },0); return true; }
+  return false;
+}
+
 async function boot() {
+  if(handleSsoRedirect() && !tokenStore.get()){return;}
   if(!tokenStore.get()){showAuth();return;}
   showApp(); state.route=currentRoute(); pageRoot().innerHTML=skeletonCards(4);
   try{ await loadCore(); await route(); }

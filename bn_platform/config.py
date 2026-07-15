@@ -81,6 +81,13 @@ class PlatformSettings(BaseSettings):
     # — kosongkan utk lab/dev, isi sebelum expose ke jaringan publik.
     metrics_auth_token: str = ""
 
+    # ── SSO enterprise (OIDC) ──
+    # sso_enabled = gate global fitur. public_base_url = origin publik untuk
+    # menyusun redirect_uri callback (harus cocok dgn yang didaftarkan di IdP);
+    # kosong = diturunkan dari request (cukup untuk deployment tunggal).
+    sso_enabled: bool = True
+    public_base_url: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

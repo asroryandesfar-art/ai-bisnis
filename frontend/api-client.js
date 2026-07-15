@@ -206,6 +206,9 @@ export const api = {
   checkoutAddon: (addonKey, quantity = 1, provider = "midtrans") => request("/api/billing/addons/checkout", {
     method: "POST", body: { addon_key: addonKey, quantity, provider },
   }),
+  ssoConfig: () => request("/api/sso/config"),
+  saveSsoConfig: (body) => request("/api/sso/config", { method: "PUT", body }),
+  deleteSsoConfig: () => request("/api/sso/config", { method: "DELETE" }),
 
   inbox: (params = {}) => request(`/api/inbox${encodeQuery(params)}`),
   inboxSummary: () => request("/api/inbox/summary"),

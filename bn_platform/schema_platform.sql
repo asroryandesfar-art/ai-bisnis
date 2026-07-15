@@ -209,6 +209,39 @@ CREATE TABLE IF NOT EXISTS org_addons (
 );
 CREATE INDEX IF NOT EXISTS idx_org_addons_org ON org_addons(org_id);
 
+-- SSO enterprise (OIDC): konfigurasi Single Sign-On per organisasi. client_secret
+-- disimpan TERENKRIPSI (Fernet, kunci diturunkan dari SECRET_KEY). SSO bersifat
+-- OPSIONAL (login password tetap jalan). JIT provisioning membuat user otomatis
+-- saat login pertama bila domain email cocok allowed_domains.
+CREATE TABLE IF NOT EXISTS org_sso_config (
+    org_id            UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    provider          TEXT NOT NULL DEFAULT 'oidc',
+    issuer            TEXT NOT NULL,               -- base URL issuer (untuk discovery)
+    client_id         TEXT NOT NULL,
+    client_secret_enc TEXT NOT NULL,               -- Fernet-encrypted
+    allowed_domains   TEXT[] NOT NULL DEFAULT '{}',-- domain email yang diizinkan JIT
+    jit_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    default_role      TEXT NOT NULL DEFAULT 'member',
+    enabled           BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- State + nonce sekali-pakai untuk alur OIDC authorization-code (anti-CSRF/replay).
+-- Dihapus saat callback dikonsumsi; baris basi dibersihkan by TTL saat callback.
+CREATE TABLE IF NOT EXISTS sso_login_state (
+    state       TEXT PRIMARY KEY,
+    org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    nonce       TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Sumber autentikasi user: 'local' (password) atau 'oidc' (SSO). external_id =
+-- subject (sub) dari IdP untuk pemetaan stabil.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;
+
 CREATE TABLE IF NOT EXISTS invoices (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
