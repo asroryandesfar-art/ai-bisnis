@@ -2250,6 +2250,8 @@ async function renderBilling() {
   state.usage = usageResult.ok ? usageResult.data.usage || {} : {};
   state.channelUsage = usageResult.ok ? usageResult.data.channel_usage || {} : {};
   state.invoices = invoicesResult.ok ? invoicesResult.data.invoices || [] : [];
+  const buyerTax = (invoicesResult.ok && invoicesResult.data.buyer) || null;
+  const taxMeta = (invoicesResult.ok && invoicesResult.data.tax) || {};
   const credits = creditsResult.ok ? creditsResult.data : { addon_conversation_balance: 0, topup_packages: [], history: [] };
   const addonsData = addonsResult.ok ? addonsResult.data : { catalog: [], owned: {} };
   const currentKey = state.subscription?.subscription?.plan_key || state.org?.plan || 'free';
@@ -2481,8 +2483,29 @@ async function renderBilling() {
     const taxNote = Number(inv.tax_idr) > 0
       ? `<div class="subtle" style="font-size:10px;margin-top:2px">${t('billing.incl_tax')} ${idr(inv.tax_idr)}</div>`
       : '';
-    return `<tr><td class="table-title mono">${esc(inv.invoice_number)}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}${taxNote}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`;
+    // NPWP pembeli yang tersnapshot di faktur (bila diisi saat invoice terbit).
+    const npwpNote = inv.buyer_npwp
+      ? `<div class="subtle mono" style="font-size:10px;margin-top:2px">NPWP: ${esc(inv.buyer_npwp)}</div>`
+      : '';
+    return `<tr><td class="table-title mono">${esc(inv.invoice_number)}${npwpNote}</td><td>${esc(inv.description || 'Subscription')}</td><td>${idr(inv.amount_idr)}${taxNote}</td><td>${statusBadge(inv.status, inv.status)}</td><td>${formatDate(inv.created_at)}</td></tr>`;
   }).join('');
+
+  // ── Identitas Pajak Pembeli (faktur pajak) ──────────────────────────────
+  const bt = buyerTax || {};
+  const taxProfileCard = `<div class="card" style="margin-bottom:20px">
+    <div class="card-head"><h3>${t('billing.tax_profile_title')}</h3></div>
+    <div style="padding:0 20px 20px">
+      <p style="font-size:12px;color:var(--text-2);margin:0 0 14px">${t('billing.tax_profile_desc')}</p>
+      <form id="tax-profile-form" class="auth-form" style="gap:10px;max-width:520px">
+        <label>${t('billing.tax_name')}<input name="tax_name" value="${esc(bt.tax_name || '')}" placeholder="PT Contoh Sejahtera"></label>
+        <label>${t('billing.tax_npwp')}<input name="tax_npwp" value="${esc(bt.tax_npwp || '')}" placeholder="00.000.000.0-000.000" inputmode="numeric"></label>
+        <label>${t('billing.tax_address')}<textarea name="tax_address" rows="2" placeholder="Alamat sesuai NPWP">${esc(bt.tax_address || '')}</textarea></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="is_pkp" ${bt.is_pkp ? 'checked' : ''} style="width:auto"> ${t('billing.tax_pkp')}</label>
+        <p class="form-error" data-form-error></p>
+        <div><button class="button button-primary button-sm" type="submit">${t('billing.tax_save')}</button></div>
+      </form>
+    </div>
+  </div>`;
 
   const trialBanner = isTrial && trialEnds
     ? `<div style="margin-bottom:16px;padding:12px 16px;background:#111111;border:1px solid #2e9e73;border-radius:8px;font-size:13px;color:var(--text-2)">
@@ -2508,6 +2531,7 @@ async function renderBilling() {
   ${pricingNote}
   ${creditSection}
   ${addonSection}
+  ${taxProfileCard}
   <div class="grid grid-2">
     <div class="card">
       <div class="card-head"><h3>${t('billing.usage_title')}</h3><span class="subtle mono" style="font-size:9px">${esc(currentKey.toUpperCase())}</span></div>
@@ -3707,6 +3731,23 @@ async function buyAddon(addonKey) {
   catch(error){ toast(humanizeCheckoutError(error), "error"); }
 }
 
+async function saveTaxProfile(form) {
+  const error = form.querySelector("[data-form-error]"); if(error) error.textContent="";
+  const fd = new FormData(form);
+  const body = {
+    tax_name: String(fd.get("tax_name")||"").trim(),
+    tax_npwp: String(fd.get("tax_npwp")||"").trim(),
+    tax_address: String(fd.get("tax_address")||"").trim(),
+    is_pkp: fd.get("is_pkp")==="on",
+  };
+  try{
+    await api.saveTaxProfile(body);
+    bustCache("invoices");
+    toast(t('billing.tax_saved'), "success");
+    await renderBilling();
+  }catch(err){ if(error) error.textContent=err.message; else toast(err.message,"error"); }
+}
+
 async function saveSsoConfig(form) {
   const error = form.querySelector("[data-form-error]"); if(error) error.textContent="";
   const fd = new FormData(form);
@@ -4146,6 +4187,7 @@ document.addEventListener("submit", async (event) => {
     if(!slug){ error.textContent="Masukkan slug workspace Anda"; return; }
     location.href=`/auth/sso/${encodeURIComponent(slug)}/login`;
   }
+  if(event.target.id==="tax-profile-form"){ event.preventDefault(); await saveTaxProfile(event.target); }
   if(event.target.id==="sso-config-form"){ event.preventDefault(); await saveSsoConfig(event.target); }
   if(event.target.id==="agent-detail-form"){ event.preventDefault(); await submitAgentDetail(event.target); }
   if(event.target.matches("[data-playground-form]")){ event.preventDefault(); await sendPlayground(event.target); }

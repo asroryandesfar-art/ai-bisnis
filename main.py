@@ -1274,6 +1274,17 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );""",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;",
+        # Identitas pajak pembeli: snapshot NPWP/nama ke invoice + profil per-org.
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_npwp TEXT;",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_name TEXT;",
+        """CREATE TABLE IF NOT EXISTS org_billing_profile (
+            org_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+            tax_name TEXT NOT NULL DEFAULT '',
+            tax_npwp TEXT NOT NULL DEFAULT '',
+            tax_address TEXT NOT NULL DEFAULT '',
+            is_pkp BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );""",
         # Marketplace publisher layer: kepemilikan + lifecycle publish + monetisasi.
         # owner_org_id NULL = template platform (seeded). status default 'published'
         # supaya 170 template lama tetap tampil; template baru mulai 'draft'.

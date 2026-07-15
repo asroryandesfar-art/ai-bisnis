@@ -361,20 +361,34 @@ def tax_invoice_meta() -> dict:
     }
 
 
+async def get_billing_profile(pool: asyncpg.Pool, org_id: str) -> dict | None:
+    """Profil pajak pembeli (per org). None bila belum pernah diisi."""
+    row = await pool.fetchrow(
+        "SELECT tax_name, tax_npwp, tax_address, is_pkp FROM org_billing_profile WHERE org_id=$1",
+        org_id,
+    )
+    return dict(row) if row else None
+
+
 async def create_invoice(
     pool: asyncpg.Pool, *, org_id: str, subscription_id: str | None,
     amount_idr: int, description: str, provider: str | None = None,
 ) -> dict:
     subtotal_idr, tax_idr, tax_rate = compute_invoice_tax(amount_idr)
+    # Snapshot identitas pajak pembeli SAAT diterbitkan (faktur historis stabil).
+    profile = await get_billing_profile(pool, org_id)
+    buyer_npwp = (profile or {}).get("tax_npwp") or None
+    buyer_name = (profile or {}).get("tax_name") or None
     row = await pool.fetchrow(
         """INSERT INTO invoices (org_id, subscription_id, invoice_number, status,
                                  amount_idr, subtotal_idr, tax_idr, tax_rate,
-                                 description, provider, due_date)
-           VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10)
+                                 description, provider, due_date, buyer_npwp, buyer_name)
+           VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING *""",
         org_id, subscription_id, _generate_invoice_number(), amount_idr,
         subtotal_idr, tax_idr, tax_rate, description,
         provider, datetime.now(timezone.utc) + timedelta(days=platform_cfg.invoice_due_days),
+        buyer_npwp, buyer_name,
     )
     return dict(row)
 
@@ -635,6 +649,13 @@ class AddonCheckoutReq(BaseModel):
     provider:  str = Field(default="midtrans", pattern="^(midtrans|xendit|local)$")
 
 
+class TaxProfileReq(BaseModel):
+    tax_name:    str = Field(default="", max_length=200)
+    tax_npwp:    str = Field(default="", max_length=32)
+    tax_address: str = Field(default="", max_length=500)
+    is_pkp:      bool = False
+
+
 class CancelReq(BaseModel):
     at_period_end: bool = True
 
@@ -860,11 +881,13 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         rows = await pool.fetch(
             """SELECT id, invoice_number, status, amount_idr, subtotal_idr, tax_idr,
                       tax_rate, currency, description, provider, provider_payment_url,
-                      due_date, paid_at, created_at
+                      due_date, paid_at, created_at, buyer_npwp, buyer_name
                FROM invoices WHERE org_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
             user["org_id"], limit, offset,
         )
-        return {"invoices": [dict(r) for r in rows], "tax": tax_invoice_meta()}
+        profile = await get_billing_profile(pool, user["org_id"])
+        return {"invoices": [dict(r) for r in rows],
+                "tax": tax_invoice_meta(), "buyer": profile}
 
     @router.get("/invoices/by-number/{invoice_number}")
     async def get_invoice_by_number(
@@ -885,6 +908,39 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         if not row:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice tidak ditemukan")
         return {"invoice": dict(row)}
+
+    # ── Profil pajak pembeli (identitas faktur pajak) ──────────────────
+    @router.get("/tax-profile")
+    async def get_tax_profile(
+        user: Annotated[dict, Depends(get_current_user)],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        profile = await get_billing_profile(pool, user["org_id"])
+        return {"profile": profile, "tax": tax_invoice_meta()}
+
+    @router.put("/tax-profile")
+    async def put_tax_profile(
+        body: TaxProfileReq,
+        user: Annotated[dict, Depends(require_permission("billing.manage"))],
+        pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+    ):
+        npwp = body.tax_npwp.strip()
+        # Validasi ringan: NPWP Indonesia 15 (lama) atau 16 (baru) digit setelah
+        # membuang pemisah. Kosong diizinkan (pembeli non-PKP).
+        if npwp:
+            digits = "".join(ch for ch in npwp if ch.isdigit())
+            if len(digits) not in (15, 16):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "NPWP harus 15 atau 16 digit")
+        await pool.execute(
+            """INSERT INTO org_billing_profile (org_id, tax_name, tax_npwp, tax_address, is_pkp, updated_at)
+               VALUES ($1,$2,$3,$4,$5,NOW())
+               ON CONFLICT (org_id) DO UPDATE SET
+                   tax_name=EXCLUDED.tax_name, tax_npwp=EXCLUDED.tax_npwp,
+                   tax_address=EXCLUDED.tax_address, is_pkp=EXCLUDED.is_pkp, updated_at=NOW()""",
+            user["org_id"], body.tax_name.strip(), npwp, body.tax_address.strip(), body.is_pkp,
+        )
+        return {"ok": True, "profile": await get_billing_profile(pool, user["org_id"])}
 
     @router.get("/payments")
     async def list_payments(

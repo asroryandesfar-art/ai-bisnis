@@ -265,6 +265,23 @@ CREATE INDEX IF NOT EXISTS idx_invoices_org    ON invoices(org_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_provider_ref ON invoices(provider, provider_invoice_id);
 
+-- Identitas pajak PEMBELI di-snapshot ke tiap invoice saat diterbitkan, supaya
+-- faktur historis tetap memakai NPWP/nama yang berlaku saat itu (walau profil
+-- pembeli berubah kemudian). NULL = pembeli non-PKP / belum mengisi profil.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_npwp TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_name TEXT;
+
+-- Profil pajak pembeli (per organisasi). Dipakai untuk faktur pajak: pelanggan
+-- PKP wajib mencantumkan NPWP-nya agar bisa klaim PPN masukan.
+CREATE TABLE IF NOT EXISTS org_billing_profile (
+    org_id      UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    tax_name    TEXT NOT NULL DEFAULT '',   -- nama badan/usaha sesuai NPWP
+    tax_npwp    TEXT NOT NULL DEFAULT '',   -- NPWP pembeli
+    tax_address TEXT NOT NULL DEFAULT '',   -- alamat sesuai NPWP
+    is_pkp      BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS payment_history (
     id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id                 UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
