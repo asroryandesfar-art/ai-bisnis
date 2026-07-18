@@ -1,0 +1,40 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project follows a
+trunk-based, continuously-deployed workflow (no fixed release cadence yet), so
+entries are grouped by theme rather than semantic version tags.
+
+## [Unreleased]
+
+### Added — Billing & Pricing
+- **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.
+- **Enterprise SSO via OpenID Connect (OIDC)** — per-org IdP config (Okta/Azure AD/Google Workspace/Auth0), authorization-code flow, JIT provisioning, encrypted client secret at rest. Optional (password login preserved).
+- **Capacity add-ons** — purchase extra agents/team members/channels/knowledge docs beyond plan limits.
+- **Price grandfathering** — existing subscribers keep their locked-in price when list prices rise.
+- **PPN 11% tax breakdown** on invoices (tax-inclusive) and successful-login audit trail.
+- **Prepaid overage** — top-up credits extend usage beyond plan quota; monotonic plan pricing curve; per-plan model gating with per-call token/input caps; enterprise floor price + quote flow.
+
+### Added — Agents & Platform
+- **Multi-agent orchestrator** engine (authenticated + RBAC) with dynamic routing, parallel execution, timeouts, and structured aggregation.
+- **Agent Marketplace** publisher layer — author/publish agent templates, paid templates with revenue-share ledger, atomic install/uninstall with full sync.
+- **MCP integration** — client (JSON-RPC over Streamable HTTP), registry, and tool-executor routing exposing discovered MCP tools to agents.
+- **SSE streaming chat** endpoint (`POST /chat/{bot_id}/stream`).
+- **Casper on-chain proof** anchoring for auditable AI decisions.
+
+### Added — Infrastructure
+- **Database HA** — opt-in advisory-lock leader election with heartbeat-based failover; opt-in connection-pool command timeout.
+
+### Changed
+- `main.py` decomposed via the strangler pattern into focused routers under `bn_platform/`.
+
+### Fixed
+- Marketplace uninstall now fully removes the agent (atomic delete + frontend refresh, no stale/orphan records).
+
+### Housekeeping
+- Repository audit: archived zero-reference developer/throwaway scripts under `archive/`, hardened `.gitignore` (test/tooling caches, editor/OS files), and added `CHANGELOG.md` / `PROJECT_STRUCTURE.md`.
+
+---
+
+> For the full, commit-level history see `git log`. This changelog summarizes
+> user-facing and architectural changes.
