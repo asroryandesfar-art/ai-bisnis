@@ -78,8 +78,8 @@ def test_router_gates_every_rest_route_with_correct_permission_tier():
         decode_token=lambda token: {"org": "org-1"},
     )
 
-    # status + disconnect
-    assert requested_keys.count("local_agent.manage") == 2
+    # status + disconnect + devices + device-rename + device-disconnect
+    assert requested_keys.count("local_agent.manage") == 5
     # execute + run-local + approve + reject
     assert requested_keys.count("local_agent.execute") == 4
     # history

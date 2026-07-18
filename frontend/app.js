@@ -1969,23 +1969,52 @@ async function renderAgentCenter() {
     <p style="margin:10px 0 0;font-size:11px;color:var(--text-muted)">Token sudah terisi otomatis dari akun Anda. Script auto-install dependency.</p>
   </div>`;
 
-  // ── Local Agent info (online state) ─────────────────────────────────────────
-  const laInfoHtml = localAgent.connected ? `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
-      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">HOST</div>
-        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.hostname||'-')}</div>
+  // ── Local Agent: daftar perangkat (multi-device) ────────────────────────────
+  const laDevices = localAgent.devices || [];
+  const _fmtUptime = (s) => { s = Number(s || 0); if (!s) return "-"; const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h ? `${h}j ${m}m` : `${m}m`; };
+  const _fmtGB = (v) => (v == null ? "-" : `${Number(v)} GB`);
+  const _fmtRamMb = (mb) => (mb == null ? "-" : `${(Number(mb)/1024).toFixed(1)} GB`);
+  const _laStatusBadge = (st) => {
+    const map = { online: ["#2e9e73", "● Online"], busy: ["var(--amber)", "● Busy"], offline: ["var(--text-muted)", "○ Offline"] };
+    const [c, label] = map[st] || map.offline;
+    return `<span style="font-size:11px;font-weight:700;color:${c}">${label}</span>`;
+  };
+  function laDeviceCard(d) {
+    const online = d.status !== "offline";
+    const metaRow = (k, v) => `<div style="min-width:120px"><div style="font-size:10px;color:var(--text-muted)">${k}</div><div style="font-size:12px;font-weight:600">${esc(String(v ?? "-"))}</div></div>`;
+    return `<div class="card" style="padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong style="font-size:14px">${esc(d.name || d.hostname || "Perangkat")}</strong>
+          ${_laStatusBadge(d.status)}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="button button-sm" data-la-rename="${esc(d.device_id)}" title="Ganti nama">✏️</button>
+          <button class="button button-sm" data-action="local-agent-refresh" title="Muat ulang status">⟳</button>
+          ${online ? `<button class="button button-sm button-danger" data-la-device-disconnect="${esc(d.device_id)}">Putus</button>` : ""}
+        </div>
       </div>
-      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">PLATFORM</div>
-        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.platform||'-')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px">
+        ${metaRow("HOSTNAME", d.hostname)}
+        ${metaRow("OS", d.platform)}
+        ${metaRow("CPU", d.cpu ? `${d.cpu}${d.cpu_count?` (${d.cpu_count} core)`:""}` : (d.cpu_count?`${d.cpu_count} core`:"-"))}
+        ${metaRow("RAM", d.cpu_percent!=null||d.ram_percent!=null ? `${_fmtRamMb(d.ram_total_mb)}${d.ram_percent!=null?` · ${Math.round(d.ram_percent)}%`:""}` : _fmtRamMb(d.ram_total_mb))}
+        ${metaRow("DISK", _fmtGB(d.disk_total_gb))}
+        ${metaRow("IP", d.ip)}
+        ${metaRow("CPU LOAD", d.cpu_percent!=null?`${Math.round(d.cpu_percent)}%`:"-")}
+        ${metaRow("UPTIME", _fmtUptime(d.uptime_seconds))}
+        ${metaRow("LAST SEEN", d.last_seen ? formatDate(d.last_seen, {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'}) : "-")}
       </div>
-      <div style="background:var(--surface-2);border-radius:8px;padding:10px 14px">
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">USER</div>
-        <div style="font-size:13px;font-weight:600">${esc(localAgent.meta?.username||'-')}</div>
-      </div>
+    </div>`;
+  }
+  const laInfoHtml = laDevices.length ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span class="subtle" style="font-size:12px">${laDevices.length} perangkat · ${localAgent.online_count||0} online</span>
+      <button class="button button-sm" data-action="local-agent-refresh">⟳ Muat ulang</button>
     </div>
-    <button class="button button-sm" data-action="local-agent-disconnect">Putus Koneksi</button>` : laInstallHtml;
+    ${laDevices.map(laDeviceCard).join("")}
+    <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--text-2)">+ Tambah perangkat lain</summary><div style="margin-top:10px">${laInstallHtml}</div></details>`
+    : laInstallHtml;
 
   // ── Approval queue sections (only shown if items exist) ──────────────────────
   const caApprovalSection = caPendingCount ? `
@@ -3994,6 +4023,8 @@ document.addEventListener("click", async (event) => {
   const trialPlan=event.target.closest("[data-checkout-trial]"); if(trialPlan){ await checkout(trialPlan.dataset.checkoutTrial, true); return; }
   const topup=event.target.closest("[data-topup]"); if(topup){ await topupCredits(topup.dataset.topup, topup.dataset.topupConv); return; }
   const addonBuy=event.target.closest("[data-addon-buy]"); if(addonBuy){ await buyAddon(addonBuy.dataset.addonBuy); return; }
+  const laRename=event.target.closest("[data-la-rename]"); if(laRename){ const id=laRename.dataset.laRename; const name=prompt("Nama baru untuk perangkat ini:"); if(name&&name.trim()){ try{ await api.localAgentRenameDevice(id, name.trim()); bustCache("localAgent"); toast("Perangkat diganti nama.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
+  const laDiscon=event.target.closest("[data-la-device-disconnect]"); if(laDiscon){ const id=laDiscon.dataset.laDeviceDisconnect; if(confirm("Putus koneksi perangkat ini?")){ try{ await api.localAgentDeviceDisconnect(id); bustCache("localAgent"); toast("Perangkat diputus.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();
   if(action==="finance-new-expense") await createExpensePrompt();
   if(action==="finance-ask-ai") await askFinanceAiPrompt();
@@ -4024,6 +4055,7 @@ document.addEventListener("click", async (event) => {
   const workforceStatus=event.target.closest("[data-workforce-status]"); if(workforceStatus){ const [id,status]=workforceStatus.dataset.workforceStatus.split(":"); try{ await api.updateWorkforceTaskStatus(id,status); toast("Task diperbarui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
+  if(action==="local-agent-refresh"){ bustCache("localAgent"); await renderAgentCenter(); return; }
   if(action==="local-agent-test"){
     const tool = document.getElementById("la-tool")?.value || "get_info";
     const resultDiv = document.getElementById("la-result");

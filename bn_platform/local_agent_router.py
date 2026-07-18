@@ -48,6 +48,35 @@ CREATE TABLE IF NOT EXISTS local_agent_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_local_agent_conn_org ON local_agent_connections(org_id);
 
+-- Registry perangkat (multi-device per akun), satu baris per org+device.
+-- device_id stabil dibuat & disimpan agen di komputer user. status =
+-- online | offline | busy. Kolom *_percent/uptime diperbarui oleh heartbeat.
+CREATE TABLE IF NOT EXISTS local_agent_devices (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id        UUID NOT NULL,
+    device_id     TEXT NOT NULL,
+    name          TEXT,
+    hostname      TEXT,
+    platform      TEXT,
+    os_version    TEXT,
+    username      TEXT,
+    cpu           TEXT,
+    cpu_count     INTEGER,
+    ram_total_mb  BIGINT,
+    disk_total_gb BIGINT,
+    ip            TEXT,
+    agent_version TEXT DEFAULT '1.0.0',
+    status        TEXT NOT NULL DEFAULT 'offline',
+    cpu_percent   REAL,
+    ram_percent   REAL,
+    uptime_seconds BIGINT,
+    first_seen    TIMESTAMPTZ DEFAULT NOW(),
+    last_seen     TIMESTAMPTZ DEFAULT NOW(),
+    connected_at  TIMESTAMPTZ,
+    UNIQUE (org_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_local_agent_devices_org ON local_agent_devices(org_id, last_seen DESC);
+
 CREATE TABLE IF NOT EXISTS local_agent_commands (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id       UUID NOT NULL,
@@ -68,6 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_local_agent_cmd_org ON local_agent_commands(org_i
 ALTER TABLE local_agent_commands ADD COLUMN IF NOT EXISTS rejected_reason TEXT;
 ALTER TABLE local_agent_commands ADD COLUMN IF NOT EXISTS approved_by TEXT;
 ALTER TABLE local_agent_commands ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE local_agent_commands ADD COLUMN IF NOT EXISTS device_id TEXT;
 """
 
 
@@ -81,61 +111,120 @@ async def ensure_schema(pool: asyncpg.Pool) -> None:
 
 # ─── Connection Manager ────────────────────────────────────────────────────────
 
+class _DeviceConn:
+    """Satu koneksi WebSocket perangkat aktif."""
+    __slots__ = ("ws", "meta", "row_id", "busy")
+
+    def __init__(self, ws: WebSocket, meta: dict, row_id: str | None):
+        self.ws = ws
+        self.meta = meta
+        self.row_id = row_id      # id baris local_agent_devices (untuk update status)
+        self.busy = False
+
+
 class LocalAgentManager:
-    """Singleton yang mengelola WebSocket connections per org_id."""
+    """Singleton pengelola WebSocket MULTI-PERANGKAT per org_id.
+
+    Struktur: org_id → { device_id → _DeviceConn }. Metode org-level
+    (`is_connected`/`get_meta`/`execute` tanpa device_id) tetap kompatibel —
+    memilih perangkat online (mengutamakan yang tidak busy) sebagai default.
+    `_conn_ids`/`_meta` dipertahankan sebagai shim perangkat 'primary' untuk
+    pemanggil lama (mis. computer_agent_run_local).
+    """
 
     def __init__(self):
-        self._connections: dict[str, WebSocket] = {}       # org_id → ws
-        self._meta: dict[str, dict] = {}                   # org_id → metadata
-        self._futures: dict[str, asyncio.Future] = {}      # command_id → future
-        self._conn_ids: dict[str, str] = {}                # org_id → connection_id (DB)
+        self._devices: dict[str, dict[str, _DeviceConn]] = {}   # org_id → device_id → conn
+        self._futures: dict[str, asyncio.Future] = {}           # command_id → future
+        # Shim kompatibilitas (perangkat primary per org):
+        self._conn_ids: dict[str, str] = {}                     # org_id → row_id primary
+        self._meta: dict[str, dict] = {}                        # org_id → meta primary
 
-    def is_connected(self, org_id: str) -> bool:
-        return org_id in self._connections
+    # ── query ──
+    def is_connected(self, org_id: str, device_id: str | None = None) -> bool:
+        devs = self._devices.get(org_id) or {}
+        return (device_id in devs) if device_id is not None else bool(devs)
 
     def get_meta(self, org_id: str) -> dict:
         return self._meta.get(org_id, {})
 
-    async def connect(self, org_id: str, ws: WebSocket, meta: dict, pool: asyncpg.Pool):
-        await ws.accept()
-        self._connections[org_id] = ws
-        self._meta[org_id] = meta
-        try:
-            row = await pool.fetchrow(
-                """INSERT INTO local_agent_connections (org_id, hostname, platform, username, agent_version)
-                   VALUES ($1,$2,$3,$4,$5) RETURNING id""",
-                org_id, meta.get("hostname"), meta.get("platform"),
-                meta.get("username"), meta.get("version", "1.0.0"),
-            )
-            if row:
-                self._conn_ids[org_id] = str(row["id"])
-        except Exception:
-            logger.warning("local_agent: gagal simpan koneksi ke DB")
+    def device_ids(self, org_id: str) -> list[str]:
+        return list((self._devices.get(org_id) or {}).keys())
 
-    async def disconnect(self, org_id: str, pool: asyncpg.Pool):
-        conn_id = self._conn_ids.pop(org_id, None)
-        self._connections.pop(org_id, None)
-        self._meta.pop(org_id, None)
-        # Fail semua futures yang pending untuk org ini
-        to_cancel = [cid for cid, f in self._futures.items() if not f.done()]
-        for cid in to_cancel:
-            fut = self._futures.pop(cid, None)
-            if fut and not fut.done():
-                fut.set_exception(RuntimeError("Local agent terputus"))
-        if conn_id:
+    def device_status(self, org_id: str, device_id: str) -> str | None:
+        conn = (self._devices.get(org_id) or {}).get(device_id)
+        if conn is None:
+            return None
+        return "busy" if conn.busy else "online"
+
+    def _pick(self, org_id: str, device_id: str | None) -> tuple[str | None, _DeviceConn | None]:
+        devs = self._devices.get(org_id) or {}
+        if not devs:
+            return None, None
+        if device_id is not None:
+            conn = devs.get(device_id)
+            return (device_id, conn) if conn else (None, None)
+        for did, conn in devs.items():        # utamakan perangkat idle
+            if not conn.busy:
+                return did, conn
+        did = next(iter(devs))
+        return did, devs[did]
+
+    def _refresh_primary(self, org_id: str):
+        devs = self._devices.get(org_id) or {}
+        if devs:
+            did = next(iter(devs))
+            conn = devs[did]
+            if conn.row_id:
+                self._conn_ids[org_id] = conn.row_id
+            self._meta[org_id] = conn.meta
+        else:
+            self._conn_ids.pop(org_id, None)
+            self._meta.pop(org_id, None)
+
+    # ── lifecycle ──
+    def register(self, org_id: str, device_id: str, ws: WebSocket, meta: dict, row_id: str | None):
+        self._devices.setdefault(org_id, {})[device_id] = _DeviceConn(ws, meta, row_id)
+        self._refresh_primary(org_id)
+
+    async def deregister(self, org_id: str, device_id: str, pool: asyncpg.Pool):
+        devs = self._devices.get(org_id)
+        conn = devs.pop(device_id, None) if devs else None
+        if devs is not None and not devs:
+            self._devices.pop(org_id, None)
+        self._refresh_primary(org_id)
+        # Gagalkan futures pending HANYA jika org tak punya perangkat online lagi.
+        if not self.is_connected(org_id):
+            for cid in [c for c, f in self._futures.items() if not f.done()]:
+                fut = self._futures.pop(cid, None)
+                if fut and not fut.done():
+                    fut.set_exception(RuntimeError("Local agent terputus"))
+        if conn and conn.row_id:
             try:
                 await pool.execute(
-                    "UPDATE local_agent_connections SET disconnected_at=NOW() WHERE id=$1",
-                    conn_id,
+                    "UPDATE local_agent_devices SET status='offline', connected_at=NULL, last_seen=NOW() WHERE id=$1",
+                    conn.row_id,
                 )
             except Exception:
                 pass
 
+    async def _set_status(self, pool: asyncpg.Pool, row_id: str | None, status: str):
+        if not row_id:
+            return
+        try:
+            await pool.execute(
+                "UPDATE local_agent_devices SET status=$2, last_seen=NOW() WHERE id=$1", row_id, status,
+            )
+        except Exception:
+            pass
+
     async def execute(
         self, org_id: str, tool: str, args: dict, *,
-        initiated_by: str = "", timeout: int = 30, pool: asyncpg.Pool,
+        device_id: str | None = None, initiated_by: str = "", timeout: int = 30, pool: asyncpg.Pool,
     ) -> dict:
-        if not self.is_connected(org_id):
+        did, conn = self._pick(org_id, device_id)
+        if not conn:
+            if device_id is not None:
+                raise HTTPException(503, "Perangkat yang dipilih tidak terhubung.")
             raise HTTPException(503, "Local agent tidak terhubung. Jalankan botnesia-agent di komputer Anda.")
 
         command_id = str(uuid.uuid4())
@@ -143,23 +232,23 @@ class LocalAgentManager:
         future: asyncio.Future = loop.create_future()
         self._futures[command_id] = future
 
-        conn_id = self._conn_ids.get(org_id)
         cmd_db_id = None
         try:
             row = await pool.fetchrow(
-                """INSERT INTO local_agent_commands (org_id, connection_id, tool, args, status, initiated_by)
-                   VALUES ($1,$2,$3,$4,'running',$5) RETURNING id""",
-                org_id, conn_id, tool, json.dumps(args), initiated_by,
+                """INSERT INTO local_agent_commands (org_id, connection_id, device_id, tool, args, status, initiated_by)
+                   VALUES ($1,$2,$3,$4,$5,'running',$6) RETURNING id""",
+                org_id, conn.row_id, did, tool, json.dumps(args), initiated_by,
             )
             if row:
                 cmd_db_id = str(row["id"])
         except Exception:
             pass
 
-        ws = self._connections[org_id]
+        conn.busy = True
+        await self._set_status(pool, conn.row_id, "busy")
         t0 = time.monotonic()
         try:
-            await ws.send_json({"type": "execute", "command_id": command_id, "tool": tool, "args": args})
+            await conn.ws.send_json({"type": "execute", "command_id": command_id, "tool": tool, "args": args})
             result = await asyncio.wait_for(future, timeout=timeout)
             duration = int((time.monotonic() - t0) * 1000)
             if cmd_db_id:
@@ -178,21 +267,32 @@ class LocalAgentManager:
             raise HTTPException(504, f"Local agent tidak merespons dalam {timeout} detik")
         finally:
             self._futures.pop(command_id, None)
+            conn.busy = False
+            await self._set_status(pool, conn.row_id, "online")
 
     async def handle_result(self, command_id: str, result: dict):
         fut = self._futures.get(command_id)
         if fut and not fut.done():
             fut.set_result(result)
 
-    async def update_last_seen(self, org_id: str, pool: asyncpg.Pool):
-        conn_id = self._conn_ids.get(org_id)
-        if conn_id:
-            try:
-                await pool.execute(
-                    "UPDATE local_agent_connections SET last_seen_at=NOW() WHERE id=$1", conn_id
-                )
-            except Exception:
-                pass
+    async def update_heartbeat(self, org_id: str, device_id: str, stats: dict, pool: asyncpg.Pool):
+        conn = (self._devices.get(org_id) or {}).get(device_id)
+        if not conn or not conn.row_id:
+            return
+        try:
+            await pool.execute(
+                """UPDATE local_agent_devices
+                   SET last_seen=NOW(), cpu_percent=$2, ram_percent=$3, uptime_seconds=$4
+                   WHERE id=$1""",
+                conn.row_id, stats.get("cpu_percent"), stats.get("ram_percent"),
+                stats.get("uptime_seconds"),
+            )
+        except Exception:
+            pass
+
+    def get_ws(self, org_id: str, device_id: str) -> WebSocket | None:
+        conn = (self._devices.get(org_id) or {}).get(device_id)
+        return conn.ws if conn else None
 
 
 # Singleton global
@@ -209,15 +309,21 @@ class ExecuteRequest(BaseModel):
     tool: str = Field(description="read_file | write_file | list_dir | run_command | find_files | get_info | search_text | tree | scan_project")
     args: dict = Field(default_factory=dict)
     timeout: int = Field(default=30, ge=5, le=120)
+    device_id: str | None = Field(default=None, description="Target device; default = perangkat online")
 
 
 class ComputerAgentRequest(BaseModel):
     goal: str = Field(description="Natural language goal for the computer agent")
     timeout: int = Field(default=30, ge=5, le=120)
+    device_id: str | None = None
 
 
 class LocalAgentRejectRequest(BaseModel):
     reason: str | None = None
+
+
+class DeviceRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
 
 
 # Tools yang aman dijalankan langsung (read-only)
@@ -309,7 +415,10 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
           Server → Agent: {"type":"ping"}
           Agent → Server: {"type":"pong"}
         """
+        # get_pool bisa async (dependency FastAPI) — resolve ke pool nyata.
         pool = get_pool()
+        if asyncio.iscoroutine(pool):
+            pool = await pool
         mgr = get_manager()
 
         # Accept dulu — harus dilakukan sebelum close/send apapun
@@ -325,7 +434,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
             await websocket.close(code=4001)
             return
 
-        # Tunggu pesan "ready" dari agent
+        # Tunggu pesan register (baru) atau ready (agen lama, backward-compat)
         try:
             raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
             msg = json.loads(raw)
@@ -333,33 +442,60 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
             await websocket.close(code=4002)
             return
 
-        if msg.get("type") != "ready":
+        if msg.get("type") not in ("register", "ready"):
             await websocket.close(code=4003)
             return
 
+        hostname = msg.get("hostname", "unknown")
+        # Agen lama ("ready") tak mengirim device_id → turunkan dari hostname agar
+        # stabil per mesin. Agen baru mengirim device_id yang di-persist lokal.
+        device_id = str(msg.get("device_id") or f"legacy-{hostname}")[:128]
         meta = {
-            "hostname": msg.get("hostname", "unknown"),
+            "device_id": device_id,
+            "name": msg.get("name") or hostname,
+            "hostname": hostname,
             "platform": msg.get("platform", "unknown"),
+            "os_version": msg.get("os_version"),
             "username": msg.get("username", "unknown"),
+            "cpu": msg.get("cpu"),
+            "cpu_count": msg.get("cpu_count"),
+            "ram_total_mb": msg.get("ram_total_mb"),
+            "disk_total_gb": msg.get("disk_total_gb"),
+            "ip": msg.get("ip") or (websocket.client.host if websocket.client else None),
             "version": msg.get("version", "1.0.0"),
         }
 
-        # Daftarkan koneksi
-        mgr._connections[org_id] = websocket
-        mgr._meta[org_id] = meta
+        # Upsert baris perangkat; pertahankan nama hasil rename user (COALESCE).
+        row_id: str | None = None
         try:
             row = await pool.fetchrow(
-                """INSERT INTO local_agent_connections (org_id, hostname, platform, username, agent_version)
-                   VALUES ($1,$2,$3,$4,$5) RETURNING id""",
-                org_id, meta["hostname"], meta["platform"], meta["username"], meta["version"],
+                """INSERT INTO local_agent_devices
+                       (org_id, device_id, name, hostname, platform, os_version, username,
+                        cpu, cpu_count, ram_total_mb, disk_total_gb, ip, agent_version,
+                        status, connected_at, last_seen)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'online',NOW(),NOW())
+                   ON CONFLICT (org_id, device_id) DO UPDATE SET
+                       name=COALESCE(local_agent_devices.name, EXCLUDED.name),
+                       hostname=EXCLUDED.hostname, platform=EXCLUDED.platform,
+                       os_version=EXCLUDED.os_version, username=EXCLUDED.username,
+                       cpu=EXCLUDED.cpu, cpu_count=EXCLUDED.cpu_count,
+                       ram_total_mb=EXCLUDED.ram_total_mb, disk_total_gb=EXCLUDED.disk_total_gb,
+                       ip=EXCLUDED.ip, agent_version=EXCLUDED.agent_version,
+                       status='online', connected_at=NOW(), last_seen=NOW()
+                   RETURNING id""",
+                org_id, device_id, meta["name"], meta["hostname"], meta["platform"],
+                meta["os_version"], meta["username"], meta["cpu"], meta["cpu_count"],
+                meta["ram_total_mb"], meta["disk_total_gb"], meta["ip"], meta["version"],
             )
             if row:
-                mgr._conn_ids[org_id] = str(row["id"])
+                row_id = str(row["id"])
         except Exception:
-            logger.warning("local_agent: gagal simpan koneksi ke DB")
+            logger.warning("local_agent: gagal simpan perangkat ke DB")
 
-        logger.info("Local agent terhubung: org=%s host=%s", org_id, meta["hostname"])
-        await websocket.send_json({"type": "connected", "message": f"Terhubung ke BotNesia sebagai {meta['hostname']}"})
+        mgr.register(org_id, device_id, websocket, meta, row_id)
+        logger.info("Local agent terhubung: org=%s device=%s host=%s", org_id, device_id, hostname)
+        await websocket.send_json({"type": "connected", "device_id": device_id,
+                                   "message": f"Terhubung ke BotNesia sebagai {meta['name']}"})
 
         try:
             while True:
@@ -368,7 +504,9 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
                 msg_type = msg.get("type")
 
                 if msg_type == "pong":
-                    await mgr.update_last_seen(org_id, pool)
+                    await mgr.update_heartbeat(org_id, device_id, {}, pool)
+                elif msg_type == "heartbeat":
+                    await mgr.update_heartbeat(org_id, device_id, msg, pool)
                 elif msg_type == "result":
                     await mgr.handle_result(msg.get("command_id", ""), msg)
                 elif msg_type == "approval_required":
@@ -393,10 +531,27 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
         except Exception as e:
             logger.warning("local_agent ws error org=%s: %s", org_id, e)
         finally:
-            await mgr.disconnect(org_id, pool)
-            logger.info("Local agent terputus: org=%s", org_id)
+            await mgr.deregister(org_id, device_id, pool)
+            logger.info("Local agent terputus: org=%s device=%s", org_id, device_id)
 
     # ── REST: status ───────────────────────────────────────────────────────────
+
+    async def _list_devices(pool, org_id: str, mgr) -> list[dict]:
+        """Gabungkan registry DB dengan status live manager (online/busy/offline)."""
+        rows = await pool.fetch(
+            """SELECT device_id, name, hostname, platform, os_version, username, cpu,
+                      cpu_count, ram_total_mb, disk_total_gb, ip, agent_version, status,
+                      cpu_percent, ram_percent, uptime_seconds, first_seen, last_seen, connected_at
+               FROM local_agent_devices WHERE org_id=$1 ORDER BY last_seen DESC""",
+            org_id,
+        )
+        devices = []
+        for r in rows:
+            d = dict(r)
+            live = mgr.device_status(org_id, d["device_id"])   # None | online | busy
+            d["status"] = live or "offline"                    # status live selalu menang
+            devices.append(d)
+        return devices
 
     @router.get("/local-agent/status")
     async def local_agent_status(
@@ -406,18 +561,65 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
         org_id = str(user["org_id"])
         mgr = get_manager()
         connected = mgr.is_connected(org_id)
-        meta = mgr.get_meta(org_id) if connected else {}
-        last_conn = await pool.fetchrow(
-            """SELECT hostname, platform, username, agent_version, connected_at, last_seen_at
-               FROM local_agent_connections WHERE org_id=$1
-               ORDER BY connected_at DESC LIMIT 1""",
-            org_id,
-        )
+        devices = await _list_devices(pool, org_id, mgr)
+        primary = next((d for d in devices if d["status"] != "offline"),
+                       devices[0] if devices else None)
         return {
             "connected": connected,
-            "meta": meta,
-            "last_connection": dict(last_conn) if last_conn else None,
+            "meta": mgr.get_meta(org_id) if connected else {},
+            "last_connection": primary,   # backward-compat: perangkat primary
+            "devices": devices,
+            "online_count": sum(1 for d in devices if d["status"] != "offline"),
         }
+
+    @router.get("/local-agent/devices")
+    async def local_agent_devices(
+        user=Depends(require_permission("local_agent.manage")),
+        pool=Depends(get_pool),
+    ):
+        org_id = str(user["org_id"])
+        return {"devices": await _list_devices(pool, org_id, get_manager())}
+
+    @router.post("/local-agent/devices/{device_id}/rename")
+    async def local_agent_rename_device(
+        device_id: str,
+        body: DeviceRenameRequest,
+        user=Depends(require_permission("local_agent.manage")),
+        pool=Depends(get_pool),
+    ):
+        org_id = str(user["org_id"])
+        row = await pool.fetchrow(
+            """UPDATE local_agent_devices SET name=$1 WHERE org_id=$2 AND device_id=$3
+               RETURNING device_id, name""",
+            body.name.strip(), org_id, device_id,
+        )
+        if not row:
+            raise HTTPException(404, "Perangkat tidak ditemukan")
+        await write_audit_log(
+            pool, org_id=org_id, actor_user_id=user.get("id"), actor_email=user.get("email"),
+            action="update", resource_type="local_agent_device", resource_id=device_id,
+            metadata={"renamed_to": body.name.strip()},
+        )
+        return {"success": True, "device": dict(row)}
+
+    @router.post("/local-agent/devices/{device_id}/disconnect")
+    async def local_agent_device_disconnect(
+        device_id: str,
+        user=Depends(require_permission("local_agent.manage")),
+        pool=Depends(get_pool),
+    ):
+        org_id = str(user["org_id"])
+        mgr = get_manager()
+        ws = mgr.get_ws(org_id, device_id)
+        if ws is None:
+            raise HTTPException(404, "Perangkat tidak terhubung")
+        try:
+            await ws.send_json({"type": "shutdown"})
+            await ws.close()
+        except Exception:
+            pass
+        await mgr.deregister(org_id, device_id, pool)
+        return {"success": True, "message": "Perangkat diputus"}
 
     # ── REST: execute ──────────────────────────────────────────────────────────
 
@@ -432,6 +634,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
         mgr = get_manager()
         result = await mgr.execute(
             org_id, body.tool, body.args,
+            device_id=body.device_id,
             initiated_by=str(user.get("user_id", "")),
             timeout=body.timeout,
             pool=pool,
@@ -543,14 +746,16 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
         mgr = get_manager()
         if not mgr.is_connected(org_id):
             raise HTTPException(404, "Tidak ada local agent yang terhubung")
-        ws = mgr._connections.get(org_id)
-        if ws:
-            try:
-                await ws.send_json({"type": "shutdown"})
-                await ws.close()
-            except Exception:
-                pass
-        await mgr.disconnect(org_id, pool)
+        # Putus SEMUA perangkat org (backward-compat endpoint lama).
+        for did in mgr.device_ids(org_id):
+            ws = mgr.get_ws(org_id, did)
+            if ws:
+                try:
+                    await ws.send_json({"type": "shutdown"})
+                    await ws.close()
+                except Exception:
+                    pass
+            await mgr.deregister(org_id, did, pool)
         return {"success": True, "message": "Local agent diputus"}
 
     # ── Computer Agent: natural language → tool execution ──────────────────────
@@ -593,9 +798,9 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
                 cmd_id = None
                 try:
                     row = await pool.fetchrow(
-                        """INSERT INTO local_agent_commands (org_id, connection_id, tool, args, status, initiated_by)
-                           VALUES ($1,$2,$3,$4,'pending_approval',$5) RETURNING id""",
-                        org_id, mgr._conn_ids.get(org_id), tool, json.dumps(args),
+                        """INSERT INTO local_agent_commands (org_id, connection_id, device_id, tool, args, status, initiated_by)
+                           VALUES ($1,$2,$3,$4,$5,'pending_approval',$6) RETURNING id""",
+                        org_id, mgr._conn_ids.get(org_id), body.device_id, tool, json.dumps(args),
                         str(user["id"]),
                     )
                     if row:
@@ -609,6 +814,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
             try:
                 result = await mgr.execute(
                     org_id, tool, args,
+                    device_id=body.device_id,
                     initiated_by=str(user.get("user_id", "computer_agent")),
                     timeout=body.timeout, pool=pool,
                 )

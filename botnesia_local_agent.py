@@ -25,10 +25,13 @@ import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
 import getpass
+import uuid
+from pathlib import Path
 
 # Auto-install websockets jika belum ada
 try:
@@ -602,6 +605,95 @@ TOOLS = {
 
 # ─── WebSocket client ─────────────────────────────────────────────────────────
 
+try:
+    import psutil  # opsional — memperkaya metrik CPU/RAM; agen tetap jalan tanpanya
+except Exception:
+    psutil = None
+
+_START_TIME = time.time()
+
+
+def _device_id() -> str:
+    """ID perangkat stabil, di-persist di ~/.botnesia/device_id (dibuat sekali)."""
+    cfg_dir = Path.home() / ".botnesia"
+    cfg_file = cfg_dir / "device_id"
+    try:
+        if cfg_file.exists():
+            val = cfg_file.read_text().strip()
+            if val:
+                return val
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        val = uuid.uuid4().hex
+        cfg_file.write_text(val)
+        return val
+    except Exception:
+        # Fallback deterministik per-mesin bila filesystem tak bisa ditulis.
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"{platform.node()}-{getpass.getuser()}").hex
+
+
+def _local_ip() -> str | None:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))       # tak mengirim paket; hanya memilih rute
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return None
+
+
+def _collect_metadata() -> dict:
+    """Metadata statis perangkat untuk registrasi."""
+    ram_total_mb = None
+    disk_total_gb = None
+    cpu = platform.processor() or platform.machine() or None
+    try:
+        if psutil:
+            ram_total_mb = int(psutil.virtual_memory().total / (1024 * 1024))
+    except Exception:
+        pass
+    try:
+        total, _, _ = shutil.disk_usage(str(Path.home()))
+        disk_total_gb = int(total / (1024 ** 3))
+    except Exception:
+        pass
+    return {
+        "device_id": _device_id(),
+        "name": platform.node(),
+        "hostname": platform.node(),
+        "platform": f"{platform.system()} {platform.release()}",
+        "os_version": platform.version(),
+        "username": getpass.getuser(),
+        "cpu": cpu,
+        "cpu_count": os.cpu_count(),
+        "ram_total_mb": ram_total_mb,
+        "disk_total_gb": disk_total_gb,
+        "ip": _local_ip(),
+        "version": VERSION,
+    }
+
+
+def _heartbeat_stats() -> dict:
+    """Metrik live untuk heartbeat (cpu/ram %, uptime agen)."""
+    cpu_percent = None
+    ram_percent = None
+    try:
+        if psutil:
+            cpu_percent = psutil.cpu_percent(interval=None)
+            ram_percent = psutil.virtual_memory().percent
+    except Exception:
+        pass
+    return {
+        "type": "heartbeat",
+        "cpu_percent": cpu_percent,
+        "ram_percent": ram_percent,
+        "uptime_seconds": int(time.time() - _START_TIME),
+    }
+
+
 async def run_agent(url: str, token: str):
     try:
         import websockets
@@ -618,15 +710,9 @@ async def run_agent(url: str, token: str):
     while True:
         try:
             async with websockets.connect(ws_url, ping_interval=30, ping_timeout=10) as ws:
-                # Kirim pesan ready
-                ready_msg = {
-                    "type": "ready",
-                    "hostname": platform.node(),
-                    "platform": f"{platform.system()} {platform.release()}",
-                    "username": getpass.getuser(),
-                    "version": VERSION,
-                }
-                await ws.send(json.dumps(ready_msg))
+                # Kirim pesan register (metadata perangkat + device_id stabil)
+                register_msg = {"type": "register", **_collect_metadata()}
+                await ws.send(json.dumps(register_msg))
 
                 # Tunggu konfirmasi
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
@@ -634,10 +720,21 @@ async def run_agent(url: str, token: str):
                 if msg.get("type") == "connected":
                     print(f"\n✅ {msg.get('message', 'Terhubung!')}")
                     print(f"   Host     : {platform.node()}")
+                    print(f"   Device   : {register_msg['device_id'][:12]}…")
                     print(f"   Platform : {platform.system()} {platform.release()}")
                     print(f"   User     : {getpass.getuser()}")
                     print(f"\n👂 Menunggu perintah dari BotNesia... (Ctrl+C untuk berhenti)\n")
                     reconnect_delay = 5  # reset delay setelah berhasil konek
+
+                # Heartbeat periodik (8 dtk) → status live + last_seen di dashboard
+                async def _heartbeat_loop():
+                    try:
+                        while True:
+                            await asyncio.sleep(8)
+                            await ws.send(json.dumps(_heartbeat_stats()))
+                    except Exception:
+                        return
+                hb_task = asyncio.ensure_future(_heartbeat_loop())
 
                 async for raw in ws:
                     try:
@@ -675,6 +772,7 @@ async def run_agent(url: str, token: str):
 
                     elif msg_type == "shutdown":
                         print("\n🔌 Server meminta disconnect. Sampai jumpa!")
+                        hb_task.cancel()
                         return
 
         except KeyboardInterrupt:
