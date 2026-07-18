@@ -8,10 +8,24 @@
 __pycache__/
 *.py[cod]
 
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
 .ai-agent/
 _tmp/
 vendor/
 data/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
 
 *.db
 *.sqlite
