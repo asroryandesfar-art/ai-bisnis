@@ -56,6 +56,7 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
                SELECT w.agent_name,
                       COUNT(*)::int AS executions,
                       COUNT(*) FILTER (WHERE w.status='error')::int AS failures,
+                      COALESCE(SUM(w.retry_count),0)::int AS retries,
                       COALESCE(AVG(w.duration_ms),0)::float AS average_latency_ms,
                       COALESCE(SUM(w.total_tokens),0)::bigint AS total_tokens,
                       MAX(w.execution_start) AS last_seen_at,

@@ -1,8 +1,10 @@
 """Persistent, fail-open tracing for the BotNesia multi-agent pipeline."""
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -10,10 +12,40 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Awaitable, Callable, TypeVar
 
+import httpx
+
 from bn_platform.observability import record_ai_request, record_token_usage
 from cost_intelligence import choose_model, estimate_cost_usd, reset_model_route, set_model_route
 
 T = TypeVar("T")
+
+# ── Auto-retry untuk kegagalan TRANSIENT (timeout/jaringan/API sementara) ──
+# Provider LLM sudah retry di level HTTP; ini jaring pengaman level-agent untuk
+# error transient yang lolos dari provider. Konfigurasi via env.
+_RETRY_MAX = int(os.getenv("AGENT_RETRY_MAX", "3"))
+_RETRY_BASE_DELAY = float(os.getenv("AGENT_RETRY_BASE_DELAY", "0.5"))
+_RETRY_MAX_DELAY = float(os.getenv("AGENT_RETRY_MAX_DELAY", "8"))
+_TRANSIENT_TYPES = (
+    httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError,
+    httpx.RemoteProtocolError, httpx.PoolTimeout, asyncio.TimeoutError,
+    ConnectionError,
+)
+_TRANSIENT_KEYWORDS = (
+    "timed out", "timeout", "temporarily unavailable", "service unavailable",
+    "connection reset", "connection aborted", "rate limit", "too many requests",
+    "502", "503", "504", "bad gateway", "gateway timeout",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True bila error layak di-retry (transient), bukan bug logika/permanen."""
+    if isinstance(exc, _TRANSIENT_TYPES):
+        return True
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) in (429, 500, 502, 503, 504):
+        return True
+    msg = str(exc).lower()
+    return any(k in msg for k in _TRANSIENT_KEYWORDS)
 
 
 @dataclass
@@ -159,8 +191,34 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
     )
 
     result: Any = None
+    retry_count = 0
     try:
-        result = await operation()
+        # Auto-retry TRANSIENT dengan exponential backoff (maks _RETRY_MAX).
+        # Error non-transient (bug logika, permission, value) gagal cepat.
+        while True:
+            try:
+                result = await operation()
+                break
+            except Exception as exc:  # noqa: BLE001 — klasifikasi transient di bawah
+                # Cegah multiplikasi retry pada observe_agent BERSARANG (mis.
+                # supervisor membungkus operation yang juga memanggil observe_agent):
+                # exception transient yang sudah di-retry di level dalam ditandai,
+                # sehingga wrapper luar tidak me-retry ulang.
+                already_retried = getattr(exc, "_bn_retried", False)
+                if already_retried or retry_count >= _RETRY_MAX or not _is_transient(exc):
+                    if _is_transient(exc) and retry_count and not already_retried:
+                        try:
+                            exc._bn_retried = True
+                        except Exception:
+                            pass
+                    raise
+                retry_count += 1
+                await _execute(
+                    state.pool,
+                    "UPDATE agent_executions SET status='retrying', retry_count=$2 WHERE id=$1",
+                    execution_id, retry_count,
+                )
+                await asyncio.sleep(min(_RETRY_BASE_DELAY * (2 ** (retry_count - 1)), _RETRY_MAX_DELAY))
         status, error = _status(result)
         confidence = _confidence(result)
         return result
@@ -171,6 +229,8 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
         # agar setiap kegagalan punya root cause yang bisa dibaca.
         _detail = str(exc).strip()
         error = f"{type(exc).__name__}: {_detail}" if _detail else type(exc).__name__
+        if retry_count:
+            error = f"{error} (setelah {retry_count} retry)"
         status, confidence = "error", None
         raise
     finally:
@@ -180,11 +240,11 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
             """UPDATE agent_executions
                SET execution_end=$2, duration_ms=$3, status=$4, error_message=$5,
                    confidence_score=$6, prompt_tokens=$7, completion_tokens=$8,
-                   total_tokens=$9, metadata=$10::jsonb
+                   total_tokens=$9, metadata=$10::jsonb, retry_count=$11
                WHERE id=$1""",
             execution_id, datetime.now(timezone.utc), duration_ms, status, error, confidence,
             usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-            json.dumps(_output_summary(result), ensure_ascii=True),
+            json.dumps(_output_summary(result), ensure_ascii=True), retry_count,
         )
         for model_usage in usage.model_usages:
             await _execute(

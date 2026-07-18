@@ -1277,6 +1277,8 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         # AI master switch (autonomy). Default TRUE = perilaku lama (otomatisasi
         # jalan); OFF menjeda eksekusi lokal/computer/terminal (HTTP 423).
         "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS autonomy_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+        # Auto-retry observability: jumlah retry transient per eksekusi agent.
+        "ALTER TABLE agent_executions ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;",
         # Per-agent ON/OFF toggle (granular; berbeda dari master switch di atas).
         """CREATE TABLE IF NOT EXISTS org_agent_toggles (
             org_id UUID NOT NULL,

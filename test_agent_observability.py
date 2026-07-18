@@ -1,7 +1,27 @@
 import asyncio
 
+import httpx
+
+import agent_observability
 from agent_observability import add_token_usage, observe_agent, trace_request
 from bn_platform.ai_observability import build_ai_observability_router
+
+
+def _ctx(pool):
+    return {
+        "org_id": "00000000-0000-0000-0000-000000000001",
+        "conversation_id": "00000000-0000-0000-0000-000000000002",
+        "user_message": "x",
+        "_observability_pool": pool,
+    }
+
+
+def _final_update(pool):
+    """Args UPDATE terakhir (yg set execution_end + retry_count)."""
+    for sql, args in pool.calls:
+        if "UPDATE agent_executions" in sql and "execution_end=$2" in sql:
+            return args
+    return None
 
 
 class FakePool:
@@ -101,6 +121,87 @@ def test_failure_records_nonblank_error_even_for_empty_exception():
     assert status == "error"
     assert error_message and error_message.strip(), "error_message TIDAK boleh blank"
     assert "Boom" in error_message, "tipe exception harus tercatat sebagai root cause"
+
+
+# ── Auto-retry transient + exponential backoff ──────────────────────────────
+def test_is_transient_classification():
+    assert agent_observability._is_transient(httpx.ConnectError("boom")) is True
+    assert agent_observability._is_transient(asyncio.TimeoutError()) is True
+    assert agent_observability._is_transient(RuntimeError("503 service unavailable")) is True
+    assert agent_observability._is_transient(ValueError("bad prompt")) is False
+    assert agent_observability._is_transient(KeyError("x")) is False
+
+
+def test_transient_error_is_retried_then_succeeds(monkeypatch):
+    monkeypatch.setattr(agent_observability, "_RETRY_BASE_DELAY", 0)  # tanpa delay di test
+    pool = FakePool()
+    ctx = _ctx(pool)
+    attempts = {"n": 0}
+
+    async def child():
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise httpx.ConnectError("connection reset")   # transient
+        return {"confidence_score": 90}
+
+    async def operation():
+        await observe_agent("finance_agent", ctx, child)
+        return "ok"
+
+    asyncio.run(trace_request(ctx, operation))
+    assert attempts["n"] == 3                    # 1 awal + 2 retry
+    args = _final_update(pool)
+    assert args and args[3] == "success"         # akhirnya sukses
+    assert args[10] == 2                          # retry_count tercatat
+
+
+def test_non_transient_error_is_not_retried(monkeypatch):
+    monkeypatch.setattr(agent_observability, "_RETRY_BASE_DELAY", 0)
+    pool = FakePool()
+    ctx = _ctx(pool)
+    attempts = {"n": 0}
+
+    async def child():
+        attempts["n"] += 1
+        raise ValueError("prompt invalid")         # non-transient → fail fast
+
+    async def operation():
+        await observe_agent("finance_agent", ctx, child)
+        return "ok"
+
+    try:
+        asyncio.run(trace_request(ctx, operation))
+    except Exception:
+        pass
+    assert attempts["n"] == 1                     # TIDAK di-retry
+    args = _final_update(pool)
+    assert args and args[3] == "error" and args[10] == 0
+
+
+def test_transient_exhausted_records_retry_count(monkeypatch):
+    monkeypatch.setattr(agent_observability, "_RETRY_BASE_DELAY", 0)
+    monkeypatch.setattr(agent_observability, "_RETRY_MAX", 3)
+    pool = FakePool()
+    ctx = _ctx(pool)
+    attempts = {"n": 0}
+
+    async def child():
+        attempts["n"] += 1
+        raise httpx.ReadTimeout("timed out")        # selalu transient
+
+    async def operation():
+        await observe_agent("finance_agent", ctx, child)
+        return "ok"
+
+    try:
+        asyncio.run(trace_request(ctx, operation))
+    except Exception:
+        pass
+    assert attempts["n"] == 4                      # 1 + 3 retry
+    args = _final_update(pool)
+    assert args and args[3] == "error"
+    assert args[10] == 3                            # retry_count = maks
+    assert "retry" in (args[4] or "").lower()      # error mencatat jumlah retry
 
 
 class SummaryPool:
