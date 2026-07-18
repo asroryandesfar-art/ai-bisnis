@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 from .security import write_audit_log
+from .ai_power import require_autonomy
 
 logger = logging.getLogger(__name__)
 
@@ -631,6 +632,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
     ):
         """Kirim perintah ke local agent yang terhubung."""
         org_id = str(user["org_id"])
+        await require_autonomy(pool, org_id)   # AI master switch: OFF → 423
         mgr = get_manager()
         result = await mgr.execute(
             org_id, body.tool, body.args,
@@ -768,6 +770,7 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
     ):
         """Terima goal dalam bahasa Indonesia → rencanakan langkah → eksekusi via Local Agent."""
         org_id = str(user["org_id"])
+        await require_autonomy(pool, org_id)   # AI master switch: OFF → 423
         mgr = get_manager()
 
         if not mgr.is_connected(org_id):

@@ -353,6 +353,8 @@ export const api = {
   marketingRunTask: (goal, bot_id = null) => request("/api/marketing/run-task", { method: "POST", body: { goal, bot_id } }),
   hrRunTask: (goal, bot_id = null) => request("/api/hr/run-task", { method: "POST", body: { goal, bot_id } }),
   opsRunTask: (goal, bot_id = null) => request("/api/operations/run-task", { method: "POST", body: { goal, bot_id } }),
+  aiPower: () => request(`/api/ai/power`),
+  setAiPower: (enabled) => request(`/api/ai/power`, { method: "POST", body: { enabled } }),
   localAgentStatus: () => request(`/api/local-agent/status`),
   localAgentDevices: () => request(`/api/local-agent/devices`),
   localAgentRenameDevice: (deviceId, name) => request(`/api/local-agent/devices/${encodeURIComponent(deviceId)}/rename`, { method: "POST", body: { name } }),

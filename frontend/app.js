@@ -1771,6 +1771,17 @@ async function createWorkforceTaskPrompt() {
 const AGENT_RUN_TASK_FN = { finance: "financeRunTask", marketing: "marketingRunTask", hr: "hrRunTask", operations: "opsRunTask" };
 const COMPUTER_AGENT_TYPES = new Set(["computer", "local_computer", "project_debugger"]);
 
+function opsStatCard(label, value, sub, ico, tone = "") {
+  return `<div class="ops-stat ${tone}">
+    <div class="ops-stat-ico">${icon(ico, 16)}</div>
+    <div class="ops-stat-body">
+      <div class="ops-stat-value">${value}</div>
+      <div class="ops-stat-label">${esc(label)}</div>
+      <div class="ops-stat-sub">${esc(sub)}</div>
+    </div>
+  </div>`;
+}
+
 async function renderAgentCenter() {
   loadingPage("Agent Center", "Direktori semua AI agent di platform ini, ringkasan execution log lintas-sistem, dan antrian approval Computer Agent + Local Agent + Channel Messaging.");
   const results = await Promise.all([
@@ -1781,6 +1792,7 @@ async function renderAgentCenter() {
     settle("cmPending", api.channelMessagingTasks({ status: "pending_approval", limit: 20 })),
     settle("laPending", api.localAgentHistory({ status: "pending_approval", limit: 20 })),
     settle("localAgent", api.localAgentStatus()),
+    settle("aiPower", api.aiPower()),
   ]);
   const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
   const failed = results.filter((r) => !r.ok);
@@ -1792,6 +1804,8 @@ async function renderAgentCenter() {
   const cmPending = data.cmPending?.tasks || [];
   const laPending = data.laPending?.commands || [];
   const localAgent = data.localAgent || {};
+  const aiPower = data.aiPower || { enabled: true, status: "active" };
+  const aiOn = aiPower.enabled !== false;
 
   const bySourceType = overview.execution_log?.by_source_type || {};
   const totalLogEntries = Object.values(bySourceType).reduce((sum, v) => sum + Number(v || 0), 0);
@@ -2047,14 +2061,73 @@ async function renderAgentCenter() {
       </div>
     </div>` : "";
 
-  setPage(`${pageHeader("Agent Center", "Direktori AI agent, Task Engine, execution log, dan antrian approval dalam satu tampilan.",
-    `<button class="button" data-action="refresh">${icon('refresh',14)} Refresh</button>`)}
-  <div class="grid grid-4" style="margin-bottom:16px">
-    ${metricCard("Total Agent", formatNumber(agents.length), "Terdaftar di Agent Directory", "agents")}
-    ${metricCard("Execution Log", formatNumber(totalLogEntries), "Total entri tercatat", "observability")}
-    ${metricCard("Approval Queue", formatNumber(totalApprovalPending), totalApprovalPending ? `${caPendingCount} CA · ${laPendingCount} local · ${cmPendingCount} msg · ${workforcePendingApproval} workforce` : "Tidak ada antrian", "workforce", totalApprovalPending ? "trend-down" : "")}
-    ${metricCard("Local Agent", localAgent.connected ? "● Online" : "○ Offline", localAgent.connected ? `${esc(localAgent.meta?.hostname||'')}` : "Belum terhubung", "security", localAgent.connected ? "" : "")}
-  </div>
+  // ── AI Operations Center: hero + master switch (the heart) ──────────────────
+  const devicesOnline = Number(localAgent.online_count ?? (localAgent.devices||[]).filter(d=>d.status!=='offline').length ?? 0);
+  const _okLogs = logEntries.filter(e => ['ok','success','completed','done'].includes(String(e.status||'').toLowerCase())).length;
+  const successRate = logEntries.length ? Math.round(_okLogs / logEntries.length * 100) : null;
+  const aiMasterSwitch = `
+    <button class="ai-master-switch ${aiOn?'is-on':'is-off'}" data-action="ai-power-toggle" aria-pressed="${aiOn}" title="${aiOn?'Klik untuk menjeda AI':'Klik untuk mengaktifkan AI'}">
+      <span class="ai-master-track"><span class="ai-master-thumb"></span></span>
+      <span class="ai-master-label">
+        <span class="ai-master-state">${aiOn?'🟢 AI ACTIVE':'○ AI PAUSED'}</span>
+        <span class="ai-master-sub">${aiOn?'Otonom — otomatisasi & eksekusi aktif':'Mode manual — otomatisasi dijeda'}</span>
+      </span>
+    </button>`;
+  const opsHero = `
+    <div class="ops-hero ${aiOn?'is-on':'is-off'}">
+      <div class="ops-hero-left">
+        <div class="ops-hero-eyebrow">${icon('security',13)} AI OPERATIONS CENTER</div>
+        <h1 class="ops-hero-title">${esc(state.org?.name||'Workspace')}</h1>
+        <p class="ops-hero-sub">Kendalikan seluruh AI, perangkat, dan otomatisasi dari satu tempat.</p>
+      </div>
+      <div class="ops-hero-right">${aiMasterSwitch}</div>
+    </div>`;
+  const opsStats = `
+    <div class="ops-stats">
+      ${opsStatCard('Running Agents', formatNumber(agents.length), 'agent aktif', 'agents')}
+      ${opsStatCard('Connected Devices', formatNumber(devicesOnline), `${(localAgent.devices||[]).length} terdaftar`, 'security')}
+      ${opsStatCard("Today's Tasks", formatNumber(totalLogEntries), 'entri execution log', 'observability')}
+      ${opsStatCard('Success Rate', successRate==null?'—':`${successRate}%`, 'dari aktivitas terbaru', 'trend-up')}
+      ${opsStatCard('Approval Queue', formatNumber(totalApprovalPending), totalApprovalPending?'menunggu izin':'bersih', 'workforce', totalApprovalPending?'warn':'')}
+    </div>`;
+  // ── Right rail: Computer Status · Approval · Live Activity ───────────────────
+  const primaryDev = localAgent.last_connection || (localAgent.devices||[])[0] || null;
+  const railComputer = `
+    <div class="ops-rail-card">
+      <div class="ops-rail-head">${icon('security',13)} Computer Status</div>
+      <div class="ops-rail-body">
+        <div class="ops-metric-row"><span>Perangkat online</span><b>${devicesOnline}</b></div>
+        ${primaryDev ? `<div class="ops-metric-row"><span>Utama</span><b>${esc(primaryDev.name||primaryDev.hostname||'-')}</b></div>
+        <div class="ops-metric-row"><span>Status</span><b style="color:${primaryDev.status!=='offline'?'#2e9e73':'var(--text-muted)'}">${primaryDev.status==='busy'?'● Busy':primaryDev.status!=='offline'?'● Online':'○ Offline'}</b></div>` : `<div class="subtle" style="font-size:12px">Belum ada perangkat terhubung.</div>`}
+      </div>
+    </div>`;
+  const railApproval = `
+    <div class="ops-rail-card ${totalApprovalPending?'is-warn':''}">
+      <div class="ops-rail-head">${icon('workforce',13)} Approval Queue</div>
+      <div class="ops-rail-body">
+        <div class="ops-approval-big ${totalApprovalPending?'has':''}">${formatNumber(totalApprovalPending)}</div>
+        <div class="subtle" style="font-size:12px">${totalApprovalPending?`${laPendingCount} local · ${caPendingCount} computer · ${cmPendingCount} pesan`:'Tidak ada aksi menunggu izin'}</div>
+      </div>
+    </div>`;
+  const _feedIcon = (s) => ({ok:'✓',success:'✓',completed:'✓',done:'✓',failed:'✕',error:'✕',pending:'◔',running:'◍'}[String(s||'').toLowerCase()]||'•');
+  const railActivity = `
+    <div class="ops-rail-card">
+      <div class="ops-rail-head">${icon('observability',13)} Live Activity</div>
+      <div class="ops-rail-body ops-activity">
+        ${logEntries.length ? logEntries.slice(0,8).map(e=>`
+          <div class="ops-activity-item">
+            <span class="ops-activity-dot s-${esc(String(e.status||'').toLowerCase())}">${_feedIcon(e.status)}</span>
+            <span class="ops-activity-txt">${esc(e.label||e.source_type||'aktivitas')}</span>
+            <span class="ops-activity-time">${e.created_at?relativeTime(e.created_at):''}</span>
+          </div>`).join('') : `<div class="subtle" style="font-size:12px">Belum ada aktivitas.</div>`}
+      </div>
+    </div>`;
+  const opsRightRail = `<aside class="ops-rail">${railComputer}${railApproval}${railActivity}</aside>`;
+
+  setPage(`${opsHero}
+  ${opsStats}
+  <div class="ops-layout">
+  <div class="ops-main">
   <div class="page-section-label">Tanya Agent</div>
   <div class="card" style="margin-bottom:16px">
     <div class="card-head"><div><h3>Tanya / Beri Tugas ke AI Agent</h3><span class="subtle">Tulis pertanyaan atau tugas, pilih agent, lalu klik Jalankan</span></div></div>
@@ -2113,7 +2186,9 @@ async function renderAgentCenter() {
   <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3><span class="subtle">20 entri terakhir dari semua sumber</span></div>
     ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
   </div>
-  ${failedNote}`);
+  ${failedNote}
+  </div>${opsRightRail}
+  </div>`);
   if (localAgent.connected) setTimeout(() => window.laToolChange("get_info"), 0);
 }
 
@@ -4056,6 +4131,18 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-refresh"){ bustCache("localAgent"); await renderAgentCenter(); return; }
+  if(action==="ai-power-toggle"){
+    const btn=event.target.closest("[data-action='ai-power-toggle']");
+    const turningOff=btn?.classList.contains("is-on");
+    if(turningOff && !confirm("Matikan AI? Semua otomatisasi & eksekusi (computer control, terminal, computer agent) akan DIJEDA sampai diaktifkan lagi.")) return;
+    try{
+      const res=await api.setAiPower(!turningOff);
+      bustCache("aiPower");
+      toast(res.enabled?"🟢 AI diaktifkan — mode otonom.":"AI dijeda — mode manual.", res.enabled?"success":"info");
+      await renderAgentCenter();
+    }catch(err){ toast(err.message,"error"); }
+    return;
+  }
   if(action==="local-agent-test"){
     const tool = document.getElementById("la-tool")?.value || "get_info";
     const resultDiv = document.getElementById("la-result");

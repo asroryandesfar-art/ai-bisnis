@@ -524,3 +524,84 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .marketplace-tab:hover{color:var(--text)}
 .marketplace-tab.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .marketplace-tab .tab-count{margin-left:6px;padding:1px 6px;border-radius:10px;background:var(--surface);font:600 9px 'DM Mono'}
+
+/* ============================================================
+   AI OPERATIONS CENTER — premium redesign (Agent Center)
+   ============================================================ */
+.ops-hero{position:relative;display:flex;justify-content:space-between;align-items:center;gap:24px;
+  padding:22px 24px;margin-bottom:18px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(37,99,235,.10) 55%,rgba(16,185,129,.06));
+  border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px)}
+.ops-hero.is-on::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(600px 120px at 100% 0%,rgba(34,197,94,.18),transparent 70%)}
+.ops-hero-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+  letter-spacing:.14em;color:var(--text-2);text-transform:uppercase}
+.ops-hero-title{font-size:26px;font-weight:800;letter-spacing:-.03em;margin:8px 0 4px}
+.ops-hero-sub{font-size:13px;color:var(--text-2);margin:0}
+
+/* Master switch — the heart */
+.ai-master-switch{display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:14px;cursor:pointer;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.10);transition:all .25s ease}
+.ai-master-switch:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.18)}
+.ai-master-track{position:relative;width:58px;height:32px;border-radius:999px;flex:0 0 auto;transition:all .3s ease;
+  background:#2a2a2f;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.ai-master-thumb{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#8a8a92;
+  transition:all .32s cubic-bezier(.4,1.4,.5,1)}
+.ai-master-switch.is-on .ai-master-track{background:linear-gradient(90deg,#16a34a,#22c55e);
+  box-shadow:0 0 0 1px rgba(34,197,94,.5),0 0 18px 2px rgba(34,197,94,.45);animation:aiGlow 2.4s ease-in-out infinite}
+.ai-master-switch.is-on .ai-master-thumb{left:29px;background:#fff;box-shadow:0 0 10px rgba(255,255,255,.6)}
+@keyframes aiGlow{0%,100%{box-shadow:0 0 0 1px rgba(34,197,94,.5),0 0 14px 1px rgba(34,197,94,.35)}
+  50%{box-shadow:0 0 0 1px rgba(34,197,94,.7),0 0 26px 4px rgba(34,197,94,.6)}}
+.ai-master-label{display:flex;flex-direction:column;line-height:1.25}
+.ai-master-state{font-size:14px;font-weight:800;letter-spacing:-.01em}
+.ai-master-switch.is-on .ai-master-state{color:#22c55e}
+.ai-master-switch.is-off .ai-master-state{color:var(--text-3)}
+.ai-master-sub{font-size:11px;color:var(--text-2)}
+
+/* Stat cards */
+.ops-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+.ops-stat{display:flex;gap:12px;align-items:center;padding:14px 16px;border-radius:14px;
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);transition:all .2s ease}
+.ops-stat:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.045)}
+.ops-stat-ico{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  background:linear-gradient(135deg,rgba(124,58,237,.25),rgba(37,99,235,.18));color:#c4b5fd}
+.ops-stat.warn .ops-stat-ico{background:linear-gradient(135deg,rgba(245,158,11,.28),rgba(245,158,11,.14));color:#fbbf24}
+.ops-stat.trend-up .ops-stat-ico{background:linear-gradient(135deg,rgba(16,185,129,.28),rgba(16,185,129,.14));color:#34d399}
+.ops-stat-value{font-size:22px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.ops-stat-label{font-size:12px;font-weight:600;margin-top:3px}
+.ops-stat-sub{font-size:10px;color:var(--text-3);margin-top:1px}
+
+/* Three-column workspace: main + right rail */
+.ops-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.ops-main{min-width:0}
+.ops-rail{display:flex;flex-direction:column;gap:14px;position:sticky;top:16px}
+.ops-rail-card{border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);overflow:hidden}
+.ops-rail-card.is-warn{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.05)}
+.ops-rail-head{display:flex;align-items:center;gap:7px;padding:12px 14px;font-size:12px;font-weight:700;
+  border-bottom:1px solid rgba(255,255,255,.06)}
+.ops-rail-body{padding:12px 14px}
+.ops-metric-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:5px 0;color:var(--text-2)}
+.ops-metric-row b{color:var(--text);font-weight:700}
+.ops-approval-big{font-size:34px;font-weight:800;letter-spacing:-.03em;color:var(--text-3)}
+.ops-approval-big.has{color:#fbbf24}
+.ops-activity{display:flex;flex-direction:column;gap:2px;max-height:340px;overflow:auto}
+.ops-activity-item{display:flex;align-items:center;gap:9px;padding:7px 4px;border-radius:8px;transition:background .15s}
+.ops-activity-item:hover{background:rgba(255,255,255,.03)}
+.ops-activity-dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:10px;background:rgba(255,255,255,.06);color:var(--text-2)}
+.ops-activity-dot.s-ok,.ops-activity-dot.s-success,.ops-activity-dot.s-completed,.ops-activity-dot.s-done{background:rgba(34,197,94,.16);color:#34d399}
+.ops-activity-dot.s-failed,.ops-activity-dot.s-error{background:rgba(239,68,68,.16);color:#f87171}
+.ops-activity-dot.s-running{background:rgba(37,99,235,.16);color:#60a5fa;animation:aiPulse 1.4s ease-in-out infinite}
+@keyframes aiPulse{0%,100%{opacity:1}50%{opacity:.45}}
+.ops-activity-txt{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-activity-time{font-size:10.5px;color:var(--text-3);flex:0 0 auto}
+
+/* Responsive: collapse rail + stats */
+@media (max-width:1100px){
+  .ops-layout{grid-template-columns:1fr}
+  .ops-rail{position:static;flex-direction:row;flex-wrap:wrap}
+  .ops-rail-card{flex:1 1 240px}
+  .ops-stats{grid-template-columns:repeat(2,1fr)}
+  .ops-hero{flex-direction:column;align-items:flex-start}
+}
+@media (max-width:560px){.ops-stats{grid-template-columns:1fr}}

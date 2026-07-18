@@ -1274,6 +1274,9 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );""",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;",
+        # AI master switch (autonomy). Default TRUE = perilaku lama (otomatisasi
+        # jalan); OFF menjeda eksekusi lokal/computer/terminal (HTTP 423).
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS autonomy_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
         # Identitas pajak pembeli: snapshot NPWP/nama ke invoice + profil per-org.
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_npwp TEXT;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_name TEXT;",
@@ -4666,6 +4669,14 @@ try:
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    from bn_platform.ai_power import build_ai_power_router
+    app.include_router(
+        build_ai_power_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
         ),
         prefix="/api",
     )

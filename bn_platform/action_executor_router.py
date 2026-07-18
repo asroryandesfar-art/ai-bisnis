@@ -28,6 +28,8 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .ai_power import require_autonomy
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,6 +182,7 @@ def build_action_executor_router(
         """Jalankan shell command melalui terminal agent dengan permission gate."""
         from terminal_service import TerminalService
         org_id = str(user["org_id"])
+        await require_autonomy(pool, org_id)   # AI master switch: OFF → 423
         pm = _get_pm(pool, org_id)
         svc = TerminalService(
             pool, org_id, pm,
@@ -328,6 +331,7 @@ def build_action_executor_router(
 
         Pipeline: Understand → Plan → Execute (per step) → Verify → Summarize
         """
+        await require_autonomy(pool, str(user["org_id"]))   # AI master switch: OFF → 423
         from action_executor import ActionExecutor, ensure_schema
         from base import BaseAgent
 
