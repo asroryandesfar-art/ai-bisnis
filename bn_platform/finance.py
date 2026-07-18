@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 import finance_agent as fa
 from .security import _check_rate_limit, write_audit_log
+from .agent_toggles import require_agent_enabled
 
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
 GetCurrentUser = Callable[..., Awaitable[dict]]
@@ -381,6 +382,7 @@ def build_finance_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         _check_rate_limit(f"finance-run-task:{user['org_id']}", 5)
+        await require_agent_enabled(pool, str(user["org_id"]), "finance")
         result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
         await write_audit_log(
             pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),

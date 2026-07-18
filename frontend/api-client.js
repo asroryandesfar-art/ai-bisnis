@@ -355,6 +355,8 @@ export const api = {
   opsRunTask: (goal, bot_id = null) => request("/api/operations/run-task", { method: "POST", body: { goal, bot_id } }),
   aiPower: () => request(`/api/ai/power`),
   setAiPower: (enabled) => request(`/api/ai/power`, { method: "POST", body: { enabled } }),
+  agentToggles: () => request(`/api/agents/toggles`),
+  setAgentToggle: (key, enabled) => request(`/api/agents/${encodeURIComponent(key)}/toggle`, { method: "POST", body: { enabled } }),
   localAgentStatus: () => request(`/api/local-agent/status`),
   localAgentDevices: () => request(`/api/local-agent/devices`),
   localAgentRenameDevice: (deviceId, name) => request(`/api/local-agent/devices/${encodeURIComponent(deviceId)}/rename`, { method: "POST", body: { name } }),

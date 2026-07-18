@@ -1277,6 +1277,14 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         # AI master switch (autonomy). Default TRUE = perilaku lama (otomatisasi
         # jalan); OFF menjeda eksekusi lokal/computer/terminal (HTTP 423).
         "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS autonomy_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+        # Per-agent ON/OFF toggle (granular; berbeda dari master switch di atas).
+        """CREATE TABLE IF NOT EXISTS org_agent_toggles (
+            org_id UUID NOT NULL,
+            agent_key TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (org_id, agent_key)
+        );""",
         # Identitas pajak pembeli: snapshot NPWP/nama ke invoice + profil per-org.
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_npwp TEXT;",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_name TEXT;",
@@ -4675,6 +4683,14 @@ try:
     from bn_platform.ai_power import build_ai_power_router
     app.include_router(
         build_ai_power_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+        ),
+        prefix="/api",
+    )
+    from bn_platform.agent_toggles import build_agent_toggles_router
+    app.include_router(
+        build_agent_toggles_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
         ),

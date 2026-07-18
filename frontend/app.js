@@ -1793,6 +1793,7 @@ async function renderAgentCenter() {
     settle("laPending", api.localAgentHistory({ status: "pending_approval", limit: 20 })),
     settle("localAgent", api.localAgentStatus()),
     settle("aiPower", api.aiPower()),
+    settle("agentToggles", api.agentToggles()),
   ]);
   const data = Object.fromEntries(results.filter((r) => r.ok).map((r) => [r.label, r.data]));
   const failed = results.filter((r) => !r.ok);
@@ -1806,6 +1807,8 @@ async function renderAgentCenter() {
   const localAgent = data.localAgent || {};
   const aiPower = data.aiPower || { enabled: true, status: "active" };
   const aiOn = aiPower.enabled !== false;
+  const agentToggles = (data.agentToggles && data.agentToggles.toggles) || {};
+  const agentEnabled = (key) => agentToggles[key] !== false;   // absen = ON
 
   const bySourceType = overview.execution_log?.by_source_type || {};
   const totalLogEntries = Object.values(bySourceType).reduce((sum, v) => sum + Number(v || 0), 0);
@@ -2136,6 +2139,33 @@ async function renderAgentCenter() {
     </div>`;
   const opsRightRail = `<aside class="ops-rail">${railComputer}${railApproval}${railActivity}</aside>`;
 
+  // ── Agent roster: kartu per-agent dengan toggle ON/OFF masing-masing ────────
+  const _catIcon = (c) => ({finance:'finance',marketing:'marketing',hr:'hr',operations:'operations',sales:'workforce',cs:'chat',customer_service:'chat',knowledge:'knowledge',security:'security',executive:'executive',workforce:'workforce',computer:'security'}[String(c||'').toLowerCase()]||'agents');
+  function agentRosterCard(name, category, desc, key, extra = "") {
+    const on = agentEnabled(key);
+    return `<div class="agent-roster-card ${on?'':'is-off'}">
+      <div class="arc-head">
+        <div class="arc-ico">${icon(_catIcon(category),16)}</div>
+        <div class="arc-meta"><strong>${esc(name)}</strong><span class="arc-cat">${esc(category||'agent')}</span></div>
+        <button class="mini-switch ${on?'is-on':''}" data-agent-toggle="${esc(key)}" aria-pressed="${on}" title="${on?'Matikan agent ini':'Nyalakan agent ini'}"><span class="mini-track"><span class="mini-thumb"></span></span></button>
+      </div>
+      <p class="arc-desc">${esc(desc||'AI agent')}</p>
+      ${extra}
+      <div class="arc-status">${on?'<span class="arc-on">● Aktif</span>':'<span class="arc-off">○ Nonaktif — tugas ditolak (423)</span>'}</div>
+    </div>`;
+  }
+  const computerAgentCard = agentRosterCard(
+    "Computer Control Agent", "computer",
+    "Kendalikan komputer lokal: terminal, file, browser, dan tugas natural-language.",
+    "computer",
+    `<div class="arc-actions">${heroComputerBtn}</div>`,
+  );
+  const agentRosterCards = computerAgentCard + agents.map(a =>
+    agentRosterCard(a.name, a.category,
+      (a.goals && a.goals[0]) || (a.skills || []).slice(0,3).join(", ") || "AI agent",
+      a.category)
+  ).join("");
+
   setPage(`${opsHero}
   ${opsStats}
   <div class="ops-layout">
@@ -2190,10 +2220,8 @@ async function renderAgentCenter() {
     </div>
   </div>
   ${caApprovalSection}${laApprovalSection}${cmApprovalSection}${noApprovalSection}
-  <div class="page-section-label">Agent directory</div>
-  <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Agent Directory</h3><span class="subtle">${formatNumber(agents.length)} agent terdaftar</span></div>
-    ${agentRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Kategori</th><th>Channel</th><th>Skills</th><th>Tools</th></tr></thead><tbody>${agentRows}</tbody></table></div>` : emptyState("Belum ada agent", "Agent directory kosong.")}
-  </div>
+  <div class="page-section-label">AI Agents — ${formatNumber(agents.length + 1)} agent · toggle masing-masing</div>
+  <div class="agent-roster">${agentRosterCards}</div>
   <div class="page-section-label">Execution log</div>
   <div class="card"><div class="card-head"><h3>Execution Log Terbaru</h3><span class="subtle">20 entri terakhir dari semua sumber</span></div>
     ${logRows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sumber</th><th>Label</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${logRows}</tbody></table></div>` : emptyState("Belum ada aktivitas", "Belum ada entri execution log.")}
@@ -4189,6 +4217,7 @@ document.addEventListener("click", async (event) => {
   const addonBuy=event.target.closest("[data-addon-buy]"); if(addonBuy){ await buyAddon(addonBuy.dataset.addonBuy); return; }
   const laRename=event.target.closest("[data-la-rename]"); if(laRename){ const id=laRename.dataset.laRename; const name=prompt("Nama baru untuk perangkat ini:"); if(name&&name.trim()){ try{ await api.localAgentRenameDevice(id, name.trim()); bustCache("localAgent"); toast("Perangkat diganti nama.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
   const laDiscon=event.target.closest("[data-la-device-disconnect]"); if(laDiscon){ const id=laDiscon.dataset.laDeviceDisconnect; if(confirm("Putus koneksi perangkat ini?")){ try{ await api.localAgentDeviceDisconnect(id); bustCache("localAgent"); toast("Perangkat diputus.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
+  const agTgl=event.target.closest("[data-agent-toggle]"); if(agTgl){ const key=agTgl.dataset.agentToggle; const turnOn=!agTgl.classList.contains("is-on"); try{ await api.setAgentToggle(key, turnOn); bustCache("agentToggles"); toast(turnOn?`Agent '${key}' diaktifkan.`:`Agent '${key}' dimatikan — tugasnya akan ditolak.`, turnOn?"success":"info"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } return; }
   const laAct=event.target.closest("[data-la-act]"); if(laAct){ const raw=laAct.dataset.laAct; const i=raw.indexOf(":"); await handleComputerAccess(raw.slice(0,i), raw.slice(i+1)); return; }
   const caFiles=event.target.closest("[data-ca-files]"); if(caFiles){ const [dev,path]=caFiles.dataset.caFiles.split("::"); await caOpenFiles(dev, path); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();

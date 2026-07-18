@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from .security import write_audit_log
 from .ai_power import require_autonomy
+from .agent_toggles import require_agent_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -770,7 +771,8 @@ def build_local_agent_router(*, get_pool, get_current_user, require_permission, 
     ):
         """Terima goal dalam bahasa Indonesia → rencanakan langkah → eksekusi via Local Agent."""
         org_id = str(user["org_id"])
-        await require_autonomy(pool, org_id)   # AI master switch: OFF → 423
+        await require_autonomy(pool, org_id)                       # AI master switch
+        await require_agent_enabled(pool, org_id, "computer")      # per-agent toggle
         mgr = get_manager()
 
         if not mgr.is_connected(org_id):
