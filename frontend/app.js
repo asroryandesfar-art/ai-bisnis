@@ -2019,6 +2019,13 @@ async function renderAgentCenter() {
         ${metaRow("UPTIME", _fmtUptime(d.uptime_seconds))}
         ${metaRow("LAST SEEN", d.last_seen ? formatDate(d.last_seen, {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'}) : "-")}
       </div>
+      ${online ? `<div class="ops-device-actions">
+        <button class="button button-sm button-primary" data-la-act="agent:${esc(d.device_id)}">${icon('security',13)} Computer Agent</button>
+        <button class="button button-sm" data-la-act="terminal:${esc(d.device_id)}">⌘ Terminal</button>
+        <button class="button button-sm" data-la-act="files:${esc(d.device_id)}">📂 Files</button>
+        <button class="button button-sm" data-la-act="browser:${esc(d.device_id)}">🌐 Browser</button>
+        <button class="button button-sm" data-la-act="info:${esc(d.device_id)}">🖥 Info</button>
+      </div>` : `<div class="ops-device-actions"><span class="subtle" style="font-size:11px">Perangkat offline — jalankan agent untuk mengaktifkan aksi.</span></div>`}
     </div>`;
   }
   const laInfoHtml = laDevices.length ? `
@@ -2073,12 +2080,17 @@ async function renderAgentCenter() {
         <span class="ai-master-sub">${aiOn?'Otonom — otomatisasi & eksekusi aktif':'Mode manual — otomatisasi dijeda'}</span>
       </span>
     </button>`;
+  const heroDeviceId = (localAgent.devices||[]).find(d=>d.status!=='offline')?.device_id || null;
+  const heroComputerBtn = heroDeviceId
+    ? `<button class="button button-primary" data-la-act="agent:${esc(heroDeviceId)}">${icon('security',14)} Computer Agent</button>`
+    : `<button class="button" disabled title="Sambungkan perangkat dulu">${icon('security',14)} Computer Agent</button>`;
   const opsHero = `
     <div class="ops-hero ${aiOn?'is-on':'is-off'}">
       <div class="ops-hero-left">
         <div class="ops-hero-eyebrow">${icon('security',13)} AI OPERATIONS CENTER</div>
         <h1 class="ops-hero-title">${esc(state.org?.name||'Workspace')}</h1>
         <p class="ops-hero-sub">Kendalikan seluruh AI, perangkat, dan otomatisasi dari satu tempat.</p>
+        <div class="ops-hero-actions">${heroComputerBtn}</div>
       </div>
       <div class="ops-hero-right">${aiMasterSwitch}</div>
     </div>`;
@@ -3879,6 +3891,83 @@ async function deleteSsoConfig() {
   catch(err){ toast(err.message,"error"); }
 }
 
+// ── Computer Access: aksi kelas-satu per perangkat (wired ke endpoint nyata) ──
+function caResultHtml(r) {
+  if (!r || typeof r !== "object") return `<pre class="ca-out">${esc(String(r))}</pre>`;
+  const out = r.stdout || r.output || "";
+  const err = r.stderr || (r.success === false ? (r.error || "") : "");
+  if (out || err) return `${out?`<pre class="ca-out">${esc(out)}</pre>`:""}${err?`<pre class="ca-out ca-err">${esc(err)}</pre>`:""}`;
+  return `<pre class="ca-out">${esc(JSON.stringify(r, null, 2))}</pre>`;
+}
+
+async function caOpenFiles(deviceId, path) {
+  let r;
+  try { r = await api.localAgentExecute({ tool: "list_dir", args: { path }, device_id: deviceId }); }
+  catch (e) { r = { success: false, error: e.message }; }
+  if (!r.success) { el("#modal-root").innerHTML = modal({ title: "Files", body: `<p class="subtle">${esc(r.error || "Gagal membuka folder")}</p>`, footer: `<button class="button" data-action="close-modal">Tutup</button>` }); return; }
+  const cur = r.path || path;
+  const up = cur.replace(/[/\\][^/\\]+[/\\]?$/, "") || cur;
+  const rows = (r.items || []).map(it => {
+    const isDir = it.type === "dir";
+    const full = (cur.endsWith("/") ? cur : cur + "/") + it.name;
+    return `<div class="ca-file-row ${isDir?'is-dir':''}" ${isDir?`data-ca-files="${esc(deviceId)}::${esc(full)}"`:''}>
+      <span>${isDir?"📁":"📄"} ${esc(it.name)}</span><span class="subtle" style="font-size:11px">${isDir?"":formatFileSize(it.size)}</span></div>`;
+  }).join("");
+  el("#modal-root").innerHTML = modal({ title: `Files — ${esc(cur)}`, wide: true,
+    body: `<div class="ca-file-head"><button class="button button-sm" data-ca-files="${esc(deviceId)}::${esc(up)}">⬆ Naik</button><span class="subtle mono" style="font-size:11px;margin-left:8px">${esc(cur)}</span></div><div class="ca-file-list">${rows || '<p class="subtle">Folder kosong</p>'}</div>`,
+    footer: `<button class="button" data-action="close-modal">Tutup</button>` });
+}
+
+async function handleComputerAccess(action, deviceId) {
+  if (action === "info") {
+    try { const r = await api.localAgentExecute({ tool: "get_info", args: {}, device_id: deviceId });
+      el("#modal-root").innerHTML = modal({ title: "System Info", body: caResultHtml(r), footer: `<button class="button" data-action="close-modal">Tutup</button>` });
+    } catch (e) { toast(e.message, "error"); }
+    return;
+  }
+  if (action === "browser") {
+    const url = prompt("URL yang dibuka di browser perangkat:", "https://");
+    if (!url) return;
+    try { const r = await api.localAgentExecute({ tool: "open", args: { target: url }, device_id: deviceId });
+      toast(r.success ? `Membuka ${url} di perangkat.` : (r.error || "Gagal (agent mungkin perlu di-restart untuk tool 'open')"), r.success ? "success" : "error");
+    } catch (e) { toast(e.message, "error"); }
+    return;
+  }
+  if (action === "terminal") {
+    el("#modal-root").innerHTML = modal({ title: "Terminal — jalankan perintah",
+      body: `<form id="ca-terminal-form" data-device="${esc(deviceId)}"><div class="form-grid"><label class="field full"><span>Perintah shell</span><input name="command" placeholder="npm run build" autocomplete="off" required></label></div><p class="subtle" style="font-size:11px">Perintah berbahaya bisa minta persetujuan di komputer Anda.</p><div id="ca-out" style="margin-top:10px"></div></form>`,
+      footer: `<button class="button" data-action="close-modal">Tutup</button><button class="button button-primary" data-action="ca-terminal-run">Jalankan</button>` });
+    return;
+  }
+  if (action === "files") { await caOpenFiles(deviceId, "~/"); return; }
+  if (action === "agent") {
+    el("#modal-root").innerHTML = modal({ title: "Computer Agent — beri tugas (bahasa natural)",
+      body: `<form id="ca-agent-form" data-device="${esc(deviceId)}"><div class="form-grid"><label class="field full"><span>Tugas</span><textarea name="goal" rows="3" placeholder="Contoh: cari file package.json lalu scan project-nya" required></textarea></label></div><div id="ca-out" style="margin-top:10px"></div></form>`,
+      footer: `<button class="button" data-action="close-modal">Tutup</button><button class="button button-primary" data-action="ca-agent-run">Jalankan</button>` });
+    return;
+  }
+}
+
+async function caRunTerminal() {
+  const form = document.getElementById("ca-terminal-form"); if (!form) return;
+  const deviceId = form.dataset.device;
+  const command = form.elements.command.value.trim(); if (!command) return;
+  const out = document.getElementById("ca-out"); if (out) out.innerHTML = `<pre class="ca-out">Menjalankan…</pre>`;
+  try { const r = await api.localAgentExecute({ tool: "run_command", args: { command }, device_id: deviceId, timeout: 60 });
+    if (out) out.innerHTML = caResultHtml(r);
+  } catch (e) { if (out) out.innerHTML = `<pre class="ca-out ca-err">${esc(e.message)}</pre>`; }
+}
+
+async function caRunAgent() {
+  const form = document.getElementById("ca-agent-form"); if (!form) return;
+  const deviceId = form.dataset.device;
+  const goal = form.elements.goal.value.trim(); if (!goal) return;
+  const out = document.getElementById("ca-out"); if (out) out.innerHTML = `<pre class="ca-out">AI merencanakan langkah…</pre>`;
+  try { const r = await api.computerAgentRunLocal(goal, 30, deviceId);
+    if (out) out.innerHTML = caResultHtml(r);
+  } catch (e) { if (out) out.innerHTML = `<pre class="ca-out ca-err">${esc(e.message)}</pre>`; }
+}
+
 async function sendPlayground(form) {
   if (!form || form.dataset.sending === "true") return;
   const input = form.elements.message;
@@ -4100,6 +4189,8 @@ document.addEventListener("click", async (event) => {
   const addonBuy=event.target.closest("[data-addon-buy]"); if(addonBuy){ await buyAddon(addonBuy.dataset.addonBuy); return; }
   const laRename=event.target.closest("[data-la-rename]"); if(laRename){ const id=laRename.dataset.laRename; const name=prompt("Nama baru untuk perangkat ini:"); if(name&&name.trim()){ try{ await api.localAgentRenameDevice(id, name.trim()); bustCache("localAgent"); toast("Perangkat diganti nama.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
   const laDiscon=event.target.closest("[data-la-device-disconnect]"); if(laDiscon){ const id=laDiscon.dataset.laDeviceDisconnect; if(confirm("Putus koneksi perangkat ini?")){ try{ await api.localAgentDeviceDisconnect(id); bustCache("localAgent"); toast("Perangkat diputus.","success"); await renderAgentCenter(); }catch(err){ toast(err.message,"error"); } } return; }
+  const laAct=event.target.closest("[data-la-act]"); if(laAct){ const raw=laAct.dataset.laAct; const i=raw.indexOf(":"); await handleComputerAccess(raw.slice(0,i), raw.slice(i+1)); return; }
+  const caFiles=event.target.closest("[data-ca-files]"); if(caFiles){ const [dev,path]=caFiles.dataset.caFiles.split("::"); await caOpenFiles(dev, path); return; }
   if(action==="finance-new-invoice") await createInvoicePrompt();
   if(action==="finance-new-expense") await createExpensePrompt();
   if(action==="finance-ask-ai") await askFinanceAiPrompt();
@@ -4131,6 +4222,8 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-refresh"){ bustCache("localAgent"); await renderAgentCenter(); return; }
+  if(action==="ca-terminal-run"){ await caRunTerminal(); return; }
+  if(action==="ca-agent-run"){ await caRunAgent(); return; }
   if(action==="ai-power-toggle"){
     const btn=event.target.closest("[data-action='ai-power-toggle']");
     const turningOff=btn?.classList.contains("is-on");

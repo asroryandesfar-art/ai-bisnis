@@ -364,7 +364,7 @@ export const api = {
   localAgentDisconnect: () => request(`/api/local-agent/disconnect`, { method: "POST" }),
   localAgentApproveCommand: (id) => request(`/api/local-agent/commands/${id}/approve`, { method: "POST" }),
   localAgentRejectCommand: (id, reason) => request(`/api/local-agent/commands/${id}/reject`, { method: "POST", body: { reason } }),
-  computerAgentRunLocal: (goal, timeout = 30) => request(`/api/computer-agent/run-local`, { method: "POST", body: { goal, timeout } }),
+  computerAgentRunLocal: (goal, timeout = 30, deviceId = null) => request(`/api/computer-agent/run-local`, { method: "POST", body: { goal, timeout, ...(deviceId ? { device_id: deviceId } : {}) } }),
   channelMessagingTasks: (params = {}) => request(`/api/channel-messaging/tasks${encodeQuery(params)}`),
   channelMessagingApprove: (id) => request(`/api/channel-messaging/tasks/${id}/approve`, { method: "POST" }),
   channelMessagingReject: (id, reason) => request(`/api/channel-messaging/tasks/${id}/reject`, { method: "POST", body: { reason } }),

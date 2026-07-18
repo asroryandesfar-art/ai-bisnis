@@ -590,6 +590,37 @@ async def tool_scan_project(args: dict) -> dict:
     }
 
 
+async def tool_open(args: dict) -> dict:
+    """Buka URL di browser default, atau folder/file di aplikasi default OS.
+
+    URL http(s) → browser. Path → dibuka via handler default (file manager /
+    aplikasi terkait). Path harus di dalam direktori yang diizinkan (guard sama
+    seperti tool file). Non-blocking (Popen).
+    """
+    target = str(args.get("target") or args.get("url") or args.get("path") or "").strip()
+    if not target:
+        return {"success": False, "error": "Argumen 'target' (URL atau path) wajib diisi"}
+    is_url = target.startswith(("http://", "https://"))
+    if not is_url:
+        target = os.path.abspath(os.path.expanduser(target))
+        if not is_within_allowed_dir(target):
+            return {"success": False, "error": "Path di luar direktori yang diizinkan"}
+        if not os.path.exists(target):
+            return {"success": False, "error": f"Path tidak ditemukan: {target}"}
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(target)  # type: ignore[attr-defined]
+        elif system == "Darwin":
+            subprocess.Popen(["open", target])
+        else:
+            subprocess.Popen(["xdg-open", target],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"success": True, "opened": target, "kind": "url" if is_url else "path"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 TOOLS = {
     "read_file": tool_read_file,
     "write_file": tool_write_file,
@@ -600,6 +631,7 @@ TOOLS = {
     "search_text": tool_search_text,
     "tree": tool_tree,
     "scan_project": tool_scan_project,
+    "open": tool_open,
 }
 
 
