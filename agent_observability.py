@@ -165,7 +165,13 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
         confidence = _confidence(result)
         return result
     except Exception as exc:
-        status, error, confidence = "error", str(exc), None
+        # str(exc) bisa KOSONG untuk sejumlah exception (mis. CancelledError,
+        # TimeoutError tanpa pesan) → dulu error_message tersimpan blank sehingga
+        # dashboard menampilkan FAILED tanpa alasan. Selalu sertakan tipe exception
+        # agar setiap kegagalan punya root cause yang bisa dibaca.
+        _detail = str(exc).strip()
+        error = f"{type(exc).__name__}: {_detail}" if _detail else type(exc).__name__
+        status, confidence = "error", None
         raise
     finally:
         duration_ms = int((time.perf_counter() - started_perf) * 1000)

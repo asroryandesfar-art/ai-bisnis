@@ -68,6 +68,41 @@ def test_observability_routes_are_mounted():
     assert "/api/observability/traces/{trace_id}" in paths
 
 
+def test_failure_records_nonblank_error_even_for_empty_exception():
+    """Regresi: exception dgn str() KOSONG (mis. CancelledError / exception tanpa
+    pesan) dulu tersimpan error_message blank → dashboard FAILED tanpa alasan.
+    Sekarang tipe exception selalu tercatat (root cause terbaca)."""
+    pool = FakePool()
+    context = {
+        "org_id": "00000000-0000-0000-0000-000000000001",
+        "conversation_id": "00000000-0000-0000-0000-000000000002",
+        "user_message": "x",
+        "_observability_pool": pool,
+    }
+
+    class Boom(Exception):
+        pass  # str(Boom()) == ""
+
+    async def child():
+        raise Boom()
+
+    async def operation():
+        await observe_agent("marketing_agent", context, child)
+        return "unreachable"
+
+    try:
+        asyncio.run(trace_request(context, operation))
+    except Exception:
+        pass  # propagasi/tidak — yang penting UPDATE tercatat di finally
+
+    updates = [args for sql, args in pool.calls if "UPDATE agent_executions" in sql]
+    assert updates, "harus ada UPDATE agent_executions"
+    status, error_message = updates[0][3], updates[0][4]
+    assert status == "error"
+    assert error_message and error_message.strip(), "error_message TIDAK boleh blank"
+    assert "Boom" in error_message, "tipe exception harus tercatat sebagai root cause"
+
+
 class SummaryPool:
     def __init__(self):
         self.queries = []
