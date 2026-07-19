@@ -15,7 +15,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from casper_engineer import CasperEngineerAgent
+from casper_engineer import CasperEngineerAgent, EXECUTABLE_TOOLS, WRITE_TOOLS
 from .security import _check_rate_limit
 
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
@@ -29,6 +29,14 @@ class EngineerRunRequest(BaseModel):
     auto_repo: bool = False
     device_id: Optional[str] = None
     repo_path: str = Field(".", max_length=500)
+
+
+class ExecuteStepRequest(BaseModel):
+    tool: str = Field(..., max_length=40)
+    args: dict = Field(default_factory=dict)
+    rationale: Optional[str] = Field(None, max_length=400)
+    device_id: Optional[str] = None
+    timeout: int = Field(60, ge=5, le=120)
 
 
 def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
@@ -146,6 +154,90 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "confidence": float(row["confidence"]) if row["confidence"] is not None else None,
             "created_at": row["created_at"].isoformat(),
         }
+
+    @router.post("/run/{run_id}/propose-steps")
+    async def propose_steps(
+        run_id: str,
+        user: Annotated[dict, Depends(require_permission("workforce.read"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        row = await pool.fetchrow(
+            "SELECT goal, repo_context, self_critique FROM casper_engineer_runs WHERE id=$1 AND org_id=$2",
+            _as_uuid(run_id), user["org_id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Run tidak ditemukan")
+        _check_rate_limit(f"casper_engineer_propose:{user['org_id']}", 10)
+        improved = _load_json(row["self_critique"]).get("improved_plan", {})
+        proposed = await agent.propose_steps(row["goal"], improved, row["repo_context"] or "")
+        saved = []
+        for i, s in enumerate(proposed.get("steps", [])):
+            r = await pool.fetchrow(
+                """INSERT INTO casper_engineer_steps (run_id, org_id, seq, tool, args, rationale, status)
+                   VALUES ($1,$2,$3,$4,$5::jsonb,$6,'proposed') RETURNING id""",
+                _as_uuid(run_id), user["org_id"], i, s["tool"], json.dumps(s["args"]), s.get("rationale"),
+            )
+            saved.append({**s, "id": str(r["id"]), "status": "proposed"})
+        return {"steps": saved, "degraded": bool(proposed.get("_llm_unavailable"))}
+
+    @router.post("/run/{run_id}/execute-step")
+    async def execute_step(
+        run_id: str,
+        body: ExecuteStepRequest,
+        user: Annotated[dict, Depends(require_permission("workforce.write"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        # Allowlist server-side (batas pertama). Keamanan nyata (denylist destruktif,
+        # secret-guard, approval user) ditegakkan di perangkat oleh botnesia_local_agent.
+        if body.tool not in EXECUTABLE_TOOLS:
+            raise HTTPException(status_code=400, detail=f"Tool '{body.tool}' tidak diizinkan untuk Casper Engineer.")
+        run = await pool.fetchrow(
+            "SELECT id FROM casper_engineer_runs WHERE id=$1 AND org_id=$2", _as_uuid(run_id), user["org_id"],
+        )
+        if not run:
+            raise HTTPException(status_code=404, detail="Run tidak ditemukan")
+        _check_rate_limit(f"casper_engineer_exec:{user['org_id']}", 20)
+        # Dispatch ke Local Agent (mesin user). 503 bila tak ada perangkat -> naikkan apa adanya.
+        from bn_platform.local_agent_router import get_manager
+        result = await get_manager().execute(
+            str(user["org_id"]), body.tool, body.args,
+            device_id=body.device_id, initiated_by=f"casper_engineer:{user['id']}",
+            timeout=body.timeout, pool=pool,
+        )
+        status = "completed" if isinstance(result, dict) and result.get("success") else "failed"
+        r = await pool.fetchrow(
+            """INSERT INTO casper_engineer_steps (run_id, org_id, tool, args, rationale, status, result, device_id)
+               VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7::jsonb,$8) RETURNING id, created_at""",
+            _as_uuid(run_id), user["org_id"], body.tool, json.dumps(body.args), body.rationale,
+            status, json.dumps(result, default=str), body.device_id,
+        )
+        return {
+            "id": str(r["id"]), "tool": body.tool, "status": status,
+            "requires_approval": body.tool in WRITE_TOOLS, "result": result,
+            "created_at": r["created_at"].isoformat(),
+        }
+
+    @router.get("/run/{run_id}/steps")
+    async def list_steps(
+        run_id: str,
+        user: Annotated[dict, Depends(require_permission("workforce.read"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        rows = await pool.fetch(
+            """SELECT id, seq, tool, args, rationale, status, result, created_at
+               FROM casper_engineer_steps WHERE run_id=$1 AND org_id=$2 ORDER BY created_at""",
+            _as_uuid(run_id), user["org_id"],
+        )
+        return [
+            {
+                "id": str(r["id"]), "seq": r["seq"], "tool": r["tool"],
+                "args": _load_json(r["args"]), "rationale": r["rationale"],
+                "status": r["status"], "result": _load_json(r["result"]),
+                "requires_approval": r["tool"] in WRITE_TOOLS,
+                "created_at": r["created_at"].isoformat(),
+            }
+            for r in rows
+        ]
 
     return router
 

@@ -1,7 +1,14 @@
 """test_casper_engineer_router.py — bn_platform/casper_engineer_router.py:
 RBAC gating (workforce.write untuk run, workforce.read untuk read) + route shape.
 Mirror pola test_agent_center_router.py."""
-from bn_platform.casper_engineer_router import build_casper_engineer_router, _load_json
+import asyncio
+
+import pytest
+from fastapi import HTTPException
+
+from bn_platform.casper_engineer_router import (
+    build_casper_engineer_router, ExecuteStepRequest, _load_json,
+)
 
 
 class FakePool:
@@ -28,6 +35,13 @@ def _build(record_keys=None):
     )
 
 
+def _endpoint(router, suffix, method):
+    for r in router.routes:
+        if r.path.endswith(suffix) and method in getattr(r, "methods", set()):
+            return r.endpoint
+    raise AssertionError(f"route not found: {method} {suffix}")
+
+
 def test_routes_exist():
     router = _build()
     paths = {(r.path, tuple(sorted(m for m in r.methods if m in ("GET", "POST")))) for r in router.routes}
@@ -35,6 +49,19 @@ def test_routes_exist():
     assert any(p.endswith("/casper/engineer/run") for p in have)
     assert any(p.endswith("/casper/engineer/runs") for p in have)
     assert any(p.endswith("/casper/engineer/run/{run_id}") for p in have)
+    assert any(p.endswith("/casper/engineer/run/{run_id}/propose-steps") for p in have)
+    assert any(p.endswith("/casper/engineer/run/{run_id}/execute-step") for p in have)
+    assert any(p.endswith("/casper/engineer/run/{run_id}/steps") for p in have)
+
+
+def test_execute_step_rejects_non_allowlisted_tool():
+    router = _build()
+    ep = _endpoint(router, "/run/{run_id}/execute-step", "POST")
+    # Tool di luar allowlist -> 400 SEBELUM menyentuh pool/perangkat.
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(ep("run-1", ExecuteStepRequest(tool="format_disk", args={}),
+                       user={"org_id": "o", "id": "u"}, pool=FakePool()))
+    assert ei.value.status_code == 400
 
 
 def test_rbac_uses_workforce_permissions():

@@ -1,11 +1,11 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-3";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260720-casper-engineer-1";
-import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-2";
+import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-3";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
@@ -3832,6 +3832,25 @@ function renderCasperNewActionModal() {
 
 const CE_SEVERITY_COLOR = { critical: "var(--red)", high: "var(--amber)", medium: "var(--cyan)", low: "var(--text-3)" };
 
+let CE_STEPS = [];
+
+function ceStepsHtml(rid, steps) {
+  if (!steps.length) return `<span class="subtle" style="font-size:11px">${t('casper_eng.no_steps')}</span>`;
+  return `<div class="page-section-label">${t('casper_eng.exec_steps')} (${steps.length})</div>` + steps.map((s, i) => `
+    <div class="card" style="padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0;flex:1">
+          <code style="font-size:12px;font-weight:700">${esc(s.tool)}</code>
+          ${s.requires_approval ? `<span class="status-badge pending" style="font-size:9px;margin-left:6px">${t('casper_eng.needs_approval')}</span>` : ''}
+          ${s.rationale ? `<div class="subtle" style="font-size:11px;margin-top:3px">${esc(s.rationale)}</div>` : ''}
+          <div class="subtle mono" style="font-size:10px;margin-top:2px;word-break:break-all">${esc(JSON.stringify(s.args || {})).slice(0, 160)}</div>
+        </div>
+        <button class="button button-sm" data-ce-run="${esc(rid)}" data-ce-run-step="${i}">${t('casper_eng.run_step')}</button>
+      </div>
+      <div id="ce-step-out-${i}"></div>
+    </div>`).join('');
+}
+
 function casperEngineerArtifact(d) {
   if (!d) return "";
   const plan = d.planning || {};
@@ -3855,6 +3874,7 @@ function casperEngineerArtifact(d) {
     <div><div class="page-section-label">2 · ${t('casper_eng.repo_analysis')}</div>${analysis.structure ? `<p style="font-size:12px;margin:4px 0 8px">${esc(analysis.structure)}</p>` : ""}${kv(t('casper_eng.conventions'), analysis.conventions)}${kv(t('casper_eng.patterns'), analysis.existing_patterns)}${kv(t('casper_eng.integration'), analysis.integration_points)}${kv(t('casper_eng.constraints'), analysis.constraints)}</div>
     <div><div class="page-section-label">3 · ${t('casper_eng.verification')}</div><p style="font-size:12px;margin:4px 0">${verif.complete ? '✓' : '⚠'} ${esc(verif.reasoning || '')}</p>${kv(t('casper_eng.gaps'), verif.gaps)}</div>
     <div><div class="page-section-label">4 · ${t('casper_eng.self_critique')}</div>${issues}${improved.summary ? `<div style="margin-top:10px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.improved_plan')}</div><p style="font-size:12px;margin:4px 0">${esc(improved.summary)}</p>${li(improved.steps, (s) => `<li style="font-size:12px">${esc(s)}</li>`)}</div>` : ""}</div>
+    ${d.id ? `<div style="border-top:1px solid var(--line);padding-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div class="page-section-label" style="margin:0">5 · ${t('casper_eng.execution')}</div><span class="subtle" style="font-size:11px">${t('casper_eng.exec_hint')}</span></div><button class="button button-primary button-sm" data-ce-propose="${esc(d.id)}">${icon('agents',13)} ${t('casper_eng.propose')}</button></div><div id="ce-steps" style="margin-top:10px"></div></div>` : ""}
   </div></div>`;
 }
 
@@ -3924,8 +3944,43 @@ async function renderCasperEngineer() {
     try {
       const detail = await api.casperEngineerRunDetail(row.getAttribute("data-ce-open"));
       el("#ce-result").innerHTML = casperEngineerArtifact(detail);
+      CE_STEPS = [];
       el("#ce-result").scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) { toast(err.message, "error"); }
+  });
+
+  el("#ce-result")?.addEventListener("click", async (e) => {
+    const proposeBtn = e.target.closest("[data-ce-propose]");
+    if (proposeBtn) {
+      const rid = proposeBtn.getAttribute("data-ce-propose");
+      proposeBtn.disabled = true; proposeBtn.textContent = t('casper_eng.proposing');
+      try {
+        const r = await api.casperEngineerProposeSteps(rid);
+        CE_STEPS = r.steps || [];
+        el("#ce-steps").innerHTML = ceStepsHtml(rid, CE_STEPS);
+        if (r.degraded) toast(t('casper_eng.done'), "error");
+      } catch (err) { toast(err?.data?.detail || err.message, "error"); }
+      finally { proposeBtn.disabled = false; proposeBtn.innerHTML = `${icon('agents', 13)} ${t('casper_eng.propose')}`; }
+      return;
+    }
+    const runBtn = e.target.closest("[data-ce-run-step]");
+    if (runBtn) {
+      const rid = runBtn.getAttribute("data-ce-run");
+      const step = CE_STEPS[+runBtn.getAttribute("data-ce-run-step")];
+      if (!step) return;
+      const out = el(`#ce-step-out-${runBtn.getAttribute("data-ce-run-step")}`);
+      runBtn.disabled = true; runBtn.textContent = t('casper_eng.running');
+      if (out) out.innerHTML = `<div class="skeleton" style="height:40px;margin-top:8px"></div>`;
+      try {
+        const res = await api.casperEngineerExecuteStep(rid, { tool: step.tool, args: step.args, rationale: step.rationale });
+        if (out) out.innerHTML = `<pre style="margin:8px 0 0;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;font-size:11px;overflow:auto;max-height:220px">${esc(JSON.stringify(res.result, null, 2)).slice(0, 2000)}</pre>`;
+        toast(res.status === 'completed' ? t('casper_eng.step_done') : t('casper_eng.step_fail'), res.status === 'completed' ? 'success' : 'error');
+      } catch (err) {
+        if (out) out.innerHTML = errorState(err?.data?.detail || err.message);
+        toast(err?.data?.detail || err.message, "error");
+      } finally { runBtn.disabled = false; runBtn.textContent = t('casper_eng.run_step'); }
+      return;
+    }
   });
 }
 

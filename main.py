@@ -1439,6 +1439,23 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_casper_engineer_runs_org ON casper_engineer_runs(org_id, created_at DESC);",
+        # Phase 2b: langkah eksekusi (tool Local Agent) yang diusulkan/dijalankan per-run.
+        """
+        CREATE TABLE IF NOT EXISTS casper_engineer_steps (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            run_id UUID NOT NULL REFERENCES casper_engineer_runs(id) ON DELETE CASCADE,
+            org_id UUID NOT NULL,
+            seq INT NOT NULL DEFAULT 0,
+            tool TEXT NOT NULL,
+            args JSONB,
+            rationale TEXT,
+            status TEXT NOT NULL DEFAULT 'proposed',
+            result JSONB,
+            device_id TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_casper_engineer_steps_run ON casper_engineer_steps(run_id, seq);",
         """
         CREATE TABLE IF NOT EXISTS oauth_states (
             provider TEXT NOT NULL,

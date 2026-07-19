@@ -33,6 +33,15 @@ from base import AgentResult, BaseAgent
 SEVERITIES = ("critical", "high", "medium", "low")
 CRITIQUE_CATEGORIES = ("correctness", "security", "performance", "architecture", "maintainability", "ux")
 
+# Phase 2b: tool Local Agent yang boleh diusulkan/dieksekusi Casper Engineer.
+# Superset = tool read-only + tulis. Keamanan aktual (denylist destruktif,
+# secret-guard, approval) DITEGAKKAN DI SISI PERANGKAT (botnesia_local_agent.py),
+# bukan di sini — allowlist ini hanya batas pertama supaya agent tak mengarang
+# tool acak. write_file & run_command WAJIB approval user di mesinnya.
+READONLY_TOOLS = ("read_file", "list_dir", "find_files", "get_info", "search_text", "tree", "scan_project")
+WRITE_TOOLS = ("write_file", "run_command")
+EXECUTABLE_TOOLS = READONLY_TOOLS + WRITE_TOOLS
+
 _MAX_GOAL = 4000
 _MAX_REPO_CTX = 12000
 
@@ -230,3 +239,46 @@ class CasperEngineerAgent(BaseAgent):
             latency_ms=0, error="LLM tidak tersedia" if degraded else None,
             confidence=confidence,
         )
+
+    # ── Phase 2b: usulkan langkah eksekusi konkret (tool Local Agent) ────
+    async def propose_steps(self, goal: str, plan: dict, repo_context: str = "") -> dict:
+        """Ubah rencana jadi urutan langkah tool Local Agent yang konkret & aman.
+        Hanya tool di EXECUTABLE_TOOLS; baca dulu sebelum tulis; langkah kecil.
+        write_file/run_command TETAP butuh approval user di perangkat. Fail-open."""
+        goal = _clip(goal, _MAX_GOAL)
+        default = {"steps": [], "_llm_unavailable": True}
+        tool_spec = (
+            "read_file{path} · list_dir{path} · find_files{path,pattern} · search_text{path,query} · "
+            "tree{path} · scan_project{path} · get_info{path} · "
+            "write_file{path,content} · run_command{command}"
+        )
+        out = await self._call_llm_json(
+            [
+                {"role": "system", "content": (
+                    "Kamu Casper Engineer menyusun langkah eksekusi untuk dijalankan oleh Local "
+                    "Agent di mesin user. Utamakan keamanan: baca/inspeksi dulu sebelum menulis; "
+                    "langkah kecil & reversibel; jalankan test setelah perubahan. JANGAN perintah "
+                    "destruktif (rm -rf, dsb) atau membaca secret (.env, kunci). Balas HANYA JSON."
+                )},
+                {"role": "user", "content": (
+                    f"GOAL:\n{goal}\n\n"
+                    + (f"PLAN:\n{json.dumps(plan, ensure_ascii=False)[:2500]}\n\n" if plan else "")
+                    + (f"REPO:\n{repo_context[:3000]}\n\n" if repo_context else "")
+                    + f"Tool tersedia (nama{{arg}}): {tool_spec}\n\n"
+                    'Susun urutan langkah konkret. Jawab HANYA JSON: {"steps": [{"tool": "<nama>", '
+                    '"args": {"...": "..."}, "rationale": "<kenapa>"}]}'
+                )},
+            ],
+            temperature=0.2, max_tokens=1400, default=default,
+        )
+        steps = []
+        for s in (out.get("steps") or [])[:20]:
+            tool = str((s or {}).get("tool") or "").strip()
+            args = s.get("args") if isinstance(s, dict) else None
+            if tool in EXECUTABLE_TOOLS and isinstance(args, dict):
+                steps.append({
+                    "tool": tool, "args": args,
+                    "rationale": str(s.get("rationale") or "")[:400],
+                    "requires_approval": tool in WRITE_TOOLS,
+                })
+        return {"steps": steps, "_llm_unavailable": bool(out.get("_llm_unavailable"))}

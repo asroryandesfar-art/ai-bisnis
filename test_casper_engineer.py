@@ -92,6 +92,34 @@ def test_no_repo_context_flags_needs_context_and_skips_analysis_llm():
     assert seen["analyze"] is False
 
 
+def test_propose_steps_filters_to_allowlist_and_flags_write_tools():
+    agent = _agent()
+
+    async def fake(messages, **kwargs):
+        return {"steps": [
+            {"tool": "read_file", "args": {"path": "a.py"}, "rationale": "baca"},
+            {"tool": "run_command", "args": {"command": "pytest"}, "rationale": "test"},
+            {"tool": "format_disk", "args": {}, "rationale": "jahat"},      # tak diizinkan -> dibuang
+            {"tool": "write_file", "args": "bukan-dict"},                    # args invalid -> dibuang
+        ]}
+    agent._call_llm_json = fake
+    out = asyncio.run(agent.propose_steps("goal", {"summary": "x"}, "repo"))
+    tools = [s["tool"] for s in out["steps"]]
+    assert tools == ["read_file", "run_command"]                           # jahat + invalid dibuang
+    approvals = {s["tool"]: s["requires_approval"] for s in out["steps"]}
+    assert approvals["run_command"] is True and approvals["read_file"] is False
+
+
+def test_propose_steps_fail_open_empty():
+    agent = _agent()
+
+    async def down(messages, **kwargs):
+        return {"_llm_unavailable": True}
+    agent._call_llm_json = down
+    out = asyncio.run(agent.propose_steps("g", {}, ""))
+    assert out["steps"] == [] and out["_llm_unavailable"] is True
+
+
 def test_degraded_when_all_stages_llm_unavailable():
     agent = _agent()
 
