@@ -205,6 +205,10 @@ class Settings(BaseSettings):
     # Routing /chat lewat DeepSeek 3-otak. Default OFF: pipeline lama tak berubah.
     # Set DEEPSEEK_BRAIN_ENABLED=1 untuk mengaktifkan (butuh DEEPSEEK_API_KEY).
     deepseek_brain_enabled:  bool = False
+    # Hybrid: saat brain aktif, pertanyaan KOMPLEKS/analitis dilempar ke pipeline
+    # multi-agent (lebih dalam, isi observability) — pertanyaan simpel tetap lewat
+    # brain (cepat). Default ON. Set =0 agar brain menangani semua pesan.
+    chat_multiagent_for_complex: bool = True
 
     @property
     def effective_gemini_api_key(self) -> str:
@@ -3356,6 +3360,19 @@ async def _maybe_run_computer_agent(
                 logger.warning("Chat+ComputerAgent error conv=%s: %s", conv_id, exc)
     return system, chat_ca_screenshot_url
 
+def _chat_prefers_multi_agent(message: str) -> bool:
+    """Hybrid chat: True bila pesan cukup kompleks/analitis untuk dilempar ke
+    pipeline multi-agent (bukan brain single-model). Reuse heuristik deterministik
+    deepseek_brain (tanpa LLM). Fail-open ke brain (False) bila apa pun error."""
+    if not cfg.chat_multiagent_for_complex:
+        return False
+    try:
+        from deepseek_brain import classify_tier, Tier, _analytical_intent
+        return classify_tier(message) >= Tier.THINKING or _analytical_intent(message)
+    except Exception:
+        return False
+
+
 async def _maybe_deepseek_brain_answer(message: str, bot: dict, bot_id: str, conv_id: str, pool) -> dict | None:
     """Opt-in DeepSeek "3-otak" shortcut (DEEPSEEK_BRAIN_ENABLED). Returns a full
     chat response dict when it handles the turn (persisting the assistant message),
@@ -3363,6 +3380,10 @@ async def _maybe_deepseek_brain_answer(message: str, bot: dict, bot_id: str, con
     from the chat handler (decomposition step 4); any error falls back to None.
     """
     if not (cfg.deepseek_brain_enabled and cfg.deepseek_api_key):
+        return None
+    # Hybrid routing: pertanyaan kompleks/analitis -> None supaya jatuh ke pipeline
+    # multi-agent (analisis lebih dalam + observability). Pesan simpel tetap di brain.
+    if _chat_prefers_multi_agent(message):
         return None
     _brain_started = time.perf_counter()
     try:

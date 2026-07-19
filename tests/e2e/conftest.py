@@ -30,6 +30,21 @@ def _reset_rate_limiter():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _force_multi_agent_chat():
+    """E2E di direktori ini sengaja menguji rantai Supervisor -> Agent -> Knowledge
+    (lihat docstring `client`). Fast-path brain single-model (DEEPSEEK_BRAIN_ENABLED)
+    memintas rantai itu untuk pesan simpel -> asersi routing/intent/handoff jadi
+    non-deterministik tergantung nilai .env lokal. Paksa brain OFF selama e2e agar
+    tes selalu menjalankan pipeline multi-agent. Tidak mengubah perilaku produksi."""
+    prev = main.cfg.deepseek_brain_enabled
+    main.cfg.deepseek_brain_enabled = False
+    try:
+        yield
+    finally:
+        main.cfg.deepseek_brain_enabled = prev
+
+
 @pytest.fixture(scope="session")
 def client():
     """Real FastAPI app + real DB (same TestClient(main.app) pattern as
