@@ -4712,6 +4712,20 @@ try:
         prefix="/api",
     )
     _agent_obs.set_event_publisher(_get_obs_hub().publish)
+    # Agent readiness self-test (konstruksi + verifikasi tiap agent).
+    from bn_platform.agent_selftest import build_agent_selftest_router
+    _agent_selftest_config = {
+        "api_key": cfg.groq_api_key, "model": cfg.groq_model,
+        "base_url": (cfg.groq_base_url or "").strip() or None, "app_url": cfg.app_url,
+        "gemini_api_key": cfg.effective_gemini_api_key, "gemini_model": cfg.gemini_model,
+        "gemini_pro_model": cfg.gemini_pro_model, "gemini_timeout": cfg.gemini_timeout,
+        "gemini_max_retry": cfg.gemini_max_retry, "openrouter_api_key": cfg.openrouter_api_key,
+        "deepseek_api_key": cfg.deepseek_api_key,
+    }
+    app.include_router(
+        build_agent_selftest_router(get_current_user=get_current_user, agent_config=_agent_selftest_config),
+        prefix="/api",
+    )
     from bn_platform.local_agent_router import build_local_agent_router
 
     async def _computer_agent_llm(prompt: str) -> str:

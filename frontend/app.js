@@ -559,7 +559,7 @@ async function renderObservability(days = state.observabilityDays) {
     return `<tr data-agent-row="${esc(agent.agent_name)}"${clickAttr}><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td data-agent-status="${esc(agent.agent_name)}"><span${title}>${statusBadge(kind,label)}</span>${retryBadge}${errHint}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`;
   }).join("");
   const traceRows = (data.traces || []).map((trace) => `<tr data-observability-trace="${esc(trace.id)}"><td class="mono">${esc(String(trace.id).slice(0,8))}</td><td><span class="table-title trace-question">${esc(trace.user_question)}</span></td><td>${statusBadge(trace.status === 'success' ? 'active' : trace.status, trace.status)}</td><td>${formatNumber(trace.agent_count)} agents</td><td>${trace.duration_ms || 0}ms</td><td>${formatNumber(trace.total_tokens)}</td><td>${relativeTime(trace.started_at)}</td></tr>`).join("");
-  setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}
+  setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<button class="button" data-action="agent-self-test">${icon('refresh',14)} Jalankan Self-Test</button><select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}
   <div class="grid grid-3 observability-metrics" style="margin-bottom:16px">${metricCard("Active Agents",formatNumber(metrics.active_agents),"Currently executing","agents")}${metricCard("Failed Agents",formatNumber(metrics.failed_agents),"Executions in selected window","observability",metrics.failed_agents?'trend-down':'trend-up')}${metricCard("Average Latency",`${Math.round(metrics.average_latency_ms||0)}ms`,"Per agent execution","analytics")}${metricCard("Token Usage",formatNumber(metrics.total_tokens),`${formatNumber(metrics.prompt_tokens)} prompt · ${formatNumber(metrics.completion_tokens)} completion`,"billing")}${metricCard("Success Rate",`${Number(metrics.success_rate||0).toFixed(1)}%`,"Completed executions","dashboard","trend-up")}${metricCard("Error Rate",`${Number(metrics.error_rate||0).toFixed(1)}%`,"Failed executions","observability",metrics.error_rate?'trend-down':'trend-up')}</div>
   <div class="page-section-label">Realtime activity <span id="obs-live-dot" class="obs-live-dot" title="Menghubungkan realtime…">●</span></div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Live Activity</h3><span class="subtle">Status agent tampil di sini secara realtime — tanpa reload</span></div></div>
@@ -626,6 +626,30 @@ function openObservabilityWs() {
     ws.onerror = () => _obsLiveDot("off");
     ws.onmessage = (m) => { try { _obsHandleEvent(JSON.parse(m.data)); } catch(_) {} };
   } catch(_) { _obsLiveDot("off"); }
+}
+
+async function runAgentSelfTest() {
+  toast("Menjalankan self-test semua agent…", "info");
+  let r;
+  try { r = await api.agentSelfTest(); }
+  catch (error) { toast(error.message, "error"); return; }
+  const rows = (r.agents || []).map(a => {
+    const ok = a.status === "ok";
+    const badge = ok ? '<span style="color:#22c55e;font-weight:700">✓ OK</span>' : '<span style="color:#f87171;font-weight:700">✕ FAILED</span>';
+    const detail = ok
+      ? `<span class="subtle" style="font-size:11px">entrypoint <code>${esc(a.entrypoint||'-')}()</code> · ${a.duration_ms||0}ms</span>`
+      : `<div class="subtle" style="font-size:11px;color:#f87171">${esc(a.error||'')}</div><div class="subtle" style="font-size:11px">↳ ${esc(a.root_cause||'')} · <b>fix:</b> ${esc(a.suggested_fix||'')}</div>`;
+    return `<tr><td>${badge}</td><td><span class="mono">${esc(a.agent)}</span> <span class="subtle" style="font-size:10px">${esc(a.category||'')}</span></td><td>${detail}</td></tr>`;
+  }).join("");
+  const summary = `<div style="display:flex;gap:14px;margin-bottom:12px">
+    <span style="font-size:22px;font-weight:800">${formatNumber(r.total||0)} <span class="subtle" style="font-size:12px">agent</span></span>
+    <span style="font-size:22px;font-weight:800;color:#22c55e">${formatNumber(r.ok||0)} <span class="subtle" style="font-size:12px">OK</span></span>
+    <span style="font-size:22px;font-weight:800;color:${r.failed?'#f87171':'var(--text-3)'}">${formatNumber(r.failed||0)} <span class="subtle" style="font-size:12px">gagal</span></span>
+  </div>`;
+  const body = `${summary}<div class="table-wrap"><table class="data-table"><thead><tr><th>Status</th><th>Agent</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="subtle" style="font-size:11px;margin-top:10px">Self-test meng-instansiasi tiap agent (menjalankan __init__ nyata) + memverifikasi entrypoint. Kegagalan = import/dependency/konstruktor/config bermasalah, dilaporkan lengkap dengan root cause.</p>`;
+  el("#modal-root").innerHTML = modal({title:`Agent Self-Test — ${r.failed?`${r.failed} gagal`:'semua OK'}`,body,wide:true});
+  toast(r.failed ? `Self-test: ${r.failed} agent gagal.` : `Self-test: semua ${r.ok} agent OK ✓`, r.failed ? "error" : "success");
 }
 
 async function openAgentErrorDetail(agentName) {
@@ -4349,6 +4373,7 @@ document.addEventListener("click", async (event) => {
   const workforceApprove=event.target.closest("[data-workforce-approve]"); if(workforceApprove){ try{ await api.approveWorkforceTask(workforceApprove.dataset.workforceApprove); toast("Task disetujui.","success"); await renderWorkforce(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-disconnect"){ try{ await api.localAgentDisconnect(); toast("Local Agent diputus.","success"); await renderAgentCenter(); }catch(error){ toast(error.message,"error"); } return; }
   if(action==="local-agent-refresh"){ bustCache("localAgent"); await renderAgentCenter(); return; }
+  if(action==="agent-self-test"){ await runAgentSelfTest(); return; }
   if(action==="ca-terminal-run"){ await caRunTerminal(); return; }
   if(action==="ca-agent-run"){ await caRunAgent(); return; }
   if(action==="ai-power-toggle"){
