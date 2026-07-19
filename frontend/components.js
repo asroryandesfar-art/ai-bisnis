@@ -228,7 +228,6 @@ function getNavGroups() {
       ["casper-agentic-workflow", n("casper-agentic-workflow")],
       ["executive", n("executive")],
       ["workforce-overview", n("workforce-overview")],
-      ["investor-demo", n("investor-demo")],
     ]],
     ["workforce", g("workforce"), "agents", [
       ["agents", n("agents")],
@@ -259,7 +258,6 @@ function getNavGroups() {
     ["business", g("business"), "analytics", [
       ["analytics", n("analytics")],
       ["multimedia", n("multimedia")],
-      ["handoffs", n("handoffs-customers")],
     ]],
     ["agent-os", g("agent-os"), "agent-center", [
       ["agent-center", n("agent-center")],
