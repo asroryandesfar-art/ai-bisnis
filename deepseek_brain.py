@@ -90,6 +90,42 @@ def enforce_plan(tier: Tier, plan: str | None) -> Tier:
     return tier if tier <= cap else cap
 
 
+# Hybrid free-tier: izinkan free/trial NAIK ke THINKING (deepseek-reasoner/R1)
+# HANYA untuk pertanyaan kompleks — supaya jawaban tak dangkal ("tolol"), tapi
+# tetap FAST (murah) untuk pertanyaan simpel. Bounded (maks THINKING, tak pernah
+# PRO) & bisa dimatikan via env DEEPSEEK_FREE_COMPLEX_THINKING=0.
+_FREE_COMPLEX_THINKING = (os.getenv("DEEPSEEK_FREE_COMPLEX_THINKING", "1").strip().lower()
+                          not in ("0", "false", "no", "off"))
+_HYBRID_PLANS = frozenset({"free", "trialing"})
+
+# Intent analitis/advis (butuh jawaban mendalam) yang sering LOLOS dari
+# heuristic_complexity padahal user mengharap jawaban berkualitas. Untuk free
+# hybrid, ini juga memicu R1 — bukan hanya klasifikasi THINKING yang sempit.
+_FREE_ESCALATE_RE = re.compile(
+    r"\b(strateg|analis|analisa|bandingk|rekomendasi|saran|mengapa|kenapa|"
+    r"bagaimana (cara|strategi|agar)|cara (menaikkan|meningkatkan|mengurangi|"
+    r"mengatasi|optimal|memperbaiki)|tingkatkan|naikkan|optimal|evaluasi|rencana|"
+    r"proyeksi|estimasi|margin|profit|untung|rugi|pertumbuhan|efisiensi|"
+    r"kompetitor|pesaing|pemasaran|marketing|jelaskan secara)\b", re.I)
+
+
+def _analytical_intent(message: str) -> bool:
+    m = (message or "").strip()
+    return len(m) >= 40 and bool(_FREE_ESCALATE_RE.search(m))
+
+
+def apply_complexity_escalation(needed: Tier, capped: Tier, plan: str | None,
+                                 message: str = "") -> Tier:
+    """Naikkan free/trial ke THINKING (R1) untuk pertanyaan yang butuh kedalaman —
+    baik yang diklasifikasi THINKING+ maupun yang berintent analitis/advis — tapi
+    TETAP FAST untuk pertanyaan simpel. Tidak berlaku untuk plan berbayar."""
+    if (_FREE_COMPLEX_THINKING and capped < Tier.THINKING
+            and (plan or "").strip().lower() in _HYBRID_PLANS
+            and (needed >= Tier.THINKING or _analytical_intent(message))):
+        return Tier.THINKING          # naik ke R1 (tak pernah ke PRO untuk free)
+    return capped
+
+
 # ── Klasifikasi kompleksitas -> tier ────────────────────────────────────
 _GREETING_RE = re.compile(
     r"^\s*(hai|halo|hallo|hi|hello|hey|pagi|siang|sore|malam|selamat|assalamualaikum|"
@@ -290,6 +326,8 @@ class DeepSeekBrain:
         # 3) Klasifikasi tier -> plafon plan (backend-authoritative).
         needed = classify_tier(message, signals)
         eff = enforce_plan(needed, plan)
+        # Hybrid: free/trial → R1 (THINKING) untuk pertanyaan kompleks/analitis.
+        eff = apply_complexity_escalation(needed, eff, plan, message)
         logger.info("route org=%s plan=%s needed=%s effective=%s", org_id, plan, needed.name, eff.name)
 
         # 4) Panggil model dengan fallback PRO->THINKING->FAST + timeout + retry.

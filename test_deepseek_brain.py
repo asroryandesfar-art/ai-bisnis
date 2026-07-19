@@ -53,12 +53,13 @@ def test_3c_supervisor_multistep_ke_pro():
 def test_4_free_user_tidak_bisa_pro():
     assert db.enforce_plan(Tier.PRO, "free") == Tier.FAST
     assert db.enforce_plan(Tier.THINKING, "free") == Tier.FAST
-    # walau pesan komplain berat (butuh PRO), free tetap turun ke FAST
+    # Hybrid free-tier: pesan kompleks/berat pada free NAIK ke THINKING (R1) —
+    # tidak lagi dangkal (FAST), tapi TETAP tidak pernah PRO.
     rec = []
     res = _run(DeepSeekBrain(_spy_call_fn(rec), MODELS).answer(
         "Saya marah, ini penipuan, saya lapor polisi!", plan="free", org_id="orgA"))
-    assert res.tier == Tier.FAST and res.model == "ds-fast"
-    assert rec == ["ds-fast"]  # PRO tidak pernah dipanggil
+    assert res.tier == Tier.THINKING and res.model == "ds-reasoner"
+    assert rec == ["ds-reasoner"]  # naik ke R1, PRO tetap tidak pernah dipanggil
 
 
 # ── 5-6: hak plan ───────────────────────────────────────────────────────
