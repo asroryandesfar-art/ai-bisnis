@@ -120,6 +120,75 @@ def test_propose_steps_fail_open_empty():
     assert out["steps"] == [] and out["_llm_unavailable"] is True
 
 
+def _decisions_stub(decisions):
+    it = iter(decisions)
+
+    async def fake(messages, **kwargs):
+        try:
+            return next(it)
+        except StopIteration:
+            return {"done": True}
+    return fake
+
+
+def _exec_recorder(calls, result=None):
+    async def execute(org_id, tool, args, *, device_id=None, initiated_by="", timeout=30, pool=None):
+        calls.append({"tool": tool, "args": args, "initiated_by": initiated_by})
+        return result if result is not None else {"success": True, "content": "file body"}
+    return execute
+
+
+def test_investigate_readonly_loop_builds_findings():
+    agent = _agent()
+    agent._call_llm_json = _decisions_stub([
+        {"done": False, "tool": "scan_project", "args": {"path": "."}, "reason": "overview"},
+        {"done": False, "tool": "read_file", "args": {"path": "main.py"}, "reason": "entry"},
+        {"done": True, "summary": "FastAPI app, entry main.py"},
+    ])
+    calls = []
+    out = asyncio.run(agent.investigate("goal", _exec_recorder(calls), "org-1", None, max_rounds=5))
+    assert [c["tool"] for c in calls] == ["scan_project", "read_file"]
+    assert out["rounds"] == 2
+    assert "scan_project" in out["findings"] and "RINGKASAN" in out["findings"]
+    assert all(c["initiated_by"] == "casper_engineer_investigate" for c in calls)
+
+
+def test_investigate_skips_write_tools():
+    agent = _agent()
+    agent._call_llm_json = _decisions_stub([
+        {"done": False, "tool": "run_command", "args": {"command": "rm -rf /"}},   # HARUS dilewati
+        {"done": False, "tool": "write_file", "args": {"path": "x", "content": "y"}},  # dilewati
+        {"done": True, "summary": "selesai"},
+    ])
+    calls = []
+    out = asyncio.run(agent.investigate("g", _exec_recorder(calls), "org-1", None))
+    assert calls == []                                   # tak ada tool tulis yang dieksekusi
+    assert any(x.get("skipped") == "not-readonly" for x in out["trace"])
+
+
+def test_investigate_stops_on_device_error():
+    agent = _agent()
+    agent._call_llm_json = _decisions_stub([
+        {"done": False, "tool": "read_file", "args": {"path": "a"}},
+        {"done": False, "tool": "read_file", "args": {"path": "b"}},
+    ])
+
+    async def boom(*a, **k):
+        raise RuntimeError("device gone")
+    out = asyncio.run(agent.investigate("g", boom, "org-1", None))
+    assert out["rounds"] == 1                             # berhenti setelah error pertama
+    assert any("error" in x for x in out["trace"])
+
+
+def test_investigate_bounded_by_max_rounds():
+    agent = _agent()
+    # Selalu minta baca (tak pernah 'done') -> harus berhenti di max_rounds.
+    agent._call_llm_json = _decisions_stub([{"done": False, "tool": "list_dir", "args": {"path": "."}}] * 20)
+    calls = []
+    out = asyncio.run(agent.investigate("g", _exec_recorder(calls), "org-1", None, max_rounds=3))
+    assert len(calls) == 3
+
+
 def test_degraded_when_all_stages_llm_unavailable():
     agent = _agent()
 

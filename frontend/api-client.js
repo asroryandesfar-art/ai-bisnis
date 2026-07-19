@@ -392,6 +392,7 @@ export const api = {
   casperEngineerProposeSteps: (id) => request(`/api/casper/engineer/run/${id}/propose-steps`, { method: "POST" }),
   casperEngineerExecuteStep: (id, body) => request(`/api/casper/engineer/run/${id}/execute-step`, { method: "POST", body }),
   casperEngineerSteps: (id) => request(`/api/casper/engineer/run/${id}/steps`),
+  casperEngineerInvestigate: (id, body = {}) => request(`/api/casper/engineer/run/${id}/investigate`, { method: "POST", body }),
 };
 
 export async function settle(label, promise) {

@@ -46,6 +46,18 @@ _MAX_GOAL = 4000
 _MAX_REPO_CTX = 12000
 
 
+def _summarize_tool_result(result) -> str:
+    """Padatkan hasil tool Local Agent jadi ringkas supaya konteks loop tak meledak."""
+    if not isinstance(result, dict):
+        return str(result)[:400]
+    if not result.get("success"):
+        return f"gagal: {str(result.get('error') or '')[:200]}"
+    for key in ("content", "tree", "output", "stdout", "matches", "files", "entries", "preview", "found_files"):
+        if result.get(key):
+            return f"{key}: {str(result[key])[:600]}"
+    return str({k: v for k, v in result.items() if k != "success"})[:400]
+
+
 def _clip(text: str, limit: int) -> str:
     text = str(text or "").strip()
     return text[:limit]
@@ -282,3 +294,57 @@ class CasperEngineerAgent(BaseAgent):
                     "requires_approval": tool in WRITE_TOOLS,
                 })
         return {"steps": steps, "_llm_unavailable": bool(out.get("_llm_unavailable"))}
+
+    # ── Phase 2c: loop investigasi repo OTONOM (read-only) ──────────────
+    async def investigate(self, goal: str, execute, org_id: str, pool, *,
+                          device_id: str | None = None, max_rounds: int = 5) -> dict:
+        """Loop agentik READ-ONLY: tiap ronde agent memilih SATU aksi baca
+        berikutnya berdasar temuan sebelumnya, sampai 'done' atau max_rounds.
+        HANYA READONLY_TOOLS yang dieksekusi (tool tulis diabaikan demi keamanan).
+        `execute` diinjeksi (LocalAgentManager.execute) -> bisa diuji tanpa perangkat.
+        Return {findings, trace, rounds}."""
+        goal = _clip(goal, _MAX_GOAL)
+        spec = ("read_file{path} · list_dir{path} · find_files{path,pattern} · "
+                "search_text{path,query} · tree{path} · scan_project{path} · get_info{path}")
+        observations: list[str] = []
+        trace: list[dict] = []
+        for _ in range(max(1, min(max_rounds, 10))):
+            decision = await self._call_llm_json(
+                [
+                    {"role": "system", "content": (
+                        "Kamu Casper Engineer menginvestigasi repo (READ-ONLY) untuk memahami "
+                        "kode sebelum merencanakan. Pilih SATU aksi baca berikutnya, atau selesai "
+                        "bila sudah cukup paham. Jangan menebak isi file — baca. Balas HANYA JSON."
+                    )},
+                    {"role": "user", "content": (
+                        f"GOAL:\n{goal}\n\nTemuan sejauh ini:\n{chr(10).join(observations) or '(belum ada)'}\n\n"
+                        f"Tool baca tersedia: {spec}\n\n"
+                        'Aksi berikutnya? JSON: {"done": false, "tool": "<nama>", "args": {"...":"..."}, '
+                        '"reason": "..."} ATAU {"done": true, "summary": "<ringkas temuan kunci>"}'
+                    )},
+                ],
+                temperature=0.1, max_tokens=500, default={"done": True, "_llm_unavailable": True},
+            )
+            if decision.get("_llm_unavailable"):
+                break
+            if decision.get("done"):
+                if decision.get("summary"):
+                    observations.append("RINGKASAN: " + str(decision["summary"])[:1000])
+                break
+            tool = str(decision.get("tool") or "").strip()
+            args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
+            if tool not in READONLY_TOOLS:   # keamanan: loop otonom TIDAK boleh tulis/perintah
+                trace.append({"tool": tool, "skipped": "not-readonly"})
+                observations.append(f"(dilewati: '{tool}' bukan tool read-only)")
+                continue
+            try:
+                result = await execute(org_id, tool, args, device_id=device_id,
+                                       initiated_by="casper_engineer_investigate", timeout=30, pool=pool)
+            except Exception as exc:
+                # Perangkat lepas / error -> hentikan loop dengan aman (bukan crash).
+                trace.append({"tool": tool, "args": args, "error": str(exc)[:200]})
+                break
+            ok = bool(isinstance(result, dict) and result.get("success"))
+            trace.append({"tool": tool, "args": args, "success": ok})
+            observations.append(f"[{tool} {json.dumps(args, ensure_ascii=False)[:80]}] -> {_summarize_tool_result(result)}")
+        return {"findings": "\n".join(observations)[:_MAX_REPO_CTX], "trace": trace, "rounds": len(trace)}

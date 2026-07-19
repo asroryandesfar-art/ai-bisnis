@@ -39,6 +39,11 @@ class ExecuteStepRequest(BaseModel):
     timeout: int = Field(60, ge=5, le=120)
 
 
+class InvestigateRequest(BaseModel):
+    device_id: Optional[str] = None
+    max_rounds: int = Field(5, ge=1, le=10)
+
+
 def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
                                   require_permission, get_agent_config: Callable[[], dict]) -> APIRouter:
     router = APIRouter(prefix="/casper/engineer", tags=["casper-engineer"])
@@ -216,6 +221,38 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "requires_approval": body.tool in WRITE_TOOLS, "result": result,
             "created_at": r["created_at"].isoformat(),
         }
+
+    @router.post("/run/{run_id}/investigate")
+    async def investigate_repo(
+        run_id: str,
+        body: InvestigateRequest,
+        user: Annotated[dict, Depends(require_permission("workforce.write"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        row = await pool.fetchrow(
+            "SELECT goal, repo_context FROM casper_engineer_runs WHERE id=$1 AND org_id=$2",
+            _as_uuid(run_id), user["org_id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Run tidak ditemukan")
+        _check_rate_limit(f"casper_engineer_investigate:{user['org_id']}", 5)
+        from bn_platform.local_agent_router import get_manager
+        mgr = get_manager()
+        # Pre-check perangkat (sama seperti execute) -> 503 jelas kalau tak ada.
+        _did, conn = mgr._pick(str(user["org_id"]), body.device_id)
+        if not conn:
+            raise HTTPException(status_code=503, detail="Local agent tidak terhubung. Jalankan botnesia-agent di komputer Anda.")
+        out = await agent.investigate(
+            row["goal"], mgr.execute, str(user["org_id"]), pool,
+            device_id=body.device_id, max_rounds=body.max_rounds,
+        )
+        findings = out.get("findings") or ""
+        if findings:
+            merged = ((row["repo_context"] or "") + "\n\n[AUTONOMOUS INVESTIGATION]\n" + findings).strip()[:12000]
+            await pool.execute(
+                "UPDATE casper_engineer_runs SET repo_context=$2 WHERE id=$1", _as_uuid(run_id), merged,
+            )
+        return {"findings": findings, "trace": out.get("trace", []), "rounds": out.get("rounds", 0)}
 
     @router.get("/run/{run_id}/steps")
     async def list_steps(
