@@ -233,3 +233,56 @@ def test_observability_health_uses_latest_execution_status():
     assert "SELECT DISTINCT ON (agent_name)" in pool.queries[0]
     assert "status AS last_status" in pool.queries[1]
     assert "COUNT(*) FILTER (WHERE w.status='error')" in pool.queries[1]
+
+
+def _all_final_updates(pool):
+    return [args for sql, args in pool.calls
+            if "UPDATE agent_executions" in sql and "execution_end=$2" in sql]
+
+
+def test_status_waiting_from_output_flag():
+    class R:
+        success = True
+        output = {"needs_approval": True}
+    assert agent_observability._status(R())[0] == "waiting"
+
+    class R2:
+        success = True
+        output = {"waiting": True}
+    assert agent_observability._status(R2())[0] == "waiting"
+
+
+def test_waiting_output_records_waiting_status():
+    pool = FakePool()
+    ctx = _ctx(pool)
+
+    async def child():
+        return {"needs_approval": True, "confidence_score": 50}
+
+    async def operation():
+        await observe_agent("finance_agent", ctx, child)
+        return "ok"
+
+    asyncio.run(trace_request(ctx, operation))
+    assert any(a[3] == "waiting" for a in _all_final_updates(pool))
+
+
+def test_cancelled_request_records_cancelled_not_error():
+    pool = FakePool()
+    ctx = _ctx(pool)
+
+    async def child():
+        raise asyncio.CancelledError()
+
+    async def operation():
+        await observe_agent("finance_agent", ctx, child)
+        return "ok"
+
+    try:
+        asyncio.run(trace_request(ctx, operation))
+    except BaseException:
+        pass
+    finals = _all_final_updates(pool)
+    assert finals
+    assert any(a[3] == "cancelled" for a in finals)   # tercatat cancelled
+    assert all(a[3] != "error" for a in finals)        # BUKAN error/merah

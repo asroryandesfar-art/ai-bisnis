@@ -86,16 +86,18 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
                    ORDER BY agent_name, execution_start DESC
                )
                SELECT
-                   COUNT(*) FILTER (WHERE status='running' AND execution_start >= NOW() - INTERVAL '5 minutes') AS active_agents,
+                   COUNT(*) FILTER (WHERE status IN ('running','retrying','waiting') AND execution_start >= NOW() - INTERVAL '5 minutes') AS active_agents,
                    (SELECT COUNT(*) FROM latest WHERE status='error') AS failed_agents,
-                   COALESCE(AVG(duration_ms) FILTER (WHERE status <> 'running'), 0)::float AS average_latency_ms,
+                   COALESCE(AVG(duration_ms) FILTER (WHERE status IN ('success','skipped','error')), 0)::float AS average_latency_ms,
                    COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
                    COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
                    COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+                   -- Rate hanya atas eksekusi TERMINAL selesai (success/skipped/error);
+                   -- running/retrying/waiting/cancelled dikecualikan (cancelled bukan kegagalan).
                    COALESCE(100.0 * COUNT(*) FILTER (WHERE status IN ('success','skipped')) /
-                       NULLIF(COUNT(*) FILTER (WHERE status <> 'running'), 0), 0)::float AS success_rate,
+                       NULLIF(COUNT(*) FILTER (WHERE status IN ('success','skipped','error')), 0), 0)::float AS success_rate,
                    COALESCE(100.0 * COUNT(*) FILTER (WHERE status='error') /
-                       NULLIF(COUNT(*) FILTER (WHERE status <> 'running'), 0), 0)::float AS error_rate
+                       NULLIF(COUNT(*) FILTER (WHERE status IN ('success','skipped','error')), 0), 0)::float AS error_rate
                FROM windowed""",
             org_id, days,
         )

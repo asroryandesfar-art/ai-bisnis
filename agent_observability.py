@@ -159,6 +159,9 @@ def _status(value: Any) -> tuple[str, str | None]:
     output = getattr(value, "output", value if isinstance(value, dict) else None)
     if success is False:
         return "error", str(error or "Agent execution failed")
+    if isinstance(output, dict) and any(output.get(k) for k in
+            ("waiting", "needs_approval", "awaiting_approval", "pending_approval")):
+        return "waiting", None            # menunggu approval/dependency (valid, bukan gagal)
     if isinstance(output, dict) and output.get("skipped"):
         return "skipped", None
     return "success", None
@@ -220,6 +223,9 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
     result: Any = None
     retry_count = 0
     error_stack: str | None = None
+    # Nilai default: bila alur keluar lewat BaseException tak terduga, finally tetap
+    # punya status/error/confidence yang terikat (cegah UnboundLocalError).
+    status, error, confidence = "running", None, None
     try:
         # Auto-retry TRANSIENT dengan exponential backoff (maks _RETRY_MAX).
         # Error non-transient (bug logika, permission, value) gagal cepat.
@@ -253,6 +259,12 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
         status, error = _status(result)
         confidence = _confidence(result)
         return result
+    except asyncio.CancelledError:
+        # Request dibatalkan/timeout klien → CANCELLED (BaseException, TIDAK
+        # ditangkap `except Exception`). Bukan bug/kegagalan; harus di-reraise
+        # agar pembatalan task berjalan benar.
+        status, error, confidence = "cancelled", "Dibatalkan (request cancelled/timeout klien)", None
+        raise
     except Exception as exc:
         # str(exc) bisa KOSONG untuk sejumlah exception (mis. CancelledError,
         # TimeoutError tanpa pesan) → dulu error_message tersimpan blank sehingga

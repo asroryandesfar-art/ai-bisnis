@@ -548,6 +548,9 @@ async function renderObservability(days = state.observabilityDays) {
     else if(latest==='error'){ kind='error'; label='failed'; }
     else if(latest==='success'){ kind='active'; label='healthy'; }
     else if(latest==='running'){ kind='pending'; label='running'; }
+    else if(latest==='retrying'){ kind='pending'; label='↻ retrying'; }
+    else if(latest==='waiting'){ kind='pending'; label='⧗ waiting'; }
+    else if(latest==='cancelled'){ kind='inactive'; label='⊘ cancelled'; }
     else if(latest==='skipped'){ kind='pending'; label='idle'; }
     // Tooltip alasan: untuk FAILED tampilkan error nyata (root cause), bukan hanya "failed".
     const reason = latest==='error' ? (agent.last_error || 'Error tanpa detail') : (latest==='skipped' ? 'Idle — tidak ada tugas untuk agent ini' : '');
@@ -595,8 +598,9 @@ function _obsLiveDot(state) {
   if (dot) { dot.className = `obs-live-dot ${state}`; dot.title = state === "on" ? "Realtime terhubung" : "Realtime terputus"; }
 }
 function _obsStatusMeta(status) {
-  return ({ running:["#60a5fa","◍ running"], retrying:["#c99a3e","↻ retrying"], success:["#34d399","✓ success"],
-            skipped:["#c99a3e","○ idle"], error:["#f87171","✕ failed"] }[status] || ["var(--text-3)", status]);
+  return ({ running:["#60a5fa","◍ running"], retrying:["#c99a3e","↻ retrying"], waiting:["#c99a3e","⧗ waiting"],
+            success:["#34d399","✓ success"], skipped:["#c99a3e","○ idle"], cancelled:["var(--text-3)","⊘ cancelled"],
+            error:["#f87171","✕ failed"] }[status] || ["var(--text-3)", status]);
 }
 function _obsHandleEvent(ev) {
   if (!ev || ev.type !== "agent") return;
