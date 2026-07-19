@@ -556,15 +556,20 @@ async function renderObservability(days = state.observabilityDays) {
     // Baris FAILED bisa diklik → panel detail (Agent/Task/Error/Stacktrace/Retry/Root Cause/Fix).
     const clickAttr = latest==='error' ? ` data-obs-agent-error="${esc(agent.agent_name)}" style="cursor:pointer" title="Klik untuk detail error"` : '';
     const errHint = latest==='error'&&agent.last_error ? `<div class="subtle" style="font-size:10px;color:#f87171;margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(agent.last_error)} <span style="color:var(--accent,#7c3aed)">· detail →</span></div>` : '';
-    return `<tr${clickAttr}><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td><span${title}>${statusBadge(kind,label)}</span>${retryBadge}${errHint}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`;
+    return `<tr data-agent-row="${esc(agent.agent_name)}"${clickAttr}><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td data-agent-status="${esc(agent.agent_name)}"><span${title}>${statusBadge(kind,label)}</span>${retryBadge}${errHint}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`;
   }).join("");
   const traceRows = (data.traces || []).map((trace) => `<tr data-observability-trace="${esc(trace.id)}"><td class="mono">${esc(String(trace.id).slice(0,8))}</td><td><span class="table-title trace-question">${esc(trace.user_question)}</span></td><td>${statusBadge(trace.status === 'success' ? 'active' : trace.status, trace.status)}</td><td>${formatNumber(trace.agent_count)} agents</td><td>${trace.duration_ms || 0}ms</td><td>${formatNumber(trace.total_tokens)}</td><td>${relativeTime(trace.started_at)}</td></tr>`).join("");
   setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}
   <div class="grid grid-3 observability-metrics" style="margin-bottom:16px">${metricCard("Active Agents",formatNumber(metrics.active_agents),"Currently executing","agents")}${metricCard("Failed Agents",formatNumber(metrics.failed_agents),"Executions in selected window","observability",metrics.failed_agents?'trend-down':'trend-up')}${metricCard("Average Latency",`${Math.round(metrics.average_latency_ms||0)}ms`,"Per agent execution","analytics")}${metricCard("Token Usage",formatNumber(metrics.total_tokens),`${formatNumber(metrics.prompt_tokens)} prompt · ${formatNumber(metrics.completion_tokens)} completion`,"billing")}${metricCard("Success Rate",`${Number(metrics.success_rate||0).toFixed(1)}%`,"Completed executions","dashboard","trend-up")}${metricCard("Error Rate",`${Number(metrics.error_rate||0).toFixed(1)}%`,"Failed executions","observability",metrics.error_rate?'trend-down':'trend-up')}</div>
+  <div class="page-section-label">Realtime activity <span id="obs-live-dot" class="obs-live-dot" title="Menghubungkan realtime…">●</span></div>
+  <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Live Activity</h3><span class="subtle">Status agent tampil di sini secara realtime — tanpa reload</span></div></div>
+    <div id="obs-live-feed" class="obs-live-feed"><div class="subtle" style="padding:14px;font-size:12px">Menunggu aktivitas agent…</div></div>
+  </div>
   <div class="page-section-label">Agent health</div>
   <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Agent health</h3><span class="subtle">Latency, failures, and token consumption per agent</span></div></div>${agentRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Executions</th><th>Status</th><th>Avg latency</th><th>Tokens</th><th>Last seen</th></tr></thead><tbody>${agentRows}</tbody></table></div>`:emptyState("No execution data","Send a message to an AI agent to create the first trace.")}</div>
   <div class="page-section-label">Request traces</div>
   <div class="card"><div class="card-head"><div><h3>Agent Trace Viewer</h3><span class="subtle">Open a request to inspect its complete execution chain</span></div></div>${traceRows?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Trace</th><th>User question</th><th>Status</th><th>Chain</th><th>Latency</th><th>Tokens</th><th>Started</th></tr></thead><tbody>${traceRows}</tbody></table></div>`:emptyState("No traces yet","Request traces will appear here after an agent handles a message.")}</div>`);
+  openObservabilityWs();   // aktifkan realtime (status berubah tanpa reload)
 }
 
 async function openObservabilityTrace(traceId) {
@@ -575,6 +580,52 @@ async function openObservabilityTrace(traceId) {
   const steps = (data.executions || []).map((step, index) => `<div class="trace-step ${step.status}"><span class="trace-node">${index + 1}</span><div><strong>${esc(step.agent_name)}</strong><p>${esc(step.status)} · ${step.duration_ms || 0}ms · ${formatNumber(step.total_tokens)} tokens${step.confidence_score != null ? ` · confidence ${Number(step.confidence_score).toFixed(1)}` : ''}</p>${step.error_message?`<div class="trace-error">${esc(step.error_message)}</div>`:''}${step.metadata && Object.keys(step.metadata).length?`<pre>${esc(JSON.stringify(step.metadata,null,2))}</pre>`:''}</div></div>`).join("");
   const body = `<div class="trace-summary"><span class="eyebrow">USER QUESTION</span><p>${esc(trace.user_question)}</p></div><div class="trace-chain">${steps}</div><div class="trace-summary final"><span class="eyebrow">FINAL ANSWER</span><div>${renderMarkdown(trace.final_answer || 'No final answer recorded.')}</div></div><div class="trace-totals"><span>${trace.duration_ms || 0}ms total</span><span>${formatNumber(trace.prompt_tokens)} prompt</span><span>${formatNumber(trace.completion_tokens)} completion</span><span>${formatNumber(trace.total_tokens)} tokens</span></div>`;
   el("#modal-root").innerHTML = modal({title:`Agent Trace ${String(trace.id).slice(0,8)}`,body,wide:true});
+}
+
+// ── Realtime observability WebSocket ────────────────────────────────────────
+let _obsWs = null;
+function closeObservabilityWs() {
+  if (_obsWs) { try { _obsWs.onclose = null; _obsWs.close(); } catch(_) {} _obsWs = null; }
+}
+function _obsLiveDot(state) {
+  const dot = document.getElementById("obs-live-dot");
+  if (dot) { dot.className = `obs-live-dot ${state}`; dot.title = state === "on" ? "Realtime terhubung" : "Realtime terputus"; }
+}
+function _obsStatusMeta(status) {
+  return ({ running:["#60a5fa","◍ running"], retrying:["#c99a3e","↻ retrying"], success:["#34d399","✓ success"],
+            skipped:["#c99a3e","○ idle"], error:["#f87171","✕ failed"] }[status] || ["var(--text-3)", status]);
+}
+function _obsHandleEvent(ev) {
+  if (!ev || ev.type !== "agent") return;
+  const [color, label] = _obsStatusMeta(ev.status);
+  // 1) Prepend ke live feed
+  const feed = document.getElementById("obs-live-feed");
+  if (feed) {
+    if (feed.querySelector(".subtle")) feed.innerHTML = "";
+    const line = document.createElement("div");
+    line.className = "obs-live-line";
+    const extra = ev.status === "retrying" ? ` (retry ${ev.retry_count||0})` : (ev.status === "error" && ev.error_message ? ` — ${ev.error_message}` : "");
+    line.innerHTML = `<span class="obs-live-time">${new Date().toLocaleTimeString('id-ID')}</span><span class="mono">${esc(ev.agent_name)}</span><span style="color:${color};font-weight:600">${label}${esc(extra)}</span>`;
+    feed.prepend(line);
+    while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+  }
+  // 2) Update badge status agent di tabel Agent health (tanpa reload)
+  const cell = document.querySelector(`[data-agent-status="${(window.CSS&&CSS.escape)?CSS.escape(ev.agent_name):ev.agent_name}"]`);
+  if (cell) { cell.querySelector("span")?.remove?.(); cell.insertAdjacentHTML("afterbegin", `<span style="font-size:11px;font-weight:700;color:${color}">${label}</span> `); }
+}
+function openObservabilityWs() {
+  closeObservabilityWs();
+  const token = tokenStore.get();
+  if (!token) return;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  try {
+    const ws = new WebSocket(`${proto}://${location.host}/api/observability/ws?token=${encodeURIComponent(token)}`);
+    _obsWs = ws;
+    ws.onopen = () => _obsLiveDot("on");
+    ws.onclose = () => { _obsLiveDot("off"); if (state.route === "observability") setTimeout(() => { if (state.route === "observability") openObservabilityWs(); }, 4000); };
+    ws.onerror = () => _obsLiveDot("off");
+    ws.onmessage = (m) => { try { _obsHandleEvent(JSON.parse(m.data)); } catch(_) {} };
+  } catch(_) { _obsLiveDot("off"); }
 }
 
 async function openAgentErrorDetail(agentName) {
@@ -3741,6 +3792,7 @@ function renderCasperNewActionModal() {
 }
 
 async function route() {
+  closeObservabilityWs();   // tutup WS realtime saat pindah halaman
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
   const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow};
   const fn = renderers[state.route] || renderDashboard;

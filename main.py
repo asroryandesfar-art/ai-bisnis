@@ -4700,6 +4700,18 @@ try:
         ),
         prefix="/api",
     )
+    # Realtime observability: WS dashboard + wire event publisher ke recorder.
+    import agent_observability as _agent_obs
+    from bn_platform.observability_ws import build_observability_ws_router, get_hub as _get_obs_hub
+    app.include_router(
+        build_observability_ws_router(
+            decode_token=lambda token: __import__("jose.jwt", fromlist=["decode"]).decode(
+                token, cfg.secret_key, algorithms=[cfg.jwt_algorithm]
+            ),
+        ),
+        prefix="/api",
+    )
+    _agent_obs.set_event_publisher(_get_obs_hub().publish)
     from bn_platform.local_agent_router import build_local_agent_router
 
     async def _computer_agent_llm(prompt: str) -> str:

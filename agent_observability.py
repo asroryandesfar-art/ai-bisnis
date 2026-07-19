@@ -38,6 +38,29 @@ _TRANSIENT_KEYWORDS = (
 )
 
 
+# ── Realtime event publisher (di-wire main ke ObservabilityHub) ──
+# None = tidak ada dashboard realtime (fail-open). Dipanggil non-blocking.
+_event_publisher: Callable[[str, dict], Any] | None = None
+
+
+def set_event_publisher(fn: Callable[[str, dict], Any] | None) -> None:
+    global _event_publisher
+    _event_publisher = fn
+
+
+def _emit(org_id: str, event: dict) -> None:
+    """Publish event realtime tanpa memblokir jalur eksekusi (fire-and-forget)."""
+    if not _event_publisher or not org_id:
+        return
+    try:
+        coro = _event_publisher(org_id, event)
+        if asyncio.iscoroutine(coro):
+            task = asyncio.ensure_future(coro)
+            task.add_done_callback(lambda t: t.exception())  # jangan bocorkan exc
+    except Exception:
+        pass
+
+
 def _is_transient(exc: BaseException) -> bool:
     """True bila error layak di-retry (transient), bukan bug logika/permanen."""
     if isinstance(exc, _TRANSIENT_TYPES):
@@ -190,6 +213,9 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
         execution_id, state.trace_id, parent_id, state.tenant_id,
         state.conversation_id, agent_name, sequence, started_at,
     )
+    _emit(state.tenant_id, {"type": "agent", "agent_name": agent_name,
+                            "status": "running", "trace_id": state.trace_id,
+                            "ts": started_at.isoformat()})
 
     result: Any = None
     retry_count = 0
@@ -220,6 +246,9 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
                     "UPDATE agent_executions SET status='retrying', retry_count=$2 WHERE id=$1",
                     execution_id, retry_count,
                 )
+                _emit(state.tenant_id, {"type": "agent", "agent_name": agent_name,
+                                        "status": "retrying", "retry_count": retry_count,
+                                        "trace_id": state.trace_id})
                 await asyncio.sleep(min(_RETRY_BASE_DELAY * (2 ** (retry_count - 1)), _RETRY_MAX_DELAY))
         status, error = _status(result)
         confidence = _confidence(result)
@@ -250,6 +279,10 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
             usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
             json.dumps(_output_summary(result), ensure_ascii=True), retry_count, error_stack,
         )
+        _emit(state.tenant_id, {"type": "agent", "agent_name": agent_name,
+                                "status": status, "retry_count": retry_count,
+                                "error_message": error, "duration_ms": duration_ms,
+                                "trace_id": state.trace_id})
         for model_usage in usage.model_usages:
             await _execute(
                 state.pool,

@@ -645,3 +645,13 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .mini-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#8a8a92;transition:all .28s cubic-bezier(.4,1.4,.5,1)}
 .mini-switch.is-on .mini-track{background:linear-gradient(90deg,#16a34a,#22c55e);box-shadow:0 0 0 1px rgba(34,197,94,.5),0 0 10px rgba(34,197,94,.4)}
 .mini-switch.is-on .mini-thumb{left:19px;background:#fff}
+
+/* Realtime observability — live feed */
+.obs-live-dot{font-size:11px;color:var(--text-3);margin-left:6px;transition:color .3s}
+.obs-live-dot.on{color:#22c55e;animation:aiPulse 1.6s ease-in-out infinite}
+.obs-live-dot.off{color:#f87171}
+.obs-live-feed{max-height:280px;overflow:auto;padding:8px 12px;display:flex;flex-direction:column;gap:1px}
+.obs-live-line{display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.04);animation:obsFadeIn .25s ease}
+.obs-live-line:first-child{background:rgba(255,255,255,.03)}
+.obs-live-time{font-size:10.5px;color:var(--text-3);flex:0 0 auto;min-width:64px}
+@keyframes obsFadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
