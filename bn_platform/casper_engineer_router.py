@@ -25,6 +25,10 @@ GetCurrentUser = Callable[..., Awaitable[dict]]
 class EngineerRunRequest(BaseModel):
     goal: str = Field(..., min_length=3, max_length=4000)
     repo_context: Optional[str] = Field(None, max_length=12000)
+    # Phase 2a: baca repo asli otomatis dari Local Agent (read-only) sebelum analisis.
+    auto_repo: bool = False
+    device_id: Optional[str] = None
+    repo_path: str = Field(".", max_length=500)
 
 
 def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
@@ -46,9 +50,22 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         pool: asyncpg.Pool = Depends(get_pool),
     ):
         _check_rate_limit(f"casper_engineer:{user['org_id']}", 10)
+        repo_context = body.repo_context or ""
+        repo_meta = None
+        if body.auto_repo:
+            # Baca repo asli dari mesin user via Local Agent (read-only). Kalau
+            # perangkat tak terhubung, LocalAgentManager.execute meng-raise 503 —
+            # biarkan naik supaya user tahu harus menjalankan botnesia-agent.
+            from bn_platform.local_agent_router import get_manager
+            from casper_engineer_exec import gather_repo_context
+            auto_ctx, repo_meta = await gather_repo_context(
+                get_manager().execute, str(user["org_id"]), pool,
+                device_id=body.device_id, path=body.repo_path,
+            )
+            repo_context = (repo_context + "\n\n" + auto_ctx).strip() if repo_context else auto_ctx
         context = {
             "goal": body.goal,
-            "repo_context": body.repo_context or "",
+            "repo_context": repo_context,
             "org_id": str(user["org_id"]),
             "_observability_pool": pool,   # supaya run tercatat di observability
         }
@@ -61,7 +78,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
                 self_verification, self_critique, status, confidence)
                VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10)
                RETURNING id, created_at""",
-            user["org_id"], user["id"], body.goal, body.repo_context,
+            user["org_id"], user["id"], body.goal, repo_context or None,
             json.dumps(out.get("planning", {})),
             json.dumps(out.get("repository_analysis", {})),
             json.dumps(out.get("self_verification", {})),
@@ -76,6 +93,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "status": out.get("status", "needs_review"),
             "confidence": out.get("confidence"),
             "needs_repo_context": out.get("needs_repo_context", False),
+            "repo_ingest": repo_meta,
             "planning": out.get("planning", {}),
             "repository_analysis": out.get("repository_analysis", {}),
             "self_verification": out.get("self_verification", {}),

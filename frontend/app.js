@@ -5,7 +5,7 @@ import {
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260720-casper-engineer-1";
-import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-1";
+import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-2";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
@@ -3864,6 +3864,11 @@ async function renderCasperEngineer() {
     <form id="casper-engineer-form" style="display:grid;gap:12px">
       <label class="field full"><span>${t('casper_eng.goal')}</span><textarea name="goal" rows="3" required minlength="3" placeholder="${t('casper_eng.goal_ph')}"></textarea></label>
       <label class="field full"><span>${t('casper_eng.repo_ctx')} <span class="subtle">(${t('common.optional')})</span></span><textarea name="repo_context" rows="4" placeholder="${t('casper_eng.repo_ctx_ph')}"></textarea></label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" name="auto_repo" data-ce-auto> ${t('casper_eng.auto_repo')}</label>
+        <input class="input" name="repo_path" value="." style="width:140px;display:none" data-ce-path placeholder="${t('casper_eng.repo_path')}">
+        <span class="subtle" style="font-size:11px;flex:1" data-ce-auto-hint style="display:none">${t('casper_eng.auto_repo_hint')}</span>
+      </div>
       <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit">${icon('agents',14)} ${t('casper_eng.run')}</button></div>
     </form></div></div>
     <div id="ce-result"></div>
@@ -3878,20 +3883,36 @@ async function renderCasperEngineer() {
   }
   loadRecent();
 
+  el("#casper-engineer-form")?.addEventListener("change", (e) => {
+    if (e.target.matches("[data-ce-auto]")) {
+      const on = e.target.checked;
+      const pathEl = el("[data-ce-path]"), hintEl = el("[data-ce-auto-hint]");
+      if (pathEl) pathEl.style.display = on ? "" : "none";
+      if (hintEl) hintEl.style.display = on ? "" : "none";
+    }
+  });
+
   el("#casper-engineer-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target));
+    const fd = new FormData(e.target);
+    const body = {
+      goal: fd.get("goal"),
+      repo_context: fd.get("repo_context") || null,
+      auto_repo: !!fd.get("auto_repo"),
+      repo_path: fd.get("repo_path") || ".",
+    };
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true; btn.textContent = t('casper_eng.running');
     el("#ce-result").innerHTML = `<div class="skeleton" style="height:120px;margin-top:16px"></div>`;
     try {
-      const result = await api.casperEngineerRun(data);
+      const result = await api.casperEngineerRun(body);
       el("#ce-result").innerHTML = casperEngineerArtifact(result);
+      if (result.repo_ingest && result.repo_ingest.scanned) toast(`${t('casper_eng.repo_ingested')}: ${result.repo_ingest.project_type || '?'} · ${result.repo_ingest.total_files ?? '?'} file`, "info");
       toast(t('casper_eng.done'), result.status === 'degraded' ? 'error' : 'success');
       await loadRecent();
     } catch (err) {
       el("#ce-result").innerHTML = errorState(err?.data?.detail || err.message);
-      toast(err.message, "error");
+      toast(err?.data?.detail || err.message, "error");
     } finally {
       btn.disabled = false; btn.innerHTML = `${icon('agents', 14)} ${t('casper_eng.run')}`;
     }

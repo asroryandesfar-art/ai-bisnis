@@ -24,6 +24,7 @@ karena agent ini mewarisi `run_task()`, penambahan tool repo tidak butuh rework.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
 from base import AgentResult, BaseAgent
@@ -191,8 +192,13 @@ class CasperEngineerAgent(BaseAgent):
                 latency_ms=0, error="goal kosong",
             )
 
-        plan = await self._plan(goal, repo_context)
-        analysis = await self._analyze_repo(goal, repo_context)
+        # Planning & repository-analysis saling independen -> jalankan paralel
+        # (pangkas latensi ~separuh untuk 2 tahap terberat). Verify & critique
+        # bergantung pada keduanya -> tetap berurutan.
+        plan, analysis = await asyncio.gather(
+            self._plan(goal, repo_context),
+            self._analyze_repo(goal, repo_context),
+        )
         verification = await self._verify(goal, plan, analysis)
         critique = await self._critique(goal, plan, analysis, verification)
 
