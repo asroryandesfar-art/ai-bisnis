@@ -261,6 +261,7 @@ function getNavGroups() {
     ]],
     ["agent-os", g("agent-os"), "agent-center", [
       ["agent-center", n("agent-center")],
+      ["casper-engineer", n("casper-engineer")],
       ["routing-logs", n("routing-logs")],
       ["observability", n("observability")],
       ["costs", n("costs")],
@@ -312,6 +313,7 @@ function getRouteMeta() {
     "agent-center": r("agent-center"),
     "communication-center": r("communication-center"),
     "casper-agentic-workflow": r("casper-agentic-workflow"),
+    "casper-engineer": r("casper-engineer"),
     about: r("about"),
     "founder-story": r("founder-story"),
     "investor-demo": r("investor-demo"),

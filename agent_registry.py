@@ -54,6 +54,8 @@ ORCHESTRATION_EXTRA: list[tuple[str, str, str, str]] = [
     ("orchestration_domain_agents", "MarketplaceAgent", "marketplace", AUTHENTICATED_API),
     ("orchestration_domain_agents", "BillingAgent", "billing", AUTHENTICATED_API),
     ("orchestration_domain_agents", "SubscriptionAgent", "subscription", AUTHENTICATED_API),
+    # Casper Engineer — agen software-engineer otonom (modul terpisah dari Casper Blockchain).
+    ("casper_engineer", "CasperEngineerAgent", "engineering", AUTHENTICATED_API),
 ]
 
 # Permission RBAC yang diwajibkan agar sebuah kategori boleh dipanggil di
@@ -80,6 +82,7 @@ AGENT_PERMISSION_BY_CATEGORY: dict[str, str | None] = {
     "marketplace":      "bots.read",
     "billing":          "billing.read",
     "subscription":     "billing.read",
+    "engineering":      "workforce.write",
 }
 
 # Kata kunci per kategori untuk router FALLBACK heuristik (dipakai hanya bila

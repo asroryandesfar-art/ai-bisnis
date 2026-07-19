@@ -385,6 +385,10 @@ export const api = {
   casperStats: () => request("/api/casper/workflow/stats"),
   casperAnchor: (body) => request("/api/casper/anchor", { method: "POST", body }),
   casperConfig: () => request("/api/casper/workflow/config"),
+  // Casper Engineer — agen software-engineer otonom (modul terpisah dari blockchain).
+  casperEngineerRun: (body) => request("/api/casper/engineer/run", { method: "POST", body }),
+  casperEngineerRuns: (limit = 20) => request(`/api/casper/engineer/runs?limit=${limit}`),
+  casperEngineerRunDetail: (id) => request(`/api/casper/engineer/run/${id}`),
 };
 
 export async function settle(label, promise) {

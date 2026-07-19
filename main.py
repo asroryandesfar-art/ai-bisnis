@@ -1420,6 +1420,25 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_org_integrations_key ON org_integrations(key);",
+        # Casper Engineer (agen software-engineer otonom) — riwayat run terstruktur
+        # per-tenant. Modul terpisah dari Casper Blockchain (agent_actions/casper_proofs).
+        """
+        CREATE TABLE IF NOT EXISTS casper_engineer_runs (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            user_id UUID,
+            goal TEXT NOT NULL,
+            repo_context TEXT,
+            planning JSONB,
+            repository_analysis JSONB,
+            self_verification JSONB,
+            self_critique JSONB,
+            status TEXT NOT NULL DEFAULT 'needs_review',
+            confidence NUMERIC(4,3),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_casper_engineer_runs_org ON casper_engineer_runs(org_id, created_at DESC);",
         """
         CREATE TABLE IF NOT EXISTS oauth_states (
             provider TEXT NOT NULL,
@@ -4433,6 +4452,7 @@ try:
     from bn_platform.system_health import build_system_health_router
     from bn_platform.meta_oauth import build_meta_oauth_router
     from bn_platform.action_executor_router import build_action_executor_router
+    from bn_platform.casper_engineer_router import build_casper_engineer_router
 
     # ── 0. Set platform callbacks untuk Phase 1 endpoints ───────
     # (variabel sudah dideklarasikan di level modul — tidak perlu global keyword)
@@ -4711,6 +4731,15 @@ try:
     )
     app.include_router(
         build_agent_center_router(
+            get_pool=get_pool, get_current_user=get_current_user,
+            require_permission=require_permission,
+            get_agent_config=get_workflow_agent_config,
+        ),
+        prefix="/api",
+    )
+    # Casper Engineer — agen software-engineer otonom (berdampingan dgn Casper Blockchain).
+    app.include_router(
+        build_casper_engineer_router(
             get_pool=get_pool, get_current_user=get_current_user,
             require_permission=require_permission,
             get_agent_config=get_workflow_agent_config,

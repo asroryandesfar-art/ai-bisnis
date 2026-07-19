@@ -1,11 +1,11 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260719-ai-ops-center-1";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
-} from "/ui/components.js?v=20260719-investor-p0-1";
-import { t, setLang, getLang } from "/ui/i18n.js?v=20260719-investor-p0-1";
+} from "/ui/components.js?v=20260720-casper-engineer-1";
+import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-1";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
@@ -92,7 +92,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","agent-center","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo"].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","agent-center","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo","casper-engineer"].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -3830,10 +3830,88 @@ function renderCasperNewActionModal() {
   });
 }
 
+const CE_SEVERITY_COLOR = { critical: "var(--red)", high: "var(--amber)", medium: "var(--cyan)", low: "var(--text-3)" };
+
+function casperEngineerArtifact(d) {
+  if (!d) return "";
+  const plan = d.planning || {};
+  const analysis = d.repository_analysis || {};
+  const verif = d.self_verification || {};
+  const critique = d.self_critique || {};
+  const statusKind = { verified: "active", needs_review: "pending", degraded: "error" }[d.status] || "default";
+  const li = (arr, fn) => (Array.isArray(arr) && arr.length ? `<ul style="margin:6px 0 0;padding-left:18px">${arr.map(fn).join("")}</ul>` : `<span class="subtle" style="font-size:11px">—</span>`);
+  const subtasks = li(plan.subtasks, (s) => `<li style="font-size:12px;margin-bottom:4px"><strong>${esc(s.title || s)}</strong>${s.detail ? ` — ${esc(s.detail)}` : ""}</li>`);
+  const risks = li(plan.risks, (r) => `<li style="font-size:12px;margin-bottom:4px"><span class="status-badge ${{critical:'error',high:'pending'}[r.severity]||'default'}" style="font-size:9px">${esc(r.severity || '')}</span> ${esc(r.risk || '')}${r.mitigation ? ` <span class="subtle">→ ${esc(r.mitigation)}</span>` : ""}</li>`);
+  const issues = (critique.issues || []).map((i) => `<div class="card" style="padding:10px 12px;margin-bottom:8px;border-left:3px solid ${CE_SEVERITY_COLOR[i.severity] || 'var(--line-strong)'}">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:${CE_SEVERITY_COLOR[i.severity] || 'var(--text-2)'}">${esc(i.category || '')} · ${esc(i.severity || '')}</div>
+    <div style="font-size:12px;margin-top:3px">${esc(i.detail || '')}</div>
+    ${i.fix ? `<div style="font-size:12px;margin-top:3px;color:var(--text-2)"><strong>${t('casper_eng.fix')}:</strong> ${esc(i.fix)}</div>` : ""}</div>`).join("") || `<span class="subtle" style="font-size:11px">${t('casper_eng.no_issues')}</span>`;
+  const improved = critique.improved_plan || {};
+  const conf = d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—";
+  const kv = (label, arr) => `<div style="margin-bottom:8px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${esc(label)}</div>${li(arr, (x) => `<li style="font-size:12px">${esc(x)}</li>`)}</div>`;
+  return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>${t('casper_eng.artifact')}</h3><span class="subtle">${esc(d.goal || '')}</span></div><div style="display:flex;gap:8px;align-items:center"><span class="status-badge ${statusKind}">${esc(d.status || '')}</span><span class="status-badge default" title="${t('casper_eng.confidence')}">${t('casper_eng.confidence')}: ${conf}</span></div></div><div class="card-body" style="display:grid;gap:16px">
+    ${d.needs_repo_context ? `<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--amber);border-radius:6px;font-size:12px;color:var(--amber)">${t('casper_eng.needs_repo')}</div>` : ""}
+    <div><div class="page-section-label">1 · ${t('casper_eng.planning')}</div>${plan.understanding ? `<p style="font-size:12px;margin:4px 0 8px">${esc(plan.understanding)}</p>` : ""}<div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.subtasks')}</div>${subtasks}<div class="subtle" style="font-size:10px;text-transform:uppercase;margin-top:8px">${t('casper_eng.risks')}</div>${risks}</div>
+    <div><div class="page-section-label">2 · ${t('casper_eng.repo_analysis')}</div>${analysis.structure ? `<p style="font-size:12px;margin:4px 0 8px">${esc(analysis.structure)}</p>` : ""}${kv(t('casper_eng.conventions'), analysis.conventions)}${kv(t('casper_eng.patterns'), analysis.existing_patterns)}${kv(t('casper_eng.integration'), analysis.integration_points)}${kv(t('casper_eng.constraints'), analysis.constraints)}</div>
+    <div><div class="page-section-label">3 · ${t('casper_eng.verification')}</div><p style="font-size:12px;margin:4px 0">${verif.complete ? '✓' : '⚠'} ${esc(verif.reasoning || '')}</p>${kv(t('casper_eng.gaps'), verif.gaps)}</div>
+    <div><div class="page-section-label">4 · ${t('casper_eng.self_critique')}</div>${issues}${improved.summary ? `<div style="margin-top:10px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.improved_plan')}</div><p style="font-size:12px;margin:4px 0">${esc(improved.summary)}</p>${li(improved.steps, (s) => `<li style="font-size:12px">${esc(s)}</li>`)}</div>` : ""}</div>
+  </div></div>`;
+}
+
+async function renderCasperEngineer() {
+  const header = pageHeader(t('route.casper-engineer.title'), t('route.casper-engineer.desc'));
+  const form = `<div class="card"><div class="card-body">
+    <form id="casper-engineer-form" style="display:grid;gap:12px">
+      <label class="field full"><span>${t('casper_eng.goal')}</span><textarea name="goal" rows="3" required minlength="3" placeholder="${t('casper_eng.goal_ph')}"></textarea></label>
+      <label class="field full"><span>${t('casper_eng.repo_ctx')} <span class="subtle">(${t('common.optional')})</span></span><textarea name="repo_context" rows="4" placeholder="${t('casper_eng.repo_ctx_ph')}"></textarea></label>
+      <div style="display:flex;justify-content:flex-end"><button class="button button-primary" type="submit">${icon('agents',14)} ${t('casper_eng.run')}</button></div>
+    </form></div></div>
+    <div id="ce-result"></div>
+    <div id="ce-recent" style="margin-top:20px"></div>`;
+  setPage(`${header}<div style="padding:8px 14px;margin-bottom:14px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:6px;font-size:12px;color:var(--text-2)">${t('casper_eng.intro')}</div>${form}`);
+
+  async function loadRecent() {
+    const runs = await api.casperEngineerRuns(10).catch(() => []);
+    el("#ce-recent").innerHTML = runs.length
+      ? `<div class="page-section-label">${t('casper_eng.recent')} (${runs.length})</div><div class="table-wrap"><table class="data-table"><thead><tr><th>${t('casper_eng.goal')}</th><th>Status</th><th>${t('casper_eng.confidence')}</th><th>${t('page.knowledge.col_updated')}</th></tr></thead><tbody>${runs.map((r) => `<tr data-ce-open="${esc(r.id)}" style="cursor:pointer"><td>${esc((r.goal || '').slice(0, 80))}</td><td><span class="status-badge ${{verified:'active',needs_review:'pending',degraded:'error'}[r.status]||'default'}">${esc(r.status)}</span></td><td>${r.confidence != null ? Math.round(r.confidence * 100) + '%' : '—'}</td><td>${relativeTime(r.created_at)}</td></tr>`).join("")}</tbody></table></div>`
+      : "";
+  }
+  loadRecent();
+
+  el("#casper-engineer-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = t('casper_eng.running');
+    el("#ce-result").innerHTML = `<div class="skeleton" style="height:120px;margin-top:16px"></div>`;
+    try {
+      const result = await api.casperEngineerRun(data);
+      el("#ce-result").innerHTML = casperEngineerArtifact(result);
+      toast(t('casper_eng.done'), result.status === 'degraded' ? 'error' : 'success');
+      await loadRecent();
+    } catch (err) {
+      el("#ce-result").innerHTML = errorState(err?.data?.detail || err.message);
+      toast(err.message, "error");
+    } finally {
+      btn.disabled = false; btn.innerHTML = `${icon('agents', 14)} ${t('casper_eng.run')}`;
+    }
+  });
+
+  el("#ce-recent")?.addEventListener("click", async (e) => {
+    const row = e.target.closest("[data-ce-open]");
+    if (!row) return;
+    try {
+      const detail = await api.casperEngineerRunDetail(row.getAttribute("data-ce-open"));
+      el("#ce-result").innerHTML = casperEngineerArtifact(detail);
+      el("#ce-result").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) { toast(err.message, "error"); }
+  });
+}
+
 async function route() {
   closeObservabilityWs();   // tutup WS realtime saat pindah halaman
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow,"casper-engineer":renderCasperEngineer};
   const fn = renderers[state.route] || renderDashboard;
   await fn();
 }
