@@ -553,7 +553,10 @@ async function renderObservability(days = state.observabilityDays) {
     const title = reason ? ` title="${esc(reason)}"` : (agent.failures?` title="${formatNumber(agent.failures)} kegagalan historis di window ini"`:'');
     const retries = Number(agent.retries || 0);
     const retryBadge = retries > 0 ? ` <span class="subtle" style="font-size:10px;color:#c99a3e" title="${retries} auto-retry transient (exponential backoff)">↻ ${formatNumber(retries)}</span>` : '';
-    return `<tr><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td><span${title}>${statusBadge(kind,label)}</span>${retryBadge}${latest==='error'&&agent.last_error?`<div class="subtle" style="font-size:10px;color:#f87171;margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(agent.last_error)}</div>`:''}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`;
+    // Baris FAILED bisa diklik → panel detail (Agent/Task/Error/Stacktrace/Retry/Root Cause/Fix).
+    const clickAttr = latest==='error' ? ` data-obs-agent-error="${esc(agent.agent_name)}" style="cursor:pointer" title="Klik untuk detail error"` : '';
+    const errHint = latest==='error'&&agent.last_error ? `<div class="subtle" style="font-size:10px;color:#f87171;margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(agent.last_error)} <span style="color:var(--accent,#7c3aed)">· detail →</span></div>` : '';
+    return `<tr${clickAttr}><td><span class="table-title mono">${esc(agent.agent_name)}</span></td><td>${formatNumber(agent.executions)}</td><td><span${title}>${statusBadge(kind,label)}</span>${retryBadge}${errHint}</td><td>${Math.round(agent.average_latency_ms || 0)}ms</td><td>${formatNumber(agent.total_tokens)}</td><td>${agent.last_seen_at ? relativeTime(agent.last_seen_at) : '—'}</td></tr>`;
   }).join("");
   const traceRows = (data.traces || []).map((trace) => `<tr data-observability-trace="${esc(trace.id)}"><td class="mono">${esc(String(trace.id).slice(0,8))}</td><td><span class="table-title trace-question">${esc(trace.user_question)}</span></td><td>${statusBadge(trace.status === 'success' ? 'active' : trace.status, trace.status)}</td><td>${formatNumber(trace.agent_count)} agents</td><td>${trace.duration_ms || 0}ms</td><td>${formatNumber(trace.total_tokens)}</td><td>${relativeTime(trace.started_at)}</td></tr>`).join("");
   setPage(`${pageHeader("AI Observability","Every request and agent lifecycle is recorded for operational debugging.",`<select class="select" data-observability-days><option value="1" ${state.observabilityDays===1?'selected':''}>24 hours</option><option value="7" ${state.observabilityDays===7?'selected':''}>7 days</option><option value="30" ${state.observabilityDays===30?'selected':''}>30 days</option><option value="90" ${state.observabilityDays===90?'selected':''}>90 days</option></select>`)}
@@ -572,6 +575,32 @@ async function openObservabilityTrace(traceId) {
   const steps = (data.executions || []).map((step, index) => `<div class="trace-step ${step.status}"><span class="trace-node">${index + 1}</span><div><strong>${esc(step.agent_name)}</strong><p>${esc(step.status)} · ${step.duration_ms || 0}ms · ${formatNumber(step.total_tokens)} tokens${step.confidence_score != null ? ` · confidence ${Number(step.confidence_score).toFixed(1)}` : ''}</p>${step.error_message?`<div class="trace-error">${esc(step.error_message)}</div>`:''}${step.metadata && Object.keys(step.metadata).length?`<pre>${esc(JSON.stringify(step.metadata,null,2))}</pre>`:''}</div></div>`).join("");
   const body = `<div class="trace-summary"><span class="eyebrow">USER QUESTION</span><p>${esc(trace.user_question)}</p></div><div class="trace-chain">${steps}</div><div class="trace-summary final"><span class="eyebrow">FINAL ANSWER</span><div>${renderMarkdown(trace.final_answer || 'No final answer recorded.')}</div></div><div class="trace-totals"><span>${trace.duration_ms || 0}ms total</span><span>${formatNumber(trace.prompt_tokens)} prompt</span><span>${formatNumber(trace.completion_tokens)} completion</span><span>${formatNumber(trace.total_tokens)} tokens</span></div>`;
   el("#modal-root").innerHTML = modal({title:`Agent Trace ${String(trace.id).slice(0,8)}`,body,wide:true});
+}
+
+async function openAgentErrorDetail(agentName) {
+  let d;
+  try { d = await api.observabilityAgentError(agentName); }
+  catch (error) { toast(error.status===404 ? "Tidak ada detail error untuk agent ini." : error.message, "error"); return; }
+  const row = (label, value, mono) => `<div style="margin-bottom:12px"><div class="eyebrow" style="font-size:10px;margin-bottom:3px">${esc(label)}</div><div style="${mono?'font-family:monospace;':''}font-size:13px;color:var(--text)">${value}</div></div>`;
+  const body = `
+    ${row('AGENT', `<span class="mono">${esc(d.agent_name)}</span> · ${relativeTime(d.execution_start)} · ${d.duration_ms||0}ms`)}
+    ${row('TASK', esc(d.task || '—'))}
+    ${row('ERROR', `<span style="color:#f87171">${esc(d.error_message || '—')}</span>`)}
+    ${row('RETRY COUNT', `${formatNumber(d.retry_count||0)}× auto-retry ${Number(d.retry_count)>0?'(exponential backoff)':''}`)}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 12px">
+        <div class="eyebrow" style="font-size:10px;color:#fbbf24">ROOT CAUSE</div>
+        <div style="font-size:12.5px;margin-top:4px">${esc(d.root_cause || '—')}</div>
+      </div>
+      <div style="background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:10px 12px">
+        <div class="eyebrow" style="font-size:10px;color:#34d399">SUGGESTED FIX</div>
+        <div style="font-size:12.5px;margin-top:4px">${esc(d.suggested_fix || '—')}</div>
+      </div>
+    </div>
+    <div style="margin-top:14px"><div class="eyebrow" style="font-size:10px;margin-bottom:4px">STACKTRACE</div>
+      <pre class="ca-out" style="max-height:300px">${d.error_stack ? esc(d.error_stack) : 'Stacktrace tidak tersimpan (kegagalan lama sebelum fitur ini, atau error tanpa traceback).'}</pre>
+    </div>`;
+  el("#modal-root").innerHTML = modal({title:`Error Detail — ${esc(d.agent_name)}`,body,wide:true});
 }
 
 function usd(value, digits = 4) { return `$${Number(value || 0).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})}`; }
@@ -4113,6 +4142,8 @@ document.addEventListener("click", async (event) => {
   if(resolveHandoff){ const note=prompt("Catatan resolusi (opsional):") || null; try{ await api.resolveHandoff(resolveHandoff.dataset.resolveHandoff,note); toast("Handoff resolved. AI can resume.","success"); await renderHumanHandoff(); }catch(error){ toast(error.message,"error"); } return; }
   const traceTarget=event.target.closest("[data-observability-trace]");
   if(traceTarget){ await openObservabilityTrace(traceTarget.dataset.observabilityTrace); return; }
+  const agentErrTarget=event.target.closest("[data-obs-agent-error]");
+  if(agentErrTarget){ await openAgentErrorDetail(agentErrTarget.dataset.obsAgentError); return; }
   const viewSources=event.target.closest("[data-view-sources]");
   if(viewSources){ await openMessageSources(viewSources.dataset.viewSources); return; }
   const marketplaceCategory=event.target.closest("[data-marketplace-category]");

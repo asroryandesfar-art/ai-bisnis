@@ -1279,6 +1279,8 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS autonomy_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
         # Auto-retry observability: jumlah retry transient per eksekusi agent.
         "ALTER TABLE agent_executions ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;",
+        # Error-detail: stacktrace lengkap untuk panel diagnosa kegagalan agent.
+        "ALTER TABLE agent_executions ADD COLUMN IF NOT EXISTS error_stack TEXT;",
         # Per-agent ON/OFF toggle (granular; berbeda dari master switch di atas).
         """CREATE TABLE IF NOT EXISTS org_agent_toggles (
             org_id UUID NOT NULL,

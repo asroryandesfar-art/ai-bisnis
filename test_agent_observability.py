@@ -121,6 +121,8 @@ def test_failure_records_nonblank_error_even_for_empty_exception():
     assert status == "error"
     assert error_message and error_message.strip(), "error_message TIDAK boleh blank"
     assert "Boom" in error_message, "tipe exception harus tercatat sebagai root cause"
+    error_stack = updates[0][11]
+    assert error_stack and "Boom" in error_stack, "stacktrace lengkap harus tersimpan"
 
 
 # ── Auto-retry transient + exponential backoff ──────────────────────────────

@@ -6,6 +6,7 @@ import contextvars
 import json
 import os
 import time
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -192,6 +193,7 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
 
     result: Any = None
     retry_count = 0
+    error_stack: str | None = None
     try:
         # Auto-retry TRANSIENT dengan exponential backoff (maks _RETRY_MAX).
         # Error non-transient (bug logika, permission, value) gagal cepat.
@@ -231,6 +233,8 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
         error = f"{type(exc).__name__}: {_detail}" if _detail else type(exc).__name__
         if retry_count:
             error = f"{error} (setelah {retry_count} retry)"
+        # Stacktrace lengkap untuk panel error-detail (dipangkas agar tak membengkak).
+        error_stack = traceback.format_exc()[-6000:]
         status, confidence = "error", None
         raise
     finally:
@@ -240,11 +244,11 @@ async def observe_agent(agent_name: str, context: dict, operation: Callable[[], 
             """UPDATE agent_executions
                SET execution_end=$2, duration_ms=$3, status=$4, error_message=$5,
                    confidence_score=$6, prompt_tokens=$7, completion_tokens=$8,
-                   total_tokens=$9, metadata=$10::jsonb, retry_count=$11
+                   total_tokens=$9, metadata=$10::jsonb, retry_count=$11, error_stack=$12
                WHERE id=$1""",
             execution_id, datetime.now(timezone.utc), duration_ms, status, error, confidence,
             usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-            json.dumps(_output_summary(result), ensure_ascii=True), retry_count,
+            json.dumps(_output_summary(result), ensure_ascii=True), retry_count, error_stack,
         )
         for model_usage in usage.model_usages:
             await _execute(

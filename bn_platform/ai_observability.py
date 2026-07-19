@@ -6,6 +6,45 @@ from typing import Callable
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 
+def diagnose_error(error_message: str | None, error_stack: str | None, retry_count: int) -> tuple[str, str]:
+    """Root cause + suggested fix berbasis aturan (deterministik, bukan mock).
+
+    Mengklasifikasi kegagalan dari pesan+stacktrace ke kategori yang bisa
+    ditindaklanjuti. Dipakai panel error-detail dashboard.
+    """
+    text = f"{error_message or ''} {error_stack or ''}".lower()
+
+    def has(*keys: str) -> bool:
+        return any(k in text for k in keys)
+
+    if has("rate limit", "429", "too many requests"):
+        rc = "Rate limit provider AI."
+        fix = "Kurangi frekuensi/panjang prompt, atau naikkan kuota/plan provider LLM."
+    elif has("event loop is closed", "timeout", "timed out", "connect", "network",
+             "502", "503", "504", "temporarily", "service unavailable"):
+        rc = "Kegagalan transient (timeout/jaringan/provider sementara)."
+        fix = "Otomatis di-retry (exponential backoff). Bila berulang: cek koneksi & status provider LLM, atau naikkan AGENT_RETRY_MAX / timeout."
+    elif has("api key", "unauthorized", "401", "403", "forbidden", "permission", "invalid key"):
+        rc = "Kredensial atau permission bermasalah."
+        fix = "Verifikasi API key provider di .env dan RBAC permission untuk agent ini."
+    elif has("json", "parse", "expecting value", "decode"):
+        rc = "Output LLM tidak sesuai format yang diharapkan (parsing gagal)."
+        fix = "Perketat instruksi format/skema output di prompt, atau tambah fallback parsing."
+    elif has("keyerror", "attributeerror", "typeerror", "valueerror", "indexerror", "nonetype"):
+        rc = "Bug logika / data tak terduga di kode agent."
+        fix = "Lihat stacktrace di bawah; perbaiki penanganan input/None pada agent terkait + tambah unit test."
+    elif has("modulenotfounderror", "importerror", "no module named"):
+        rc = "Dependency belum terpasang."
+        fix = "Pasang paket yang hilang (lihat nama modul di stacktrace) lalu restart layanan."
+    else:
+        rc = "Kegagalan belum terklasifikasi."
+        fix = "Periksa stacktrace lengkap untuk detail; tambahkan penanganan error spesifik + test."
+
+    if retry_count:
+        rc = f"{rc} (sudah {retry_count}× auto-retry sebelum gagal)"
+    return rc, fix
+
+
 def build_ai_observability_router(*, get_pool: Callable, get_current_user: Callable) -> APIRouter:
     router = APIRouter(prefix="/observability", tags=["ai-observability"])
 
@@ -110,5 +149,34 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
             trace_id, user["org_id"],
         )
         return {"trace": dict(trace), "executions": [dict(row) for row in executions]}
+
+    @router.get("/agents/{agent_name}/last-error")
+    async def agent_last_error(
+        agent_name: str,
+        days: int = Query(7, ge=1, le=90),
+        user=Depends(get_current_user),
+        pool=Depends(get_pool),
+    ):
+        """Detail kegagalan TERAKHIR sebuah agent untuk panel error yang diklik:
+        Agent / Task / Error / Stacktrace / Retry Count / Root Cause / Suggested Fix."""
+        row = await pool.fetchrow(
+            """SELECT e.id, e.agent_name, e.status, e.error_message, e.error_stack,
+                      e.retry_count, e.duration_ms, e.execution_start, e.trace_id,
+                      e.conversation_id, t.user_question AS task
+               FROM agent_executions e
+               LEFT JOIN ai_traces t ON t.id = e.trace_id
+               WHERE e.tenant_id=$1 AND e.agent_name=$2 AND e.status='error'
+                 AND e.created_at >= NOW() - make_interval(days => $3::int)
+               ORDER BY e.execution_start DESC LIMIT 1""",
+            user["org_id"], agent_name, days,
+        )
+        if not row:
+            raise HTTPException(404, "Tidak ada eksekusi error untuk agent ini di window tsb")
+        d = dict(row)
+        root_cause, suggested_fix = diagnose_error(
+            d.get("error_message"), d.get("error_stack"), int(d.get("retry_count") or 0))
+        d["root_cause"] = root_cause
+        d["suggested_fix"] = suggested_fix
+        return d
 
     return router

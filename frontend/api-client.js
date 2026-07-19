@@ -245,6 +245,7 @@ export const api = {
   metaOAuthDisconnect: (channels) => request("/api/integrations/meta/oauth/disconnect", { method: "POST", body: { channels } }),
   observabilitySummary: (days = 7) => request("/api/observability/summary" + encodeQuery({ days })),
   observabilityTrace: (traceId) => request("/api/observability/traces/" + traceId),
+  observabilityAgentError: (agentName) => request(`/api/observability/agents/${encodeURIComponent(agentName)}/last-error`),
   costIntelligence: () => request("/api/cost-intelligence/summary"),
   updateCostBudget: (monthly_budget_usd) => request("/api/cost-intelligence/budget", { method: "PUT", body: { monthly_budget_usd } }),
   submitFeedback: (message_id, conversation_id, rating, comment = null) => request("/api/feedback-learning/feedback", { method: "POST", body: { message_id, conversation_id, rating, comment } }),
