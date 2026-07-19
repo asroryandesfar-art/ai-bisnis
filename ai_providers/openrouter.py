@@ -28,35 +28,58 @@ logger = logging.getLogger("botnesia.openrouter")
 _BASE_URL = "https://openrouter.ai/api/v1"
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
-# Best model per task type — benchmarked capability preferences.
-# PRO / complex tasks → stronger models (DeepSeek-R1, GPT-4o).
-# Standard tasks      → gpt-4o-mini (only used when Gemini is unavailable).
+# Peta task→model OpenRouter — sesuai arsitektur BotNesia:
+#   Claude  → coding, analisis dokumen, penulisan kompleks
+#   Gemini  → multimodal (vision/gambar/PDF/audio)
+#   DeepSeek→ standar/chat/speed (murah & cepat) + reasoning/planning (R1)
+# Otak inti (chat/reasoning/planning) tetap DeepSeek LANGSUNG di jalur utama;
+# entri di sini dipakai saat request memang lewat OpenRouter (fallback/spesialis).
+# Semua bisa di-override via env OPENROUTER_TASK_MODELS_JSON. TIDAK ada gpt-4o
+# (mahal) di default demi menjaga margin.
+_CLAUDE = "anthropic/claude-3.5-sonnet"      # ganti ke claude-3-haiku bila mau lebih murah
+_GEMINI = "google/gemini-2.0-flash-001"
+_DS_CHAT = "deepseek/deepseek-chat"
+_DS_R1 = "deepseek/deepseek-r1"
+
 DEFAULT_TASK_MODELS: dict = {
-    # ── Complex / Pro tasks ─────────────────────────────────────────────
-    "coding":             "deepseek/deepseek-chat",
-    "advanced_coding":    "deepseek/deepseek-chat",
-    "reasoning":          "deepseek/deepseek-r1",
-    "deep_reasoning":     "deepseek/deepseek-r1",
-    "document":           "openai/gpt-4o",
-    "document_analysis":  "openai/gpt-4o",
-    "planning":           "deepseek/deepseek-r1",
-    "business_planning":  "deepseek/deepseek-r1",
-    "workflow":           "openai/gpt-4o",
-    "complex_workflow":   "openai/gpt-4o",
-    # ── Standard tasks (fallback when Gemini unavailable) ───────────────
-    "chat":               "openai/gpt-4o-mini",
-    "cs":                 "openai/gpt-4o-mini",
-    "customer_service":   "openai/gpt-4o-mini",
-    "faq":                "openai/gpt-4o-mini",
-    "sales":              "openai/gpt-4o-mini",
-    "marketing":          "openai/gpt-4o-mini",
-    "hr":                 "openai/gpt-4o-mini",
-    "knowledge":          "openai/gpt-4o-mini",
-    "knowledge_search":   "openai/gpt-4o-mini",
-    "internal":           "openai/gpt-4o-mini",
+    # ── Claude: coding / dokumen / penulisan kompleks ───────────────────
+    "coding":             _CLAUDE,
+    "advanced_coding":    _CLAUDE,
+    "document":           _CLAUDE,
+    "document_analysis":  _CLAUDE,
+    "writing":            _CLAUDE,
+    "complex_writing":    _CLAUDE,
+    "workflow":           _CLAUDE,
+    "complex_workflow":   _CLAUDE,
+    # ── Gemini: multimodal (vision/gambar/PDF/audio) ────────────────────
+    "vision":             _GEMINI,
+    "multimodal":         _GEMINI,
+    "image":              _GEMINI,
+    "image_analysis":     _GEMINI,
+    "pdf":                _GEMINI,
+    "document_ocr":       _GEMINI,
+    "audio":              _GEMINI,
+    # ── DeepSeek R1: reasoning / planning ───────────────────────────────
+    "reasoning":          _DS_R1,
+    "deep_reasoning":     _DS_R1,
+    "planning":           _DS_R1,
+    "business_planning":  _DS_R1,
+    # ── DeepSeek chat: standar / chat / speed (murah & cepat) ───────────
+    "chat":               _DS_CHAT,
+    "cs":                 _DS_CHAT,
+    "customer_service":   _DS_CHAT,
+    "faq":                _DS_CHAT,
+    "sales":              _DS_CHAT,
+    "marketing":          _DS_CHAT,
+    "hr":                 _DS_CHAT,
+    "knowledge":          _DS_CHAT,
+    "knowledge_search":   _DS_CHAT,
+    "internal":           _DS_CHAT,
+    "fast":               _DS_CHAT,
+    "low_latency":        _DS_CHAT,
 }
 
-_DEFAULT_MODEL = "openai/gpt-4o-mini"
+_DEFAULT_MODEL = "deepseek/deepseek-chat"   # fallback murah (bukan gpt-4o-mini)
 
 # Module-level cache — rebuilt once per process (or when env var changes)
 _TASK_MODELS: dict | None = None
