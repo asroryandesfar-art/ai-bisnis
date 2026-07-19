@@ -196,10 +196,12 @@ class Settings(BaseSettings):
     deepseek_api_key:     str = ""
     # DeepSeek "3 otak" — nama model per-tier, semua bisa diganti lewat env
     # (lihat docs/DEEPSEEK_BOTNESIA_BRAIN.md). Default mempertahankan perilaku
-    # lama: THINKING = deepseek-reasoner (R1). Satu API key untuk ketiganya.
-    deepseek_model_fast:     str = "deepseek-chat"
-    deepseek_model_thinking: str = "deepseek-reasoner"
-    deepseek_model_pro:      str = ""   # kosong -> ikut THINKING (fallback aman)
+    # Default KOSONG → dipilih otomatis via discovery (deepseek_discovery), yakni
+    # model DeepSeek paling cerdas yang tersedia. Isi env ini HANYA untuk override
+    # manual (mengunci model tertentu). Satu API key untuk ketiga tier.
+    deepseek_model_fast:     str = ""
+    deepseek_model_thinking: str = ""
+    deepseek_model_pro:      str = ""
     # Routing /chat lewat DeepSeek 3-otak. Default OFF: pipeline lama tak berubah.
     # Set DEEPSEEK_BRAIN_ENABLED=1 untuk mengaktifkan (butuh DEEPSEEK_API_KEY).
     deepseek_brain_enabled:  bool = False
@@ -547,25 +549,38 @@ _deepseek_brain = None
 
 
 def deepseek_models():
-    """DeepSeekModels dari config (env-driven). Sumber kebenaran tunggal nama model."""
+    """DeepSeekModels dengan DISCOVERY DINAMIS (kebijakan: selalu model DeepSeek
+    paling cerdas yang tersedia). Prioritas: env override > hasil discovery
+    (di-rank by kapabilitas) > fallback aman. Nama model TIDAK di-hardcode di
+    jalur normal — model flagship baru otomatis dipilih."""
     from deepseek_brain import DeepSeekModels
-    thinking = (cfg.deepseek_model_thinking or "deepseek-reasoner").strip()
-    return DeepSeekModels(
-        fast=(cfg.deepseek_model_fast or "deepseek-chat").strip(),
-        thinking=thinking,
-        pro=(cfg.deepseek_model_pro or "").strip() or thinking,  # PRO kosong -> ikut THINKING
-    )
+    import deepseek_discovery as _dd
+    tiers = _dd.select_tiers(_dd.cached_models())   # {} bila belum ter-discover
+    fast = ((cfg.deepseek_model_fast or "").strip()
+            or tiers.get("simple") or _dd.FALLBACK_SIMPLE)
+    thinking = ((cfg.deepseek_model_thinking or "").strip()
+                or tiers.get("medium") or tiers.get("complex") or _dd.FALLBACK_COMPLEX)
+    pro = ((cfg.deepseek_model_pro or "").strip()
+           or tiers.get("complex") or thinking)
+    return DeepSeekModels(fast=fast, thinking=thinking, pro=pro)
+
+
+_deepseek_brain_sig = None  # tanda-tangan model terakhir; rebuild bila berubah
 
 
 def get_deepseek_brain():
-    """Singleton DeepSeekBrain. API key hanya di server (tak pernah ke frontend/log)."""
-    global _deepseek_brain
-    if _deepseek_brain is None:
+    """Singleton DeepSeekBrain. Auto-rebuild bila model hasil discovery berubah
+    (mis. flagship DeepSeek baru terdeteksi) — tanpa perlu restart."""
+    global _deepseek_brain, _deepseek_brain_sig
+    current = deepseek_models()
+    sig = (current.fast, current.thinking, current.pro)
+    if _deepseek_brain is None or _deepseek_brain_sig != sig:
         from deepseek_brain import DeepSeekBrain, make_default_call_fn
         _deepseek_brain = DeepSeekBrain(
             call_fn=make_default_call_fn(cfg.deepseek_api_key),
-            models=deepseek_models(),
+            models=current,
         )
+        _deepseek_brain_sig = sig
     return _deepseek_brain
 
 # ─── APP ─────────────────────────────────────────────────────
@@ -942,6 +957,18 @@ async def startup():
 
     # C-01: guard kekuatan secret (warn-only kecuali STRICT_SECRETS=1).
     validate_startup_secrets(cfg)
+
+    # Kebijakan DeepSeek: discover model tersedia lalu pilih yang paling cerdas.
+    # Non-blocking terhadap kegagalan (fallback aman). Brain rebuild otomatis.
+    try:
+        if cfg.deepseek_api_key:
+            import deepseek_discovery as _dd
+            models = await _dd.discover_models(cfg.deepseek_api_key)
+            if models:
+                logger.info("DeepSeek models terdeteksi: %s → tiers %s",
+                            models, _dd.select_tiers(models))
+    except Exception as e:
+        logger.warning("DeepSeek discovery saat startup gagal: %s", e)
 
     if cfg.meta_app_id and not (cfg.meta_app_secret or "").strip():
         print("[WARN] META_APP_ID terisi tapi META_APP_SECRET kosong -- "
