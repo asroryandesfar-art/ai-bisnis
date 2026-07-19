@@ -1,9 +1,28 @@
 """Tenant-scoped API for AI execution metrics and trace inspection."""
 from __future__ import annotations
 
+import os
+from datetime import datetime, timezone
 from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+# Eksekusi yang masih 'running' lebih lama dari ini dianggap ZOMBIE (proses mati
+# sebelum sempat menulis status akhir) → ditandai stalled/OFFLINE, bukan "running".
+STALL_SECONDS = int(os.getenv("AGENT_STALL_SECONDS", "120"))
+
+
+def is_stalled(last_status: str | None, last_seen_at, *, now=None, stall_seconds: int = STALL_SECONDS) -> bool:
+    """True bila eksekusi tersangkut di 'running' melewati ambang stall."""
+    if last_status != "running" or last_seen_at is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    try:
+        if last_seen_at.tzinfo is None:
+            last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
+        return (now - last_seen_at).total_seconds() > stall_seconds
+    except Exception:
+        return False
 
 
 def diagnose_error(error_message: str | None, error_stack: str | None, retry_count: int) -> tuple[str, str]:
@@ -116,10 +135,16 @@ def build_ai_observability_router(*, get_pool: Callable, get_current_user: Calla
                ORDER BY started_at DESC LIMIT 50""",
             org_id, days,
         )
+        agent_rows = []
+        for row in agents:
+            d = dict(row)
+            d["stalled"] = is_stalled(d.get("last_status"), d.get("last_seen_at"))
+            agent_rows.append(d)
         return {
             "window_days": days,
+            "stall_seconds": STALL_SECONDS,
             "metrics": dict(totals or {}),
-            "agents": [dict(row) for row in agents],
+            "agents": agent_rows,
             "traces": [dict(row) for row in traces],
         }
 

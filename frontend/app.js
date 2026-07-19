@@ -544,7 +544,8 @@ async function renderObservability(days = state.observabilityDays) {
     // Semantik warna: error→FAILED (merah), skipped→IDLE (kuning, valid tanpa
     // tugas), success→HEALTHY (hijau), running→RUNNING. Merah HANYA untuk error nyata.
     let kind='pending', label='idle';
-    if(latest==='error'){ kind='error'; label='failed'; }
+    if(agent.stalled){ kind='inactive'; label='○ offline (stalled)'; }   // running yg macet → mati
+    else if(latest==='error'){ kind='error'; label='failed'; }
     else if(latest==='success'){ kind='active'; label='healthy'; }
     else if(latest==='running'){ kind='pending'; label='running'; }
     else if(latest==='skipped'){ kind='pending'; label='idle'; }
@@ -584,7 +585,9 @@ async function openObservabilityTrace(traceId) {
 
 // ── Realtime observability WebSocket ────────────────────────────────────────
 let _obsWs = null;
+let _obsHbTimer = null;
 function closeObservabilityWs() {
+  if (_obsHbTimer) { clearInterval(_obsHbTimer); _obsHbTimer = null; }
   if (_obsWs) { try { _obsWs.onclose = null; _obsWs.close(); } catch(_) {} _obsWs = null; }
 }
 function _obsLiveDot(state) {
@@ -621,8 +624,16 @@ function openObservabilityWs() {
   try {
     const ws = new WebSocket(`${proto}://${location.host}/api/observability/ws?token=${encodeURIComponent(token)}`);
     _obsWs = ws;
-    ws.onopen = () => _obsLiveDot("on");
-    ws.onclose = () => { _obsLiveDot("off"); if (state.route === "observability") setTimeout(() => { if (state.route === "observability") openObservabilityWs(); }, 4000); };
+    ws.onopen = () => {
+      _obsLiveDot("on");
+      // Heartbeat tiap 10 dtk → jaga koneksi hidup & deteksi cepat bila mati.
+      if (_obsHbTimer) clearInterval(_obsHbTimer);
+      _obsHbTimer = setInterval(() => {
+        if (ws.readyState === 1) { try { ws.send(JSON.stringify({ type: "ping", ts: Date.now() })); } catch(_) { _obsLiveDot("off"); } }
+        else { _obsLiveDot("off"); }
+      }, 10000);
+    };
+    ws.onclose = () => { if (_obsHbTimer) { clearInterval(_obsHbTimer); _obsHbTimer = null; } _obsLiveDot("off"); if (state.route === "observability") setTimeout(() => { if (state.route === "observability") openObservabilityWs(); }, 4000); };
     ws.onerror = () => _obsLiveDot("off");
     ws.onmessage = (m) => { try { _obsHandleEvent(JSON.parse(m.data)); } catch(_) {} };
   } catch(_) { _obsLiveDot("off"); }
