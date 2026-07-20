@@ -9,10 +9,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# pycspr lives in vendor/ on Windows builds; on Linux the app root is on sys.path.
+# pycspr lives in vendor/ (Windows build). APPEND (not insert-front): vendor/ must
+# be a FALLBACK path only. It ships Windows-binary packages (e.g. PIL with
+# *.win_amd64.pyd and no Linux _imaging) — inserting it at the FRONT shadows the
+# real system Pillow and breaks reportlab/PIL (document & image generation) for the
+# whole process once this module is imported. Appending lets real system packages
+# win while pycspr (present only in vendor) is still importable as a fallback.
 _vendor = os.path.join(os.path.dirname(__file__), "vendor")
 if _vendor not in sys.path:
-    sys.path.insert(0, _vendor)
+    sys.path.append(_vendor)
 
 from pycspr.types.crypto.complex import PrivateKey  # noqa: E402
 from pycspr.types.crypto.simple import KeyAlgorithm  # noqa: E402
