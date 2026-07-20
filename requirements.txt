@@ -31,7 +31,7 @@ cryptography==43.0.1
 prometheus-client==0.25.0
 
 # --- Phase 3 Multimodal (Document Generation) ---
-python-docx==1.1.2
+python-docx==1.2.0
 openpyxl==3.1.5
 python-pptx==1.0.2
 reportlab==5.0.0
