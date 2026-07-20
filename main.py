@@ -4795,6 +4795,21 @@ try:
         ),
         prefix="/api",
     )
+    # Web Intelligence — modul mandiri (backend/modules/web_intelligence). Additive;
+    # di-wrap agar kegagalan opsional (mis. dep hilang) tidak menghentikan boot app.
+    try:
+        from backend.modules.web_intelligence.api.routes import build_web_intelligence_router
+        app.include_router(
+            build_web_intelligence_router(
+                get_current_user=get_current_user,
+                require_permission=require_permission,
+                get_pool=get_pool,
+            ),
+            prefix="/api",
+        )
+        logger.info("Web Intelligence routes mounted")
+    except Exception as _wi_exc:
+        logger.warning("Web Intelligence router skipped: %s", _wi_exc)
     app.include_router(
         build_system_health_router(
             get_pool=get_pool, get_current_user=get_current_user,
