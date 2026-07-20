@@ -315,7 +315,7 @@ ai bisnis/
 │   └── test_casper_workflow.py
 ├── casper_anchor.py          # Core Casper Testnet deploy logic (pycspr)
 ├── schema.sql / bn_platform/schema_platform.sql   # Full DB schema (idempotent migrations)
-├── test_*.py                 # 1126 backend tests, one file per module/feature
+├── test_*.py                 # 1592 backend tests, one file per module/feature
 └── requirements.txt
 ```
 
