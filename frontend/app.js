@@ -4354,13 +4354,13 @@ async function sendPlayground(form) {
     if (state.speakReplies) prepareSpeech(result.answer, container).then((ps) => speak(result.answer, container, ps)).catch((e) => voiceStatus(container, `Suara gagal: ${e.message}`));
   };
 
-  // The SSE stream path is a single-model fast path — it does NOT run the
-  // Computer Agent (web browsing/screenshot), Pro multi-agent reasoning, or
-  // inline image generation. Bots that use those features must go through the
-  // full /chat pipeline; only stream for plain bots so we never silently drop a
-  // feature (regression: streaming had disabled the Computer Agent in chat).
+  // The SSE stream path is single-model. Pro (deep multi-agent) bots always use
+  // the full pipeline. Computer-Agent bots STREAM normally on the base model —
+  // the stream endpoint returns 409 only for messages that actually need the
+  // Computer Agent, and we fall back to full /chat for those (per-message, so
+  // normal chat on a Computer-Agent bot stays fast on the base model).
   const bot = (state.bots || []).find((b) => b.id === botId);
-  const needsFullPipeline = !!(bot && (bot.computer_agent_enabled || bot.reasoning_mode === 'pro'));
+  const needsFullPipeline = !!(bot && bot.reasoning_mode === 'pro');
 
   try {
     if (needsFullPipeline) {

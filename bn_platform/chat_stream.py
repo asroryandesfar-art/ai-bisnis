@@ -35,7 +35,7 @@ def build_chat_stream_router(
     @router.post("/chat/{bot_id}/stream")
     async def chat_stream(bot_id: str, body: ChatReq, pool=Depends(get_pool)):
         bot = await pool.fetchrow(
-            """SELECT id, org_id, system_prompt, language
+            """SELECT id, org_id, system_prompt, language, computer_agent_enabled
                FROM bots WHERE id=$1 AND status IN ('active','training')""",
             bot_id,
         )
@@ -43,6 +43,19 @@ def build_chat_stream_router(
             raise HTTPException(404, "Bot tidak aktif")
         if not any_provider_configured(cfg):
             raise HTTPException(503, "Tidak ada AI provider yang dikonfigurasi untuk streaming.")
+        # Per-message decision: only actual browsing requests need the Computer
+        # Agent (which the single-model stream path can't run). Signal the client
+        # to fall back to the full /chat pipeline for those; everything else —
+        # including normal chat on a Computer-Agent bot — streams on the base model.
+        if bot.get("computer_agent_enabled"):
+            try:
+                from computer_agent import looks_like_computer_agent_request
+                if looks_like_computer_agent_request(body.message):
+                    raise HTTPException(409, "Computer-agent request — use full pipeline")
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # detector unavailable -> just stream (still degrades gracefully)
 
         conv_id = body.session_id or str(uuid.uuid4())
         # Persist conversation + user message best-effort (never break the stream).

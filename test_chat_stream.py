@@ -90,6 +90,25 @@ def test_no_provider_503():
     assert r.status_code == 503
 
 
+_CA_BOT = {**_BOT, "computer_agent_enabled": True}
+
+
+def test_computer_agent_bot_streams_normal_message():
+    # Normal chat on a Computer-Agent bot must still stream on the base model.
+    c = TestClient(_app(bot=_CA_BOT, tokens=("Ha", "i")))
+    r = c.post("/chat/bot-1/stream", json={"message": "halo apa kabar"})
+    assert r.status_code == 200
+    assert "event: token" in r.text
+
+
+def test_computer_agent_bot_409_on_browsing_request():
+    # A real browsing request signals the client to fall back to the full /chat
+    # pipeline (which runs the Computer Agent) instead of streaming single-model.
+    c = TestClient(_app(bot=_CA_BOT))
+    r = c.post("/chat/bot-1/stream", json={"message": "tolong buka website tokopedia lalu screenshot"})
+    assert r.status_code == 409
+
+
 def test_stream_error_emits_error_event():
     c = TestClient(_app(boom=True))
     r = c.post("/chat/bot-1/stream", json={"message": "halo"})
