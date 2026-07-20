@@ -28,7 +28,7 @@ serving real tenants today — not a demo shell.
 |---|---|---|---|
 | ✔ Multi-Agent Collaboration | ✔ Autonomous AI | ✔ Long-Term Memory | ✔ Knowledge Engine |
 | ✔ AI Workflow Automation | ✔ Human Approval Gate | ✔ Enterprise SaaS | ✔ Multi-Tenant |
-| ✔ Secure Production Architecture | ✔ 1126 Automated Tests | ✔ 25 Wired AI Agents | ✔ 5 Live Channels |
+| ✔ Secure Production Architecture | ✔ 1592 Automated Tests (0 failing) | ✔ 25+ Wired AI Agents | ✔ 5 Live Channels |
 | ✔ Local Computer Agent | ✔ Real Midtrans Payments | ✔ Human Approval Queues | ✔ Live on botnesia.uk |
 
 ---
@@ -43,7 +43,7 @@ serving real tenants today — not a demo shell.
 | **Knowledge Engine** | `knowledge_agent.py` + Auto Knowledge Builder (`knowledge_builder_agent.py`) — ingest PDF/DOCX/CSV/URL, auto-generate FAQ/SOP, human-approval publish gate into the live knowledge base |
 | **Workflow Automation** | `workflow_engine.py` — visual, n8n-style trigger→condition→agent→action graph builder with retries and branching, plus a real Task Engine (`task_engine.py`): Goal → Plan → Subtasks → Tool Selection → Execution → Verification → Report |
 | **Business AI Operating System** | 7 "AI Workforce" employees (Finance/Marketing/HR/Operations/Security/Executive/Workforce-Orchestrator) running the business's own back office, with a Self-Learning engine distilling real conversation/sales/complaint patterns into approved organizational knowledge |
-| **Production Ready** | Real multi-tenant RBAC, JWT auth, audit logging, rate limiting, billing/subscriptions, 911 automated tests, live on a public domain behind Cloudflare with daily DB backups |
+| **Production Ready** | Real multi-tenant RBAC, JWT auth, audit logging, rate limiting, billing/subscriptions, 1592 automated tests (0 failing), live on a public domain behind Cloudflare with daily DB backups |
 
 ## Architecture at a glance
 
@@ -119,16 +119,17 @@ Cloudflare named tunnel — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 1126 tests
+python3 -m pytest -q   # 1592 tests, all passing
 ```
 
 ## Current Status
 
 Honest snapshot, not marketing copy:
 
-- **Tests**: 1126 total, 1104 passing, 19 pre-existing failures (document
-  generator + AI language-quality checks — unrelated to the features below,
-  not fixed as part of this pass), 3 skipped.
+- **Tests**: 1592 total, **all passing**, 0 failing, 3 skipped. (The former
+  "pre-existing" document-generator failures were traced to a vendored Windows
+  `PIL` shadowing system Pillow on the import path — fixed, which also removed a
+  latent production risk to PDF/image generation.)
 - **Local Computer Agent**: real and live — a downloadable script
   (`botnesia_local_agent.py`) connects a tenant's own PC to BotNesia over a
   WebSocket, giving the AI file/terminal/browser access on that machine with
