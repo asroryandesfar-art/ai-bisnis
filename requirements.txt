@@ -22,7 +22,7 @@ trafilatura==2.1.0
 readability-lxml==0.8.4.1
 
 # --- Intelligence Platform (Conversation Memory, FAQ, Sales, Knowledge Graph) ---
-numpy==2.4.4
+numpy==2.5.1
 celery[redis]==5.4.0
 redis==5.0.7
 
