@@ -24,7 +24,7 @@ readability-lxml==0.8.4.1
 # --- Intelligence Platform (Conversation Memory, FAQ, Sales, Knowledge Graph) ---
 numpy==2.4.4
 celery[redis]==5.4.0
-redis==5.0.7
+redis==8.0.1
 
 # --- Business Platform Phase 2 (RBAC, Billing, Omnichannel, Security, Observability) ---
 cryptography==43.0.1
