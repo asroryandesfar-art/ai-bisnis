@@ -4354,7 +4354,18 @@ async function sendPlayground(form) {
     if (state.speakReplies) prepareSpeech(result.answer, container).then((ps) => speak(result.answer, container, ps)).catch((e) => voiceStatus(container, `Suara gagal: ${e.message}`));
   };
 
+  // The SSE stream path is a single-model fast path — it does NOT run the
+  // Computer Agent (web browsing/screenshot), Pro multi-agent reasoning, or
+  // inline image generation. Bots that use those features must go through the
+  // full /chat pipeline; only stream for plain bots so we never silently drop a
+  // feature (regression: streaming had disabled the Computer Agent in chat).
+  const bot = (state.bots || []).find((b) => b.id === botId);
+  const needsFullPipeline = !!(bot && (bot.computer_agent_enabled || bot.reasoning_mode === 'pro'));
+
   try {
+    if (needsFullPipeline) {
+      await runFullChat();
+    } else {
     let streamed = "", streamedAny = false, streamFailed = false;
     // Try real token streaming first (instant, alive). Falls back on any failure.
     await api.streamChat(botId, text, state.chatSession, {
@@ -4378,6 +4389,7 @@ async function sendPlayground(form) {
       onError: () => { streamFailed = true; },
     });
     if (!streamedAny || streamFailed) await runFullChat();   // fallback preserves full features
+    }
   } catch (error) {
     messages.querySelector("[data-stream-bubble]")?.remove();
     messages.querySelector("[data-thinking]")?.remove();
