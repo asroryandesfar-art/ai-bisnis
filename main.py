@@ -44,6 +44,31 @@ import asyncio
 import secrets
 import sys
 import types
+
+
+def _load_dotenv_into_environ(path: str = ".env") -> None:
+    """Load .env into os.environ BEFORE anything reads bare os.getenv().
+
+    Pydantic `Settings(env_file=".env")` populates the `cfg` object but does NOT
+    export to os.environ. Modules that read os.getenv directly — notably
+    casper_anchor.py's CASPER_PVK_HEX/CASPER_RPC_URL/etc. — would otherwise see
+    nothing and silently fall back (Casper anchoring -> demo mode with a
+    "no such addressable entity" RPC error from an ephemeral, unfunded keypair).
+    Uses setdefault so real OS-level env vars always win over the .env file.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv_into_environ()
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
