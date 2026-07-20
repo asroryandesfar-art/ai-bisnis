@@ -1,11 +1,11 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-4";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-5";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260720-casper-engineer-1";
-import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-4";
+import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-5";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
@@ -3875,7 +3875,19 @@ function casperEngineerArtifact(d) {
     <div><div class="page-section-label">3 · ${t('casper_eng.verification')}</div><p style="font-size:12px;margin:4px 0">${verif.complete ? '✓' : '⚠'} ${esc(verif.reasoning || '')}</p>${kv(t('casper_eng.gaps'), verif.gaps)}</div>
     <div><div class="page-section-label">4 · ${t('casper_eng.self_critique')}</div>${issues}${improved.summary ? `<div style="margin-top:10px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.improved_plan')}</div><p style="font-size:12px;margin:4px 0">${esc(improved.summary)}</p>${li(improved.steps, (s) => `<li style="font-size:12px">${esc(s)}</li>`)}</div>` : ""}</div>
     ${d.id ? `<div style="border-top:1px solid var(--line);padding-top:14px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><div class="page-section-label" style="margin:0">5 · ${t('casper_eng.execution')}</div><span class="subtle" style="font-size:11px">${t('casper_eng.exec_hint')}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-sm" data-ce-investigate="${esc(d.id)}">${icon('search',13)} ${t('casper_eng.investigate')}</button><button class="button button-primary button-sm" data-ce-propose="${esc(d.id)}">${icon('agents',13)} ${t('casper_eng.propose')}</button></div></div><div id="ce-investigate" style="margin-top:10px"></div><div id="ce-steps" style="margin-top:10px"></div></div>` : ""}
+    ${d.id ? `<div style="border-top:1px solid var(--line);padding-top:14px"><div class="page-section-label" style="margin:0 0 4px">6 · ${t('casper_eng.proof')}</div><span class="subtle" style="font-size:11px">${t('casper_eng.proof_hint')}</span><div id="ce-anchor" style="margin-top:10px">${ceAnchorHtml(d)}</div></div>` : ""}
   </div></div>`;
+}
+
+function ceAnchorHtml(d) {
+  const c = d.casper;
+  if (c && c.deploy_hash) {
+    const real = c.proof_mode === "real";
+    return `<div class="card" style="padding:12px 14px;border:1px solid ${real ? 'var(--green)' : 'var(--amber)'}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="status-badge ${real ? 'active' : 'pending'}">${real ? t('casper_eng.anchored_real') : t('casper_eng.anchored_demo')}</span><span class="subtle mono" style="font-size:10px;word-break:break-all">${esc(c.deploy_hash)}</span></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><a class="button button-sm" href="${esc(c.explorer_url || ('https://testnet.cspr.live/deploy/' + c.deploy_hash))}" target="_blank" rel="noopener">${t('casper_eng.view_proof')} ↗</a></div></div>`;
+  }
+  return `<button class="button button-primary button-sm" data-ce-anchor="${esc(d.id)}">${icon('security', 13)} ${t('casper_eng.anchor')}</button>`;
 }
 
 async function renderCasperEngineer() {
@@ -3950,6 +3962,17 @@ async function renderCasperEngineer() {
   });
 
   el("#ce-result")?.addEventListener("click", async (e) => {
+    const anchorBtn = e.target.closest("[data-ce-anchor]");
+    if (anchorBtn) {
+      const rid = anchorBtn.getAttribute("data-ce-anchor");
+      anchorBtn.disabled = true; anchorBtn.textContent = t('casper_eng.anchoring');
+      try {
+        const c = await api.casperEngineerAnchor(rid);
+        el("#ce-anchor").innerHTML = ceAnchorHtml({ id: rid, casper: c });
+        toast(c.proof_mode === 'real' ? t('casper_eng.anchored_real') : t('casper_eng.anchored_demo'), c.proof_mode === 'real' ? 'success' : 'info');
+      } catch (err) { toast(err?.data?.detail || err.message, "error"); anchorBtn.disabled = false; anchorBtn.innerHTML = `${icon('security', 13)} ${t('casper_eng.anchor')}`; }
+      return;
+    }
     const invBtn = e.target.closest("[data-ce-investigate]");
     if (invBtn) {
       const rid = invBtn.getAttribute("data-ce-investigate");

@@ -142,7 +142,8 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
     ):
         row = await pool.fetchrow(
             """SELECT id, goal, repo_context, planning, repository_analysis,
-                      self_verification, self_critique, status, confidence, created_at
+                      self_verification, self_critique, status, confidence, created_at,
+                      deploy_hash, session_hash, proof_mode, explorer_url, anchored_at
                FROM casper_engineer_runs WHERE id = $1 AND org_id = $2""",
             _as_uuid(run_id), user["org_id"],
         )
@@ -158,6 +159,11 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "status": row["status"],
             "confidence": float(row["confidence"]) if row["confidence"] is not None else None,
             "created_at": row["created_at"].isoformat(),
+            "casper": {
+                "deploy_hash": row["deploy_hash"], "session_hash": row["session_hash"],
+                "proof_mode": row["proof_mode"], "explorer_url": row["explorer_url"],
+                "anchored_at": row["anchored_at"].isoformat() if row["anchored_at"] else None,
+            } if row["deploy_hash"] else None,
         }
 
     @router.post("/run/{run_id}/propose-steps")
@@ -275,6 +281,61 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             }
             for r in rows
         ]
+
+    @router.post("/run/{run_id}/anchor")
+    async def anchor_run(
+        run_id: str,
+        user: Annotated[dict, Depends(require_permission("workforce.write"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        """Unifikasi Casper: anchor artefak run Casper Engineer ke Casper Blockchain
+        (bukti immutable & terverifikasi pihak ketiga bahwa keputusan engineering AI
+        ini benar dibuat). Real-mode via casper_anchor; fallback demo-hash bila
+        CASPER_* env belum diset — pola identik casper/workflow.py."""
+        import hashlib
+        row = await pool.fetchrow(
+            """SELECT goal, status, confidence, planning, self_critique
+               FROM casper_engineer_runs WHERE id=$1 AND org_id=$2""",
+            _as_uuid(run_id), user["org_id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Run tidak ditemukan")
+        _check_rate_limit(f"casper_engineer_anchor:{user['org_id']}", 10)
+        org_id = str(user["org_id"])
+        artifact = {
+            "run_id": run_id, "goal": row["goal"], "status": row["status"],
+            "confidence": float(row["confidence"]) if row["confidence"] is not None else None,
+            "planning": _load_json(row["planning"]), "critique": _load_json(row["self_critique"]),
+        }
+        session_hash = hashlib.sha256(
+            json.dumps(artifact, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        summary = f"Casper Engineer run: {(row['goal'] or '')[:120]}"
+        try:
+            import casper_anchor as _ca
+            result = await _ca.anchor_session(
+                org_id=org_id, session_id=run_id, summary=summary,
+                ai_action_hash=session_hash,
+                workflow_hash=hashlib.sha256(f"engineer:{run_id}".encode()).hexdigest(),
+            )
+            deploy_hash = result.get("deploy_hash")
+            explorer_url = result.get("explorer_url")
+            proof_mode, casper_status = "real", "confirmed"
+        except Exception as exc:
+            # Fallback demo (CASPER_* belum diset) — jujur dilabeli proof_mode=demo.
+            deploy_hash = "demo-" + hashlib.sha256(f"{run_id}:{session_hash}".encode()).hexdigest()[:56]
+            explorer_url = f"https://testnet.cspr.live/deploy/{deploy_hash}"
+            proof_mode, casper_status = "demo", "demo"
+        await pool.execute(
+            """UPDATE casper_engineer_runs
+               SET deploy_hash=$2, session_hash=$3, proof_mode=$4, explorer_url=$5, anchored_at=NOW()
+               WHERE id=$1""",
+            _as_uuid(run_id), deploy_hash, session_hash, proof_mode, explorer_url,
+        )
+        return {
+            "deploy_hash": deploy_hash, "session_hash": session_hash,
+            "proof_mode": proof_mode, "status": casper_status, "explorer_url": explorer_url,
+        }
 
     return router
 

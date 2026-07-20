@@ -53,6 +53,7 @@ def test_routes_exist():
     assert any(p.endswith("/casper/engineer/run/{run_id}/execute-step") for p in have)
     assert any(p.endswith("/casper/engineer/run/{run_id}/steps") for p in have)
     assert any(p.endswith("/casper/engineer/run/{run_id}/investigate") for p in have)
+    assert any(p.endswith("/casper/engineer/run/{run_id}/anchor") for p in have)
 
 
 def test_execute_step_rejects_non_allowlisted_tool():

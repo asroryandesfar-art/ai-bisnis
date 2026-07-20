@@ -1456,6 +1456,13 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         );
         """,
         "CREATE INDEX IF NOT EXISTS idx_casper_engineer_steps_run ON casper_engineer_steps(run_id, seq);",
+        # Unifikasi Casper: bukti on-chain untuk tiap run Casper Engineer (jembatan
+        # ke Casper Blockchain via casper_anchor). Kolom nullable -> run lama aman.
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS deploy_hash TEXT;",
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS session_hash TEXT;",
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS proof_mode TEXT;",
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS explorer_url TEXT;",
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS anchored_at TIMESTAMPTZ;",
         """
         CREATE TABLE IF NOT EXISTS oauth_states (
             provider TEXT NOT NULL,
