@@ -123,24 +123,69 @@ def _classify_action(message: str) -> str:
     return "general"
 
 
+# Confidence per reasoning tier (bukan angka hardcoded lagi). Diturunkan dari
+# tier model yang BENAR-BENAR dipakai DeepSeek Brain untuk keputusan ini.
+_CONFIDENCE_BY_TIER = {"FAST": 72, "THINKING": 85, "PRO": 92}
+
+
 def _generate_decision(message: str, action_type: str) -> dict:
-    """
-    Generates a structured business decision from the user's message.
-    In production this calls the AI pipeline; for demo it returns a deterministic
-    structure derived from the message so the demo is always available offline.
-    """
+    """Fallback HEURISTIK (dipakai hanya bila AI tidak tersedia). Dilabeli jujur
+    `ai_generated=False` — TIDAK mengklaim "multi-agent consensus". Untuk keputusan
+    ber-AI nyata lihat `_generate_decision_ai()`."""
     type_label = _ACTION_TYPE_MAP.get(action_type, "Business Decision")
     summary = f"{type_label}: {message[:120].strip()}"
     detail = {
-        "decision": f"AI recommends action based on analysis of: {message[:200]}",
-        "rationale": "Multi-agent consensus reached via BotNesia Supervisor pipeline",
-        "confidence": 87,
-        "specialist_agents": ["CSAgent", "SalesAgent", "FinanceAgent"],
+        "decision": f"Keputusan dicatat untuk audit trail: {message[:200].strip()}",
+        "rationale": "Pencatatan heuristik (AI tidak tersedia saat proof dibuat).",
+        "confidence": None,
+        "ai_generated": False,
+        "method": "heuristic_fallback",
         "action_type": action_type,
         "type_label": type_label,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     return {"summary": summary, "detail": detail}
+
+
+async def _generate_decision_ai(message: str, action_type: str, *, org_id: str) -> dict:
+    """Hasilkan keputusan bisnis NYATA lewat DeepSeek Brain (otak yang sama dg
+    chat produksi) — reasoning asli, model & tier asli, confidence diturunkan dari
+    tier. Inilah yang di-anchor ke Casper: bukti keputusan AI yang benar-benar
+    dikomputasi, bukan template. Gagal/AI mati -> fallback jujur `_generate_decision`."""
+    type_label = _ACTION_TYPE_MAP.get(action_type, "Business Decision")
+    try:
+        import main as _m
+        brain = _m.get_deepseek_brain()
+        if brain is None:
+            raise RuntimeError("DeepSeek Brain tidak dikonfigurasi")
+        system_prompt = (
+            "Kamu analis keputusan bisnis senior. Untuk keputusan yang diajukan, beri: "
+            "(1) rekomendasi jelas (LANJUTKAN / TUNDA / TOLAK) dengan alasan singkat, "
+            "(2) 1-2 risiko utama + mitigasi. Ringkas, tajam, actionable. Maks 6 kalimat."
+        )
+        br = await brain.answer(
+            message, plan="pro", org_id=str(org_id),
+            system_prompt=system_prompt, secrets=[_m.cfg.deepseek_api_key],
+        )
+        decision_text = (br.answer or "").strip()
+        if not decision_text:
+            raise RuntimeError("AI mengembalikan jawaban kosong")
+        detail = {
+            "decision": decision_text,
+            "rationale": f"Analisis DeepSeek Brain (reasoning tier: {br.tier.name}).",
+            "confidence": _CONFIDENCE_BY_TIER.get(br.tier.name, 80),
+            "ai_generated": True,
+            "method": "deepseek_brain",
+            "model": br.model,
+            "reasoning_tier": br.tier.name,
+            "action_type": action_type,
+            "type_label": type_label,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return {"summary": f"{type_label}: {message[:120].strip()}", "detail": detail}
+    except Exception as exc:
+        logger.warning("Casper decision AI unavailable -> honest heuristic fallback: %s", exc)
+        return _generate_decision(message, action_type)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +253,8 @@ def build_router(get_pool, get_current_user):
 
         # Determine action type (use override if provided, else classify)
         action_type = req.action_type if req.action_type != "general" else _classify_action(req.user_message)
-        decision = _generate_decision(req.user_message, action_type)
+        # Anchor keputusan AI NYATA (DeepSeek Brain), bukan template. Fallback jujur bila AI mati.
+        decision = await _generate_decision_ai(req.user_message, action_type, org_id=org_id)
 
         action_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)

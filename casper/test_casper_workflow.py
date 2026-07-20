@@ -12,7 +12,7 @@ import pytest
 # Unit: action classifier
 # ────────────────────────────────────────────────────────────────
 
-from casper.workflow import _classify_action, _generate_decision, _ACTION_TYPE_MAP
+from casper.workflow import _classify_action, _generate_decision, _generate_decision_ai, _ACTION_TYPE_MAP
 
 
 def test_classify_hire():
@@ -50,18 +50,48 @@ def test_generate_decision_has_summary():
     assert "Hiring Decision" in d["summary"] or "hire" in d["summary"].lower()
 
 
-def test_generate_decision_has_detail():
+def test_generate_decision_fallback_is_honest():
+    # Fallback heuristik TIDAK boleh mengklaim AI / multi-agent consensus (jujur).
     d = _generate_decision("Merekrut", "hire")
     assert "detail" in d
-    assert d["detail"]["confidence"] > 0
-    assert "specialist_agents" in d["detail"]
-    assert "BotNesia Supervisor" in d["detail"]["rationale"] or "BotNesia" in d["detail"]["rationale"]
+    assert d["detail"]["ai_generated"] is False
+    assert d["detail"]["method"] == "heuristic_fallback"
+    assert "consensus" not in d["detail"]["rationale"].lower()
 
 
 def test_generate_decision_summary_truncated():
     long_msg = "A" * 300
     d = _generate_decision(long_msg, "general")
     assert len(d["summary"]) <= 250
+
+
+def test_generate_decision_ai_uses_real_brain(monkeypatch):
+    # Saat AI tersedia, keputusan yang di-anchor berasal dari DeepSeek Brain NYATA
+    # (bukan template), dengan model & tier & confidence dari hasil brain.
+    import types
+    import main as _m
+    from deepseek_brain import BrainResult, Tier
+
+    class _FakeBrain:
+        async def answer(self, message, **kwargs):
+            return BrainResult(answer="REKOMENDASI: LANJUTKAN. Risiko: pipeline. Mitigasi: bertahap.",
+                               tier=Tier.PRO, model="deepseek-v4-pro", plan="pro")
+
+    monkeypatch.setattr(_m, "get_deepseek_brain", lambda: _FakeBrain())
+    d = asyncio.run(_generate_decision_ai("Rekrut 3 sales?", "hire", org_id="org-1"))
+    assert d["detail"]["ai_generated"] is True
+    assert d["detail"]["method"] == "deepseek_brain"
+    assert d["detail"]["model"] == "deepseek-v4-pro"
+    assert d["detail"]["reasoning_tier"] == "PRO"
+    assert d["detail"]["confidence"] == 92
+    assert "LANJUTKAN" in d["detail"]["decision"]
+
+
+def test_generate_decision_ai_falls_back_when_brain_down(monkeypatch):
+    import main as _m
+    monkeypatch.setattr(_m, "get_deepseek_brain", lambda: None)
+    d = asyncio.run(_generate_decision_ai("apa saja", "general", org_id="org-1"))
+    assert d["detail"]["ai_generated"] is False          # fallback jujur, tak crash
 
 
 # ────────────────────────────────────────────────────────────────
