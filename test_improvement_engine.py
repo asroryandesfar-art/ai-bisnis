@@ -391,10 +391,13 @@ def test_improvement_engine_routes_schema_and_ui_are_present():
     for field in ("category", "severity", "status", "dedup_key", "occurrence_count"):
         assert field in schema
 
-    frontend = (Path(__file__).resolve().parent / "frontend/app.js").read_text()
-    components = (Path(__file__).resolve().parent / "frontend/components.js").read_text()
-    api_client = (Path(__file__).resolve().parent / "frontend/api-client.js").read_text()
+    root = Path(__file__).resolve().parent
+    # UI strings may live in app.js/components.js/i18n.js (post i18n migration).
+    frontend = "\n".join(
+        (root / f"frontend/{f}").read_text() for f in ("app.js", "components.js", "i18n.js")
+    )
+    api_client = (root / "frontend/api-client.js").read_text()
     assert "renderImprovement" in frontend
-    assert "AI Improvement Center" in components
+    assert "AI Improvement Center" in frontend
     assert "improvementDashboard" in api_client
     assert "improvementScan" in api_client

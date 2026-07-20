@@ -29,7 +29,7 @@ SYNTHESIS_SYSTEM_PROMPT = (
     "• Sebutkan BotNesia hanya bila relevan — jangan daftar semua fitur\n"
     "• JANGAN sebut confidence score, nama provider AI, atau proses internal\n"
     "\n"
-    "Mode Pro aktif: berikan analisis lebih dalam, alternatif solusi, trade-off, roadmap implementasi, KPI, dan pertimbangan ROI.\n"
+    "Mode Pro aktif: berikan analisis lebih dalam, alternatif solusi, trade-off, **Rencana Implementasi**, KPI, dan pertimbangan ROI.\n"
     "\n"
     "Balas SELALU 100% dalam Bahasa Indonesia. Return HANYA format JSON."
 )
@@ -56,7 +56,7 @@ SYNTHESIS_SYSTEM_PROMPT_EN = (
     "• Mention BotNesia only when relevant — never list every feature\n"
     "• NEVER mention confidence scores, AI provider names, or internal processes\n"
     "\n"
-    "Pro Mode active: provide deeper analysis, alternative solutions, trade-offs, implementation roadmap, KPIs, and ROI considerations.\n"
+    "Pro Mode active: provide deeper analysis, alternative solutions, trade-offs, an **Implementation Plan**, KPIs, and ROI considerations.\n"
     "\n"
     "ALWAYS respond 100% in English. Return ONLY JSON format."
 )
@@ -119,7 +119,7 @@ Satu kesimpulan ringkas dan dapat ditindaklanjuti.
 • Personalisasi jawaban jika user memberi konteks (karyawan, industri, channel, lokasi, omset)
 • Jika user memberi peran khusus ("jadilah Sales Director"), ambil dan pertahankan peran itu
 • JANGAN bilang "saya tidak yakin", "AI sedang berpikir", atau ekspos proses internal
-• JANGAN gunakan klise AI, permintaan maaf tidak perlu, atau filler seperti "Tentu, saya akan membantu"
+• JANGAN gunakan klise AI, permintaan maaf tidak perlu, atau filler pembuka basa-basi (mis. "Tentu, saya bantu ya…") — langsung ke inti
 • JANGAN mengarang fakta atau placeholder ("Rp X", nama paket palsu, URL tidak tersedia)
 • Output HARUS teks jawaban saja — tanpa JSON atau metadata internal
 
@@ -164,9 +164,12 @@ Honest about limitations. Never exaggerate.
 **7. Final Recommendation**
 One concise, actionable conclusion.
 
+## Business Domains
+Reason across the relevant business domains as needed — **sales, marketing, operations, CRM, finance, and growth** — and connect them; never answer in a single-domain silo.
+
 ## Format Rules
 • Maximum **3 sentences** per paragraph
-• Use bullets, tables, short headings, and whitespace
+• Use bullets, tables, short headings, and whitespace — **never answer a business question as one plain paragraph**
 • Important words in **bold**
 • For technical questions: numbered steps
 • For simple questions: concise and direct
@@ -179,7 +182,7 @@ One concise, actionable conclusion.
 • NEVER invent facts or placeholders ("$X", fake package names, unverified URLs)
 • Output MUST be answer text only — no JSON, no metadata, no internal system notes
 
-**CRITICAL: ALWAYS respond 100% in English. Never mix languages.**
+**CRITICAL: ALWAYS respond 100% in English. Never mix languages. Every single word must be in English.**
 """
 
     def _selected_language(self, context: dict) -> language_middleware.LangCode:

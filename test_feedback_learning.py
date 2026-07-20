@@ -114,8 +114,10 @@ def test_feedback_learning_routes_schema_and_ui_are_present():
     for field in ("tenant_id", "conversation_id", "rating", "comment", "created_at"):
         assert field in schema
 
-    frontend = (Path(__file__).resolve().parent / "frontend/app.js").read_text()
-    sdk = (Path(__file__).resolve().parent / "api.js").read_text()
+    root = Path(__file__).resolve().parent
+    # UI strings may live in app.js or i18n.js (post i18n migration).
+    frontend = "\n".join((root / f"frontend/{f}").read_text() for f in ("app.js", "i18n.js"))
+    sdk = (root / "api.js").read_text()
     assert "/api/feedback-learning/public/${botId}" in sdk
     assert "👍 Helpful" in frontend
     assert "👎 Not Helpful" in frontend

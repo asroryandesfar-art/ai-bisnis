@@ -13186,5 +13186,41 @@
     "language": "en",
     "trusted": true,
     "status": "pending"
+  },
+  {
+    "tenant_id": null,
+    "agent_id": "onboarding-agent",
+    "agent_name": "Onboarding Agent",
+    "category": "HR & Recruitment",
+    "url": "https://www.shrm.org/topics-tools/tools/toolkits/onboarding-new-employees",
+    "source_type": "official_docs_or_guide",
+    "priority": "high",
+    "language": "en",
+    "trusted": true,
+    "status": "pending"
+  },
+  {
+    "tenant_id": null,
+    "agent_id": "onboarding-agent",
+    "agent_name": "Onboarding Agent",
+    "category": "HR & Recruitment",
+    "url": "https://www.bamboohr.com/resources/hr-glossary/onboarding",
+    "source_type": "official_docs_or_guide",
+    "priority": "normal",
+    "language": "en",
+    "trusted": true,
+    "status": "pending"
+  },
+  {
+    "tenant_id": null,
+    "agent_id": "performance-review-agent",
+    "agent_name": "Performance Review Agent",
+    "category": "HR & Recruitment",
+    "url": "https://www.shrm.org/topics-tools/tools/toolkits/managing-employee-performance",
+    "source_type": "official_docs_or_guide",
+    "priority": "normal",
+    "language": "en",
+    "trusted": true,
+    "status": "pending"
   }
 ]
