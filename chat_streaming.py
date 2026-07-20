@@ -40,6 +40,10 @@ async def stream_answer(messages: list[dict], cfg, *, temperature: float = 0.4, 
     """Async generator yielding answer text chunks for the given chat messages."""
     router = build_provider_router(cfg)
     req = LLMRequest(messages=messages, temperature=temperature, max_tokens=max_tokens, stream=True)
-    async for chunk in router.stream(req, tier="standard", task_type="chat"):
+    # NOTE: task_type must NOT be one of deepseek._SKIP_TASKS ('chat','cs','faq'…),
+    # else the router resolves NO DeepSeek model and — with Gemini/Groq unconfigured
+    # and OpenRouter often out-of-credit — streaming has no provider at all.
+    # DeepSeek is the primary brain, so route this generic chat completion to it.
+    async for chunk in router.stream(req, tier="standard", task_type="standard"):
         if chunk:
             yield chunk

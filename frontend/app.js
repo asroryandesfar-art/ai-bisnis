@@ -1,4 +1,4 @@
-import { api, tokenStore, settle } from "/ui/api-client.js?v=20260720-casper-engineer-5";
+import { api, tokenStore, settle } from "/ui/api-client.js?v=20260721-stream-1";
 import {
   icon, esc, initials, formatNumber, formatDate, relativeTime, idr, renderMarkdown,
   sidebar, topbar, pageHeader, statusBadge, metricCard, skeletonCards,
@@ -4339,24 +4339,47 @@ async function sendPlayground(form) {
   input.value = "";
   messages.scrollTop = messages.scrollHeight;
   if (submitButton) submitButton.disabled = true;
-  try {
+  // Full non-streaming hybrid chat (image gen / multi-agent / feedback) — used as
+  // the fallback when SSE streaming is unavailable or yields nothing.
+  const runFullChat = async () => {
+    messages.querySelector("[data-stream-bubble]")?.remove();
+    if (!messages.querySelector("[data-thinking]")) {
+      messages.insertAdjacentHTML("beforeend", `<div class="message" data-thinking><div class="message-bubble"><span class="thinking"><i></i><i></i><i></i></span></div></div>`);
+    }
     const result = await api.chat(botId, text, state.chatSession, {userId:"dashboard-playground", channel:"dashboard"});
     state.chatSession = result.session_id;
-    let preparedSpeech = null;
-    if (state.speakReplies) {
-      try {
-        preparedSpeech = await prepareSpeech(result.answer, container);
-      } catch (error) {
-        voiceStatus(container, `Suara gagal disiapkan: ${error.message}`);
-      }
-    }
     messages.querySelector("[data-thinking]")?.remove();
     const imageHtml = result.image_url ? `<img src="${esc(result.image_url)}" alt="Generated" style="max-width:280px;border-radius:8px;display:block;margin-bottom:8px">` : "";
     messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble">${imageHtml}${renderMarkdown(result.answer)}<div class="message-meta">AI · ${result.latency_ms || 0}ms</div>${feedbackControls(result.message_id,result.session_id)}</div></div>`);
-    if (preparedSpeech) {
-      speak(result.answer, container, preparedSpeech).catch((error) => voiceStatus(container, `Suara gagal: ${error.message}`));
-    }
+    if (state.speakReplies) prepareSpeech(result.answer, container).then((ps) => speak(result.answer, container, ps)).catch((e) => voiceStatus(container, `Suara gagal: ${e.message}`));
+  };
+
+  try {
+    let streamed = "", streamedAny = false, streamFailed = false;
+    // Try real token streaming first (instant, alive). Falls back on any failure.
+    await api.streamChat(botId, text, state.chatSession, {
+      onStart: (p) => { state.chatSession = p.session_id || state.chatSession; },
+      onToken: (tok) => {
+        if (!streamedAny) {
+          messages.querySelector("[data-thinking]")?.remove();
+          messages.insertAdjacentHTML("beforeend", `<div class="message" data-stream-bubble><div class="message-bubble"></div></div>`);
+        }
+        streamedAny = true; streamed += tok;
+        const b = messages.querySelector("[data-stream-bubble] .message-bubble");
+        if (b) { b.textContent = streamed; messages.scrollTop = messages.scrollHeight; }
+      },
+      onDone: (p) => {
+        state.chatSession = p.session_id || state.chatSession;
+        const finalText = p.answer || streamed;
+        const elx = messages.querySelector("[data-stream-bubble]");
+        if (elx) elx.outerHTML = `<div class="message"><div class="message-bubble">${renderMarkdown(finalText)}<div class="message-meta">AI · live</div></div></div>`;
+        if (state.speakReplies) prepareSpeech(finalText, container).then((ps) => speak(finalText, container, ps)).catch(() => {});
+      },
+      onError: () => { streamFailed = true; },
+    });
+    if (!streamedAny || streamFailed) await runFullChat();   // fallback preserves full features
   } catch (error) {
+    messages.querySelector("[data-stream-bubble]")?.remove();
     messages.querySelector("[data-thinking]")?.remove();
     messages.insertAdjacentHTML("beforeend", `<div class="message"><div class="message-bubble" style="color:var(--red)">${esc(error.message)}</div></div>`);
   } finally {

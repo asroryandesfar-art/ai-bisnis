@@ -91,6 +91,46 @@ export const api = {
   routingLogs: (botId, params = {}) => request(`/bots/${botId}/routing-logs${encodeQuery(params)}`),
   messages: (conversationId) => request(`/conversations/${conversationId}/messages`),
   messageSources: (messageId) => request(`/messages/${messageId}/sources`),
+  // SSE token streaming for the chat widget (POST /chat/{id}/stream). Real-time
+  // tokens; caller supplies onStart/onToken/onDone/onError. Falls to onError on
+  // any transport/HTTP failure so the caller can fall back to non-streaming chat.
+  streamChat: async (botId, message, sessionId, { onStart, onToken, onDone, onError, signal } = {}) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    let resp;
+    try {
+      resp = await fetch(`/chat/${botId}/stream`, {
+        method: "POST", headers, body: JSON.stringify({ message, session_id: sessionId }), signal,
+      });
+    } catch { return onError && onError(new Error("stream unreachable")); }
+    if (!resp.ok || !resp.body) return onError && onError(new Error(`stream ${resp.status}`));
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          let ev = "message", data = "";
+          for (const line of frame.split("\n")) {
+            if (line.startsWith("event:")) ev = line.slice(6).trim();
+            else if (line.startsWith("data:")) data += line.slice(5).trim();
+          }
+          if (!data) continue;
+          let payload; try { payload = JSON.parse(data); } catch { continue; }
+          if (ev === "start") onStart && onStart(payload);
+          else if (ev === "token") onToken && onToken(payload.text || "");
+          else if (ev === "done") onDone && onDone(payload);
+          else if (ev === "error") onError && onError(new Error(payload.error || "stream error"));
+        }
+      }
+    } catch (e) { onError && onError(e); }
+  },
   chat: (botId, message, sessionId = null, userMeta = null) => request(`/chat/${botId}`, {
     method: "POST", body: { message, session_id: sessionId, user_meta: userMeta },
   }),
