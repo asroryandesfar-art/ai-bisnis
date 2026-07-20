@@ -1488,6 +1488,10 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS proof_mode TEXT;",
         "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS explorer_url TEXT;",
         "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS anchored_at TIMESTAMPTZ;",
+        # Pelatihan Casper Engineer: rubrik skor mandiri (7-dimensi) + integritas
+        # bukti (fakta vs asumsi). Nullable -> run lama aman.
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS self_score JSONB;",
+        "ALTER TABLE casper_engineer_runs ADD COLUMN IF NOT EXISTS evidence_integrity JSONB;",
         """
         CREATE TABLE IF NOT EXISTS oauth_states (
             provider TEXT NOT NULL,

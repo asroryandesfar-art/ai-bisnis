@@ -4,7 +4,10 @@ Uji pipeline deterministik dengan LLM di-stub (tanpa API). Casper Blockchain
 tidak diimpor di sini — modul terpisah, tidak boleh saling mengubah."""
 import asyncio
 
-from casper_engineer import CasperEngineerAgent, CRITIQUE_CATEGORIES
+from casper_engineer import (
+    CasperEngineerAgent, CRITIQUE_CATEGORIES, SCORE_DIMENSIONS,
+    SCORE_PASS_THRESHOLD, _audit_evidence,
+)
 
 
 def _agent():
@@ -19,6 +22,8 @@ def _route_stub(responses):
             return responses["verify"]
         if "self-critic" in blob:
             return responses["critique"]
+        if "penilai mandiri" in blob:
+            return responses["score"]
         if "analisis repository" in blob:
             return responses["analyze"]
         return responses["plan"]
@@ -29,11 +34,14 @@ def _good_responses():
     return {
         "plan": {"understanding": "Tambah fitur X", "subtasks": [{"id": 1, "title": "a"}],
                  "execution_order": [1], "risks": [{"risk": "r", "severity": "high", "mitigation": "m"}]},
-        "analyze": {"structure": "src/", "dependencies": ["fastapi"], "conventions": ["snake_case"],
-                    "existing_patterns": ["factory router"], "integration_points": ["main.py"], "constraints": []},
+        "analyze": {"structure": "src/", "architecture": "modular-monolith", "dependencies": ["fastapi"],
+                    "conventions": ["snake_case"], "existing_patterns": ["factory router"],
+                    "integration_points": ["main.py"], "constraints": [],
+                    "evidence_log": [{"claim": "FastAPI app", "evidence": "src/main.py", "type": "fact"}]},
         "verify": {"complete": True, "gaps": [], "reasoning": "cukup"},
         "critique": {"issues": [{"category": "security", "severity": "high", "detail": "d", "fix": "f"}],
                      "improved_plan": {"summary": "s", "steps": ["1"]}, "overall_confidence": 0.82},
+        "score": {"scores": {d: 9 for d in SCORE_DIMENSIONS}, "justification": "solid, berbukti"},
     }
 
 
@@ -200,3 +208,62 @@ def test_degraded_when_all_stages_llm_unavailable():
     assert res.success is False
     assert res.output["status"] == "degraded"
     assert res.confidence is None
+
+
+def test_self_score_present_and_no_retrain_when_all_pass():
+    agent = _agent()
+    agent._call_llm_json = _route_stub(_good_responses())
+    res = asyncio.run(agent.run({"goal": "Tambah fitur X", "repo_context": "src/main.py FastAPI"}))
+    sc = res.output["self_score"]
+    assert set(sc["scores"]) == set(SCORE_DIMENSIONS)          # 7 dimensi
+    assert sc["overall"] == 9.0
+    assert sc["weakest_dimensions"] == []
+    assert sc["retrain_needed"] is False
+    assert res.output["retrain_needed"] is False
+
+
+def test_retrain_flagged_when_dimension_below_threshold():
+    agent = _agent()
+    r = _good_responses()
+    r["score"] = {"scores": {d: 9 for d in SCORE_DIMENSIONS} | {"security": 6, "accuracy": 8},
+                  "justification": "security lemah"}
+    agent._call_llm_json = _route_stub(r)
+    res = asyncio.run(agent.run({"goal": "g", "repo_context": "ctx"}))
+    sc = res.output["self_score"]
+    assert sc["retrain_needed"] is True
+    assert sc["weakest_dimensions"] == ["security", "accuracy"]   # terlemah dulu
+    assert sc["overall"] < SCORE_PASS_THRESHOLD
+
+
+def test_finalize_score_clamps_and_ignores_bad_values():
+    out = CasperEngineerAgent._finalize_score(
+        {"scores": {"accuracy": 12, "reasoning": -3, "security": "oops"}, "justification": "x"}
+    )
+    assert out["scores"]["accuracy"] == 10.0     # clamp atas
+    assert out["scores"]["reasoning"] == 0.0     # clamp bawah
+    assert "security" not in out["scores"]        # nilai non-numerik dibuang
+
+
+def test_audit_evidence_separates_fact_from_assumption():
+    analysis = {"evidence_log": [
+        {"claim": "pakai FastAPI", "evidence": "main.py:1 import fastapi", "type": "fact"},
+        {"claim": "mungkin ada cache", "evidence": "", "type": "assumption"},
+        {"claim": "klaim tanpa tipe", "evidence": "somefile.py"},   # bukan 'fact' -> unverified
+        {"claim": ""},                                              # kosong -> diabaikan
+    ]}
+    au = _audit_evidence(analysis)
+    assert [v["claim"] for v in au["verified"]] == ["pakai FastAPI"]
+    assert len(au["unverified"]) == 2
+    assert au["integrity"] == round(1 / 3, 3)
+
+
+def test_audit_evidence_none_when_no_log():
+    assert _audit_evidence({"structure": "x"})["integrity"] is None
+
+
+def test_repo_incomplete_status_halts_without_context():
+    agent = _agent()
+    agent._call_llm_json = _route_stub(_good_responses())
+    res = asyncio.run(agent.run({"goal": "bikin sesuatu"}))       # tanpa repo_context
+    assert res.output["status"] == "repo_incomplete"
+    assert res.output["needs_repo_context"] is True

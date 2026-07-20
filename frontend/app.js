@@ -5,7 +5,7 @@ import {
   emptyState, errorState, agentCard, activityItem, modal, agentDrawer, toast,
   planBadge, lockCard, upgradeDialog, upgradeBanner, settingSection, settingRow, readonlyField,
 } from "/ui/components.js?v=20260720-casper-engineer-1";
-import { t, setLang, getLang } from "/ui/i18n.js?v=20260720-casper-engineer-5";
+import { t, setLang, getLang } from "/ui/i18n.js?v=20260721-ce-train-1";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 
 window.laToolChange = function(tool) {
@@ -3851,13 +3851,49 @@ function ceStepsHtml(rid, steps) {
     </div>`).join('');
 }
 
+function ceScorePanel(d) {
+  const s = d.self_score || {};
+  const sc = s.scores || {};
+  const dims = Object.keys(sc);
+  if (!dims.length) return "";
+  const thr = s.pass_threshold || 9;
+  const bar = (dim) => {
+    const v = sc[dim];
+    const col = v >= thr ? "var(--green)" : (v >= 6 ? "var(--amber)" : "var(--red)");
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <span style="font-size:11px;width:118px;text-transform:capitalize;color:var(--text-2)">${esc(dim)}</span>
+      <div style="flex:1;height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden"><div style="width:${Math.max(0, Math.min(100, v * 10))}%;height:100%;background:${col}"></div></div>
+      <span class="mono" style="font-size:11px;width:34px;text-align:right;color:${col}">${v}</span></div>`;
+  };
+  const overall = s.overall != null ? s.overall : "—";
+  const badge = s.retrain_needed === true
+    ? `<span class="status-badge error">${t('casper_eng.retrain')}: ${esc((s.weakest_dimensions || []).join(', '))}</span>`
+    : s.retrain_needed === false ? `<span class="status-badge active">${t('casper_eng.retrain_none')}</span>` : "";
+  return `<div><div class="page-section-label">${t('casper_eng.self_score')}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 8px;flex-wrap:wrap;gap:8px">
+      <span class="mono" style="font-size:20px;font-weight:700">${overall}<span class="subtle" style="font-size:12px">/10</span></span>${badge}</div>
+    ${dims.map(bar).join("")}
+    ${s.justification ? `<p class="subtle" style="font-size:11px;margin:8px 0 0">${esc(s.justification)}</p>` : ""}</div>`;
+}
+
+function ceEvidencePanel(d) {
+  const e = d.evidence_integrity || {};
+  const verified = e.verified || [], unverified = e.unverified || [];
+  if (e.integrity == null && !verified.length && !unverified.length) return "";
+  const pct = e.integrity != null ? Math.round(e.integrity * 100) + "%" : "—";
+  const un = unverified.slice(0, 6).map((u) => `<li style="font-size:11px;margin-bottom:2px">${esc(u.claim || "")} <span class="subtle">(${esc(u.type || "?")})</span></li>`).join("");
+  return `<div style="margin-top:8px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.evidence')} · ${pct}</div>
+    <div style="font-size:11px;margin-top:2px">${t('casper_eng.ev_verified')}: <strong>${verified.length}</strong> · ${t('casper_eng.ev_unverified')}: <strong>${unverified.length}</strong></div>
+    ${un ? `<ul style="margin:4px 0 0;padding-left:16px">${un}</ul>` : ""}</div>`;
+}
+
 function casperEngineerArtifact(d) {
   if (!d) return "";
   const plan = d.planning || {};
   const analysis = d.repository_analysis || {};
   const verif = d.self_verification || {};
   const critique = d.self_critique || {};
-  const statusKind = { verified: "active", needs_review: "pending", degraded: "error" }[d.status] || "default";
+  const statusKind = { verified: "active", needs_review: "pending", degraded: "error", repo_incomplete: "pending" }[d.status] || "default";
   const li = (arr, fn) => (Array.isArray(arr) && arr.length ? `<ul style="margin:6px 0 0;padding-left:18px">${arr.map(fn).join("")}</ul>` : `<span class="subtle" style="font-size:11px">—</span>`);
   const subtasks = li(plan.subtasks, (s) => `<li style="font-size:12px;margin-bottom:4px"><strong>${esc(s.title || s)}</strong>${s.detail ? ` — ${esc(s.detail)}` : ""}</li>`);
   const risks = li(plan.risks, (r) => `<li style="font-size:12px;margin-bottom:4px"><span class="status-badge ${{critical:'error',high:'pending'}[r.severity]||'default'}" style="font-size:9px">${esc(r.severity || '')}</span> ${esc(r.risk || '')}${r.mitigation ? ` <span class="subtle">→ ${esc(r.mitigation)}</span>` : ""}</li>`);
@@ -3869,9 +3905,11 @@ function casperEngineerArtifact(d) {
   const conf = d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—";
   const kv = (label, arr) => `<div style="margin-bottom:8px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${esc(label)}</div>${li(arr, (x) => `<li style="font-size:12px">${esc(x)}</li>`)}</div>`;
   return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h3>${t('casper_eng.artifact')}</h3><span class="subtle">${esc(d.goal || '')}</span></div><div style="display:flex;gap:8px;align-items:center"><span class="status-badge ${statusKind}">${esc(d.status || '')}</span><span class="status-badge default" title="${t('casper_eng.confidence')}">${t('casper_eng.confidence')}: ${conf}</span></div></div><div class="card-body" style="display:grid;gap:16px">
-    ${d.needs_repo_context ? `<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--amber);border-radius:6px;font-size:12px;color:var(--amber)">${t('casper_eng.needs_repo')}</div>` : ""}
+    ${d.status === "repo_incomplete" ? `<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--amber);border-radius:6px;font-size:12px;color:var(--amber)">${t('casper_eng.repo_incomplete')}</div>` : ""}
+    ${d.needs_repo_context && d.status !== "repo_incomplete" ? `<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--amber);border-radius:6px;font-size:12px;color:var(--amber)">${t('casper_eng.needs_repo')}</div>` : ""}
+    ${ceScorePanel(d)}
     <div><div class="page-section-label">1 · ${t('casper_eng.planning')}</div>${plan.understanding ? `<p style="font-size:12px;margin:4px 0 8px">${esc(plan.understanding)}</p>` : ""}<div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.subtasks')}</div>${subtasks}<div class="subtle" style="font-size:10px;text-transform:uppercase;margin-top:8px">${t('casper_eng.risks')}</div>${risks}</div>
-    <div><div class="page-section-label">2 · ${t('casper_eng.repo_analysis')}</div>${analysis.structure ? `<p style="font-size:12px;margin:4px 0 8px">${esc(analysis.structure)}</p>` : ""}${kv(t('casper_eng.conventions'), analysis.conventions)}${kv(t('casper_eng.patterns'), analysis.existing_patterns)}${kv(t('casper_eng.integration'), analysis.integration_points)}${kv(t('casper_eng.constraints'), analysis.constraints)}</div>
+    <div><div class="page-section-label">2 · ${t('casper_eng.repo_analysis')}</div>${analysis.structure ? `<p style="font-size:12px;margin:4px 0 8px">${esc(analysis.structure)}</p>` : ""}${analysis.architecture ? `<div style="font-size:12px;margin:0 0 8px"><span class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.architecture')}:</span> <span class="status-badge default">${esc(analysis.architecture)}</span></div>` : ""}${kv(t('casper_eng.conventions'), analysis.conventions)}${kv(t('casper_eng.patterns'), analysis.existing_patterns)}${kv(t('casper_eng.integration'), analysis.integration_points)}${kv(t('casper_eng.constraints'), analysis.constraints)}${ceEvidencePanel(d)}</div>
     <div><div class="page-section-label">3 · ${t('casper_eng.verification')}</div><p style="font-size:12px;margin:4px 0">${verif.complete ? '✓' : '⚠'} ${esc(verif.reasoning || '')}</p>${kv(t('casper_eng.gaps'), verif.gaps)}</div>
     <div><div class="page-section-label">4 · ${t('casper_eng.self_critique')}</div>${issues}${improved.summary ? `<div style="margin-top:10px"><div class="subtle" style="font-size:10px;text-transform:uppercase">${t('casper_eng.improved_plan')}</div><p style="font-size:12px;margin:4px 0">${esc(improved.summary)}</p>${li(improved.steps, (s) => `<li style="font-size:12px">${esc(s)}</li>`)}</div>` : ""}</div>
     ${d.id ? `<div style="border-top:1px solid var(--line);padding-top:14px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><div class="page-section-label" style="margin:0">5 · ${t('casper_eng.execution')}</div><span class="subtle" style="font-size:11px">${t('casper_eng.exec_hint')}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="button button-sm" data-ce-investigate="${esc(d.id)}">${icon('search',13)} ${t('casper_eng.investigate')}</button><button class="button button-primary button-sm" data-ce-propose="${esc(d.id)}">${icon('agents',13)} ${t('casper_eng.propose')}</button></div></div><div id="ce-investigate" style="margin-top:10px"></div><div id="ce-steps" style="margin-top:10px"></div></div>` : ""}

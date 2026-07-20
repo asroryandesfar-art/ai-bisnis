@@ -42,6 +42,29 @@ READONLY_TOOLS = ("read_file", "list_dir", "find_files", "get_info", "search_tex
 WRITE_TOOLS = ("write_file", "run_command")
 EXECUTABLE_TOOLS = READONLY_TOOLS + WRITE_TOOLS
 
+# ── Doktrin "pelatihan" Casper Engineer (senior engineer kelas dunia) ────────
+# Proses kerja kanonik: tiap tahap output di bawahnya menuntut BUKTI, bukan
+# asumsi. Diselaraskan di system_prompt + rubrik self-score.
+ENGINEERING_PROCESS = (
+    "Observe", "Verify", "Collect Evidence", "Analyze", "Critique",
+    "Improve", "Plan", "Implement", "Review", "Test", "Report",
+)
+
+# Pola arsitektur yang harus DIKENALI & DINAMAI (dengan bukti) saat analisis —
+# bukan pola yang "seharusnya" ada.
+ARCHITECTURE_PATTERNS = (
+    "layered", "clean-architecture", "hexagonal", "domain-driven-design",
+    "event-driven", "microservices", "modular-monolith", "mvc", "cqrs",
+)
+
+# Rubrik penilaian mandiri (skala 0..10 tiap dimensi). Ambang lulus 9 — di
+# bawahnya menandai retrain_needed (dimensi mana yang perlu dilatih ulang).
+SCORE_DIMENSIONS = (
+    "accuracy", "reasoning", "architecture", "security",
+    "maintainability", "scalability", "professionalism",
+)
+SCORE_PASS_THRESHOLD = 9.0
+
 _MAX_GOAL = 4000
 _MAX_REPO_CTX = 12000
 
@@ -63,6 +86,35 @@ def _clip(text: str, limit: int) -> str:
     return text[:limit]
 
 
+def _audit_evidence(analysis) -> dict:
+    """Deterministik (TANPA LLM): pisahkan klaim FAKTA-berbukti dari ASUMSI /
+    klaim tanpa bukti di `evidence_log`. Menegakkan aturan anti-asumsi bahkan
+    saat LLM down. `integrity` = proporsi klaim yang benar-benar berbukti
+    (None bila tak ada evidence_log). `unverified` = klaim yang HARUS
+    diinvestigasi sebelum dijadikan dasar keputusan."""
+    log = analysis.get("evidence_log") if isinstance(analysis, dict) else None
+    if not isinstance(log, list) or not log:
+        return {"verified": [], "unverified": [], "integrity": None}
+    verified, unverified = [], []
+    for item in log:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or "").strip()
+        if not claim:
+            continue
+        evidence = str(item.get("evidence") or "").strip()
+        ctype = str(item.get("type") or "").strip().lower()
+        if evidence and ctype == "fact":
+            verified.append({"claim": claim, "evidence": evidence[:300]})
+        else:
+            unverified.append({"claim": claim,
+                               "evidence": evidence[:300] or "(tidak ada)",
+                               "type": ctype or "assumption"})
+    total = len(verified) + len(unverified)
+    integrity = round(len(verified) / total, 3) if total else None
+    return {"verified": verified, "unverified": unverified, "integrity": integrity}
+
+
 class CasperEngineerAgent(BaseAgent):
     """Agen software-engineer otonom. Menghasilkan artefak engineering yang
     terstruktur & teraudit untuk sebuah goal, mengikuti pilar Senior Engineer +
@@ -73,11 +125,27 @@ class CasperEngineerAgent(BaseAgent):
     system_prompt = (
         "Kamu adalah Casper Engineer — AI Software Engineer otonom kelas dunia yang "
         "bekerja sekaligus sebagai Senior Software Engineer, Tech Lead, QA Engineer, "
-        "dan Solution Architect. Kamu mengutamakan: memahami tujuan sebelum bertindak, "
-        "membaca & menghormati konvensi project yang ada, membuat rencana eksploratif "
-        "yang aman, menulis kode production (clean, scalable, maintainable, secure), "
-        "menguji, dan mengkritik hasil sendiri. Jangan pernah langsung menulis kode "
-        "tanpa rencana. Balas HANYA dalam format JSON yang diminta."
+        "dan Solution Architect.\n\n"
+        "DISIPLIN BERBASIS BUKTI (WAJIB):\n"
+        "- Setiap kesimpulan HARUS didukung bukti konkret: path file, nomor baris, "
+        "nama simbol (fungsi/kelas), atau hasil pembacaan tool. Tanpa bukti = asumsi.\n"
+        "- Bedakan tegas FAKTA (terverifikasi dari repo) vs ASUMSI (belum terverifikasi) "
+        "dan beri label eksplisit. JANGAN pernah menyajikan asumsi sebagai fakta.\n"
+        "- DILARANG mengarang struktur folder, nama file, dependency, atau perilaku "
+        "kode yang belum kamu baca. Bila belum ada bukti, tandai 'perlu diverifikasi' "
+        "dan sebutkan aksi baca yang harus dilakukan — jangan menebak.\n"
+        "- Jangan menyatakan sebuah fitur/kode 'tidak ada' tanpa benar-benar mencarinya.\n"
+        "- Bila konteks repo tidak lengkap/tak cukup untuk menilai dengan aman, HENTIKAN "
+        "audit dan minta/lakukan investigasi dulu — jangan memaksakan kesimpulan.\n\n"
+        "PROSES KERJA KANONIK: Observe -> Verify -> Collect Evidence -> Analyze -> "
+        "Critique -> Improve -> Plan -> Implement -> Review -> Test -> Report.\n\n"
+        "ARSITEKTUR: kenali & namai pola NYATA yang terlihat (layered, clean, "
+        "hexagonal, DDD, event-driven, microservices, modular-monolith, CQRS) DENGAN "
+        "BUKTI, bukan pola yang 'seharusnya'.\n\n"
+        "Utamakan: paham tujuan sebelum bertindak, hormati konvensi project, rencana "
+        "eksploratif yang aman, kode production (clean/scalable/maintainable/secure), "
+        "uji, dan kritik hasil sendiri. Jangan menulis kode tanpa rencana. Balas HANYA "
+        "dalam format JSON yang diminta."
     )
 
     # Metadata untuk agent_registry.list_agents() (dibaca lewat atribut, tak hardcode duplikat).
@@ -119,9 +187,9 @@ class CasperEngineerAgent(BaseAgent):
     # ── Tahap 2: REPOSITORY ANALYSIS ────────────────────────────────────
     async def _analyze_repo(self, goal: str, repo_context: str) -> dict:
         default = {
-            "structure": "", "dependencies": [], "conventions": [],
+            "structure": "", "architecture": "", "dependencies": [], "conventions": [],
             "existing_patterns": [], "integration_points": [], "constraints": [],
-            "_llm_unavailable": True,
+            "evidence_log": [], "_llm_unavailable": True,
         }
         if not repo_context:
             # Tanpa konteks repo, beri arahan APA yang harus diperiksa — bukan mengarang isi.
@@ -144,10 +212,16 @@ class CasperEngineerAgent(BaseAgent):
                     "Analisis repository ini agar implementasi SELARAS dengan project (jangan "
                     "membuat sesuatu yang bertentangan). Identifikasi struktur, dependency, "
                     "konvensi penamaan/gaya kode, pola yang sudah ada yang bisa dipakai ulang, "
-                    "titik integrasi, dan batasan.\n\n"
-                    'Jawab HANYA JSON: {"structure": "<ringkas>", "dependencies": ["..."], '
-                    '"conventions": ["..."], "existing_patterns": ["..."], '
-                    '"integration_points": ["..."], "constraints": ["..."]}'
+                    "titik integrasi, dan batasan. Namai pola ARSITEKTUR nyata yang terlihat "
+                    f"(mis. {', '.join(ARCHITECTURE_PATTERNS[:6])}).\n\n"
+                    "WAJIB berbasis bukti: untuk tiap klaim penting isi `evidence_log` dengan "
+                    "bukti dari KONTEKS REPO di atas (path/nama file/simbol) dan tandai "
+                    "type='fact' bila terlihat langsung, atau type='assumption' bila hanya "
+                    "dugaan yang masih perlu dibaca. JANGAN mengarang.\n\n"
+                    'Jawab HANYA JSON: {"structure": "<ringkas>", "architecture": "<nama pola>", '
+                    '"dependencies": ["..."], "conventions": ["..."], "existing_patterns": ["..."], '
+                    '"integration_points": ["..."], "constraints": ["..."], '
+                    '"evidence_log": [{"claim": "...", "evidence": "file/simbol", "type": "fact|assumption"}]}'
                 )},
             ],
             temperature=0.1, max_tokens=1000, default=default,
@@ -202,6 +276,60 @@ class CasperEngineerAgent(BaseAgent):
         )
         return out
 
+    # ── Tahap 5: SELF-SCORE (rubrik pelatihan) ──────────────────────────
+    async def _score(self, goal: str, plan: dict, analysis: dict,
+                     verification: dict, critique: dict) -> dict:
+        """Nilai mandiri hasil audit/rencana pada rubrik 7-dimensi (0..10).
+        Skor tinggi HANYA jika didukung bukti nyata. Ambang & retrain dihitung
+        deterministik di `_finalize_score` (bukan dipercayakan ke LLM). Fail-open."""
+        out = await self._call_llm_json(
+            [
+                {"role": "system", "content": (
+                    "Kamu penilai mandiri Casper Engineer (mentor senior). Nilai kualitas "
+                    "hasil audit/rencana engineering ini secara JUJUR & KETAT pada skala "
+                    f"0..10 untuk tiap dimensi: {', '.join(SCORE_DIMENSIONS)}. Skor tinggi "
+                    "HANYA bila didukung bukti nyata (bukan klaim). Balas HANYA JSON."
+                )},
+                {"role": "user", "content": (
+                    f"GOAL:\n{goal}\n\nPLAN:\n{json.dumps(plan, ensure_ascii=False)[:2000]}\n\n"
+                    f"REPO ANALYSIS:\n{json.dumps(analysis, ensure_ascii=False)[:2000]}\n\n"
+                    f"VERIFICATION:\n{json.dumps(verification, ensure_ascii=False)[:800]}\n\n"
+                    f"CRITIQUE:\n{json.dumps(critique, ensure_ascii=False)[:1500]}\n\n"
+                    'Jawab HANYA JSON: {"scores": {"accuracy": 0-10, "reasoning": 0-10, '
+                    '"architecture": 0-10, "security": 0-10, "maintainability": 0-10, '
+                    '"scalability": 0-10, "professionalism": 0-10}, "justification": "<ringkas kenapa>"}'
+                )},
+            ],
+            temperature=0.0, max_tokens=700,
+            default={"scores": {}, "justification": "", "_llm_unavailable": True},
+        )
+        return self._finalize_score(out)
+
+    @staticmethod
+    def _finalize_score(out: dict) -> dict:
+        """Normalisasi skor LLM -> rubrik final. Hitung overall + tentukan dimensi
+        terlemah & retrain_needed (any dim < ambang) secara deterministik."""
+        raw = out.get("scores") if isinstance(out, dict) else None
+        scores: dict[str, float] = {}
+        if isinstance(raw, dict):
+            for dim in SCORE_DIMENSIONS:
+                try:
+                    scores[dim] = max(0.0, min(10.0, round(float(raw.get(dim)), 2)))
+                except (TypeError, ValueError):
+                    continue
+        overall = round(sum(scores.values()) / len(scores), 2) if scores else None
+        weakest = sorted((d for d in scores if scores[d] < SCORE_PASS_THRESHOLD),
+                         key=lambda d: scores[d])
+        return {
+            "scores": scores,
+            "overall": overall,
+            "pass_threshold": SCORE_PASS_THRESHOLD,
+            "weakest_dimensions": weakest,
+            "retrain_needed": bool(weakest) if scores else None,
+            "justification": str(out.get("justification") or "")[:800],
+            "_llm_unavailable": bool(out.get("_llm_unavailable")),
+        }
+
     async def run(self, context: dict) -> AgentResult:
         """context: {goal|user_message, repo_context?}. Menghasilkan artefak
         engineering terstruktur. Dipanggil lewat safe_run() (observability)."""
@@ -222,11 +350,15 @@ class CasperEngineerAgent(BaseAgent):
         )
         verification = await self._verify(goal, plan, analysis)
         critique = await self._critique(goal, plan, analysis, verification)
+        # Rubrik pelatihan: nilai mandiri hasil (Observe..Report) & tandai retrain.
+        self_score = await self._score(goal, plan, analysis, verification, critique)
+        # Anti-asumsi (deterministik): mana klaim berbukti vs yang wajib diinvestigasi.
+        evidence = _audit_evidence(analysis)
 
         # LLM benar-benar down di SEMUA tahap -> tandai degraded (bukan sukses palsu).
         degraded = all(
             stage.get("_llm_unavailable")
-            for stage in (plan, analysis, verification, critique)
+            for stage in (plan, analysis, verification, critique, self_score)
             if isinstance(stage, dict)
         )
         confidence = None
@@ -235,6 +367,17 @@ class CasperEngineerAgent(BaseAgent):
         except (TypeError, ValueError):
             confidence = None
 
+        # Gerbang: repo tak lengkap -> HALT (jangan paksakan kesimpulan tanpa bukti).
+        repo_incomplete = bool(analysis.get("_needs_repo_context"))
+        if repo_incomplete:
+            status = "repo_incomplete"
+        elif degraded:
+            status = "degraded"
+        elif verification.get("complete"):
+            status = "verified"
+        else:
+            status = "needs_review"
+
         output = {
             "goal": goal,
             "planning": plan,
@@ -242,9 +385,12 @@ class CasperEngineerAgent(BaseAgent):
             "self_verification": verification,
             "self_critique": {"issues": critique.get("issues", []),
                               "improved_plan": critique.get("improved_plan", {})},
+            "self_score": self_score,
+            "evidence_integrity": evidence,
             "confidence": confidence,
-            "status": "degraded" if degraded else ("verified" if verification.get("complete") else "needs_review"),
-            "needs_repo_context": bool(analysis.get("_needs_repo_context")),
+            "status": status,
+            "needs_repo_context": repo_incomplete,
+            "retrain_needed": self_score.get("retrain_needed"),
         }
         return AgentResult(
             agent=self.name, success=not degraded, output=output,

@@ -88,8 +88,10 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         row = await pool.fetchrow(
             """INSERT INTO casper_engineer_runs
                (org_id, user_id, goal, repo_context, planning, repository_analysis,
-                self_verification, self_critique, status, confidence)
-               VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10)
+                self_verification, self_critique, status, confidence,
+                self_score, evidence_integrity)
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,
+                       $11::jsonb,$12::jsonb)
                RETURNING id, created_at""",
             user["org_id"], user["id"], body.goal, repo_context or None,
             json.dumps(out.get("planning", {})),
@@ -98,6 +100,8 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             json.dumps(out.get("self_critique", {})),
             out.get("status", "needs_review"),
             out.get("confidence"),
+            json.dumps(out.get("self_score", {})),
+            json.dumps(out.get("evidence_integrity", {})),
         )
         return {
             "id": str(row["id"]),
@@ -106,11 +110,14 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "status": out.get("status", "needs_review"),
             "confidence": out.get("confidence"),
             "needs_repo_context": out.get("needs_repo_context", False),
+            "retrain_needed": out.get("retrain_needed"),
             "repo_ingest": repo_meta,
             "planning": out.get("planning", {}),
             "repository_analysis": out.get("repository_analysis", {}),
             "self_verification": out.get("self_verification", {}),
             "self_critique": out.get("self_critique", {}),
+            "self_score": out.get("self_score", {}),
+            "evidence_integrity": out.get("evidence_integrity", {}),
         }
 
     @router.get("/runs")
@@ -143,6 +150,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         row = await pool.fetchrow(
             """SELECT id, goal, repo_context, planning, repository_analysis,
                       self_verification, self_critique, status, confidence, created_at,
+                      self_score, evidence_integrity,
                       deploy_hash, session_hash, proof_mode, explorer_url, anchored_at
                FROM casper_engineer_runs WHERE id = $1 AND org_id = $2""",
             _as_uuid(run_id), user["org_id"],
@@ -156,6 +164,8 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
             "repository_analysis": _load_json(row["repository_analysis"]),
             "self_verification": _load_json(row["self_verification"]),
             "self_critique": _load_json(row["self_critique"]),
+            "self_score": _load_json(row["self_score"]),
+            "evidence_integrity": _load_json(row["evidence_integrity"]),
             "status": row["status"],
             "confidence": float(row["confidence"]) if row["confidence"] is not None else None,
             "created_at": row["created_at"].isoformat(),
