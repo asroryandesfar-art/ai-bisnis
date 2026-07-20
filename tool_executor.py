@@ -109,6 +109,24 @@ TOOL_SCHEMAS: dict[str, dict] = {
             },
         },
     },
+    "web_read": {
+        "type": "function",
+        "function": {
+            "name": "web_read",
+            "description": ("Baca SATU URL website publik dan ekstrak konten utamanya (bersih, "
+                            "dengan sitasi & skor keyakinan sumber) via modul Web Intelligence. "
+                            "Pakai saat user memberi URL spesifik atau perlu isi halaman tertentu "
+                            "— untuk pencarian umum pakai web_search."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL http/https publik"},
+                    "render_js": {"type": "boolean", "description": "Render JS bila halaman SPA (opsional)"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
     "browser_open": {
         "type": "function",
         "function": {
@@ -653,8 +671,32 @@ async def _exec_action_execute(args: dict, ctx: dict) -> dict:
     return result.to_dict()
 
 
+async def _exec_web_read(args: dict, ctx: dict) -> dict:
+    """Read + extract one public URL via the Web Intelligence module (SSRF-safe,
+    cited). Lazy import keeps tool_executor decoupled from the module."""
+    url = (args.get("url") or "").strip()
+    if not url:
+        return {"success": False, "error": "url kosong"}
+    try:
+        from backend.modules.web_intelligence import agent_read
+    except Exception as exc:
+        return {"success": False, "error": f"Web Intelligence tidak tersedia: {exc!s}"}
+    res = await agent_read(url, output="markdown", render_js=bool(args.get("render_js")))
+    if not res.get("success"):
+        return {"success": False, "error": res.get("error", "gagal membaca URL"), "url": url}
+    return {
+        "success": True,
+        "url": res.get("final_url", url),
+        "title": res.get("title"),
+        "content": (res.get("markdown") or res.get("text") or "")[:12000],
+        "citation": res.get("citation"),
+        "confidence": (res.get("confidence") or {}).get("level"),
+    }
+
+
 _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
     "knowledge_search": _exec_knowledge_search,
+    "web_read": _exec_web_read,
     "memory_lookup": _exec_memory_lookup,
     "file_reader": _exec_file_reader,
     "database_query": _exec_database_query,

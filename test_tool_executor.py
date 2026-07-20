@@ -250,3 +250,31 @@ def test_channel_messaging_never_sends_directly_only_queues_pending_approval(mon
     assert "BELUM terkirim" in result["note"]
     assert captured["agent_name"] == "marketing_agent"
     assert captured["channel"] == "whatsapp"
+
+
+# ── web_read tool (Web Intelligence integration) ────────────────────────────
+def test_web_read_schema_registered():
+    import tool_executor as te
+    schemas = te.available_tool_schemas(["web_read"])
+    assert schemas and schemas[0]["function"]["name"] == "web_read"
+    assert "url" in schemas[0]["function"]["parameters"]["properties"]
+
+
+def test_web_read_executes_via_module(monkeypatch):
+    import asyncio, tool_executor as te
+    import backend.modules.web_intelligence as wi
+
+    async def fake_agent_read(url, **k):
+        return {"success": True, "final_url": url, "title": "T",
+                "markdown": "# clean content", "confidence": {"level": "high"},
+                "citation": {"domain": "x.com"}}
+    monkeypatch.setattr(wi, "agent_read", fake_agent_read)
+    r = asyncio.run(te.execute_tool("web_read", {"url": "https://x.com/p"}, ctx={"org_id": "o"}))
+    assert r["success"] is True and r["content"] == "# clean content"
+    assert r["confidence"] == "high" and r["citation"]["domain"] == "x.com"
+
+
+def test_web_read_empty_url():
+    import asyncio, tool_executor as te
+    r = asyncio.run(te.execute_tool("web_read", {"url": "  "}, ctx={"org_id": "o"}))
+    assert r["success"] is False

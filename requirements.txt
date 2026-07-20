@@ -15,6 +15,12 @@ pydantic-settings==2.3.4
 python-multipart==0.0.32
 pypdf==6.10.2
 
+# --- Web Intelligence (backend/modules/web_intelligence) — optional but
+# recommended for best content extraction. Module degrades gracefully to a bs4
+# heuristic if these are absent (see /api/web-intelligence/status). ---
+trafilatura==2.1.0
+readability-lxml==0.8.4.1
+
 # --- Intelligence Platform (Conversation Memory, FAQ, Sales, Knowledge Graph) ---
 numpy==2.4.4
 celery[redis]==5.4.0
