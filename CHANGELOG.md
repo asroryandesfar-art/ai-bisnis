@@ -8,6 +8,16 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Cognitive Core (Fase 2)
+- **Long-term semantic memory (`long_term_memory`, P1-B.1)** — closes the audit's "memory is
+  write-only / never retrieved during reasoning" gap. New additive `agent_memories` table with a
+  **pgvector** `vector(384)` column (real pgvector, verified available); `SemanticMemory.store/
+  retrieve/summarize` embed content/query and fetch the top-k by cosine similarity
+  (`embedding <=> query`). Embeddings use an injectable `embed_fn` (default lazy
+  `kb_embeddings.generate_local_embedding` — local, free, no API; tests inject a deterministic fake).
+  Scopes: semantic/episodic/task/reasoning + a `subject` partition (user/conversation/agent). Honest
+  graceful degrade: no embedding → stored without a vector and retrieval falls back to recency; no
+  pgvector → schema is skipped and the store no-ops safely. 5 tests against real Postgres+pgvector.
+  Self-contained, zero consumers yet (retrieval wiring into reasoning is P1-B.3, flag-gated). ADR-0006.
 - **Cognitive loop (`cognitive_loop`, P1-A) — Planner→Worker→Critic**  — closes the audit's #1
   gap (single-pass execution / at most one revision). `CognitiveLoop.run(agent, goal)` iterates
   Planner → Worker → Critic → (accept | revise | replan) until the Critic accepts (score ≥ threshold),

@@ -2022,6 +2022,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         except Exception:
             logger.exception("Durable task runtime schema failed")
         try:
+            from long_term_memory import ensure_memory_schema  # P1-B: long-term memory (pgvector)
+            await ensure_memory_schema(conn)
+        except Exception:
+            logger.warning("Long-term memory schema skipped (pgvector unavailable?)")
+        try:
             from bn_platform.agent_marketplace_catalog import seed_professional_marketplace
             await seed_professional_marketplace(conn)
         except Exception:
