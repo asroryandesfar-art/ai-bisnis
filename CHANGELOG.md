@@ -31,6 +31,14 @@ entries are grouped by theme rather than semantic version tags.
   step checkpoint/resume (`save_step`/`latest_done_step`), cooperative cancel/pause/resume, and
   listing. 8 tests against real Postgres. **Idle** in this slice — no worker yet, zero behaviour
   change; the inline `run_task` path is untouched (gated later by `TASK_RUNTIME` flag). ADR-0004.
+- **Durable Task Runtime — runner (`task_runtime.DurableJobRunner`, P0-D D2/D3)** — executes a job
+  as checkpointed steps (plan → subtask×N → verify → report), so it **resumes** from the last
+  'done' step after a crash, supports **cooperative cancel/pause** at step boundaries, **retry/DLQ**
+  (attempts vs max_attempts), and per-step timeout + progress. It reuses the agent primitives and
+  `task_engine._persist_task_execution` so the final `agent_task_executions` row is identical to the
+  inline path — **the inline `task_engine.run_task` is left untouched** (no regression risk). Emits
+  TaskStarted/Finished/Failed on the event bus (best-effort). 4 tests against real Postgres
+  (complete+persist, resume-skips-plan, cancel, retry→DLQ). No worker yet (D4); still idle/opt-in.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a
