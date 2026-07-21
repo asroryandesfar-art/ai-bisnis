@@ -11,8 +11,13 @@ menjalankan **redis-server ASLI** (bukan fakeredis) & membuktikan **9/9**:
 build_redis_store wiring, rate-limit shared lintas-koneksi, **rate_incr atomik di
 bawah 200 request konkuren (tepat N lolos)**, **TTL server nyata**, distributed-lock
 (NX/token/TTL), circuit-breaker & working-memory STM shared lintas-worker.
-→ Sisa yang WAJIB divalidasi di staging = **proses multi-instance web + Celery
-worker/beat asli + multi-host** (langkah di bawah).
+**Multi-proses juga sudah dibuktikan lokal:** `bash scripts/validate_multiprocess_redis.sh`
+menjalankan **2 instance uvicorn** (`STATE_BACKEND=redis`) + 1 redislite → hit endpoint
+ber-rate-limit 3×:8000 + 3×:8001 (IP sama) → **hit ke-6 = 429** (state shared lintas-PROSES;
+kalau per-proses takkan pernah 429). Terbukti PASS.
+
+→ Sisa yang WAJIB divalidasi di staging = **Celery worker/beat asli + multi-host + uji beban**
+(langkah di bawah).
 
 ## 0. Prasyarat
 ```bash

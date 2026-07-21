@@ -20,8 +20,13 @@ entries are grouped by theme rather than semantic version tags.
   `build_redis_store` wiring, cross-connection shared rate-limit, `rate_incr` atomicity under 200
   concurrent requests (exactly N allowed), real server-side TTL expiry, distributed lock
   (NX/token/TTL), and cross-worker circuit-breaker + working-memory STM — the things fakeredis +
-  a mocked clock cannot prove (real Lua, real concurrency, real TTL). Remaining real-infra gate is
-  only the multi-process web + Celery worker/beat + multi-host run (see the runbook).
+  a mocked clock cannot prove (real Lua, real concurrency, real TTL).
+- **Multi-process shared-state proven locally (`scripts/validate_multiprocess_redis.sh`)** — spins up
+  TWO real uvicorn instances with `STATE_BACKEND=redis` against one redislite server and shows the
+  rate limit is shared **across separate processes**: 3 hits to :8000 + 3 hits to :8001 (same IP) →
+  the 6th returns **429** (a per-process limiter would never 429 with only 3 per instance). Confirms
+  the HTTP→`_check_rate_limit`→`StateStore`→Redis path works cross-process. Remaining real-infra gate
+  is only a real Celery worker/beat + multi-host + load run (see the runbook).
 - **Feature flags (`feature_flags`, P0-B)** — standard gate for shipping new capabilities safely
   (default OFF → per-org canary → prod) with no breaking change. `is_enabled(key, org_id=...)`
   resolves process override → env `FEATURE_<KEY>` (`on|off|<pct>|canary:orgA,orgB`) → default.
