@@ -381,7 +381,7 @@ def build_finance_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         user: Annotated[dict, Depends(require_permission("finance.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(f"finance-run-task:{user['org_id']}", 5)
+        await _check_rate_limit(f"finance-run-task:{user['org_id']}", 5)
         await require_agent_enabled(pool, str(user["org_id"]), "finance")
         result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
         await write_audit_log(

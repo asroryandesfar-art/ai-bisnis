@@ -62,7 +62,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         user: Annotated[dict, Depends(require_permission("workforce.write"))],
         pool: asyncpg.Pool = Depends(get_pool),
     ):
-        _check_rate_limit(f"casper_engineer:{user['org_id']}", 10)
+        await _check_rate_limit(f"casper_engineer:{user['org_id']}", 10)
         repo_context = body.repo_context or ""
         repo_meta = None
         if body.auto_repo:
@@ -188,7 +188,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         )
         if not row:
             raise HTTPException(status_code=404, detail="Run tidak ditemukan")
-        _check_rate_limit(f"casper_engineer_propose:{user['org_id']}", 10)
+        await _check_rate_limit(f"casper_engineer_propose:{user['org_id']}", 10)
         improved = _load_json(row["self_critique"]).get("improved_plan", {})
         proposed = await agent.propose_steps(row["goal"], improved, row["repo_context"] or "")
         saved = []
@@ -217,7 +217,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         )
         if not run:
             raise HTTPException(status_code=404, detail="Run tidak ditemukan")
-        _check_rate_limit(f"casper_engineer_exec:{user['org_id']}", 20)
+        await _check_rate_limit(f"casper_engineer_exec:{user['org_id']}", 20)
         # Dispatch ke Local Agent (mesin user). 503 bila tak ada perangkat -> naikkan apa adanya.
         from bn_platform.local_agent_router import get_manager
         result = await get_manager().execute(
@@ -251,7 +251,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         )
         if not row:
             raise HTTPException(status_code=404, detail="Run tidak ditemukan")
-        _check_rate_limit(f"casper_engineer_investigate:{user['org_id']}", 5)
+        await _check_rate_limit(f"casper_engineer_investigate:{user['org_id']}", 5)
         from bn_platform.local_agent_router import get_manager
         mgr = get_manager()
         # Pre-check perangkat (sama seperti execute) -> 503 jelas kalau tak ada.
@@ -310,7 +310,7 @@ def build_casper_engineer_router(*, get_pool: GetPool, get_current_user: GetCurr
         )
         if not row:
             raise HTTPException(status_code=404, detail="Run tidak ditemukan")
-        _check_rate_limit(f"casper_engineer_anchor:{user['org_id']}", 10)
+        await _check_rate_limit(f"casper_engineer_anchor:{user['org_id']}", 10)
         org_id = str(user["org_id"])
         artifact = {
             "run_id": run_id, "goal": row["goal"], "status": row["status"],

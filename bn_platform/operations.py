@@ -109,7 +109,7 @@ def build_operations_router(*, get_pool: GetPool, get_current_user: GetCurrentUs
         user: Annotated[dict, Depends(require_permission("operations.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(f"operations:{user['org_id']}", 5)
+        await _check_rate_limit(f"operations:{user['org_id']}", 5)
         created = await ops.run_health_scan(pool, user["org_id"])
         await write_audit_log(
             pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),
@@ -147,7 +147,7 @@ def build_operations_router(*, get_pool: GetPool, get_current_user: GetCurrentUs
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"operations-report:{org_id}", 5)
+        await _check_rate_limit(f"operations-report:{org_id}", 5)
         try:
             report = await ops.generate_report(pool, org_id, body.report_type, generated_by=user["id"], agent=agent)
         except ValueError as exc:
@@ -179,7 +179,7 @@ def build_operations_router(*, get_pool: GetPool, get_current_user: GetCurrentUs
         user: Annotated[dict, Depends(require_permission("operations.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(f"operations-run-task:{user['org_id']}", 5)
+        await _check_rate_limit(f"operations-run-task:{user['org_id']}", 5)
         await require_agent_enabled(pool, str(user["org_id"]), "operations")
         result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
         await write_audit_log(

@@ -27,6 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from .config import cfg as platform_cfg
 from .observability import record_audit_log_failure
 
+from platform_state import get_state_store   # P0-A C3: shared-state rate limiter
+
 import security_agent as sec_agent
 
 logger = logging.getLogger("bn_platform.security")
@@ -43,23 +45,24 @@ _ORG_WINDOW_SECS = 60
 _ORG_MAX_REQUESTS = 60           # 60 req per menit per org
 _BILLING_MAX_REQUESTS = 10       # 10 req per menit untuk billing/checkout
 
-_org_timestamps: dict[str, deque] = defaultdict(deque)
+# P0-A C3: state rate-limit dipindah ke platform_state.StateStore — default
+# in-process (perilaku & pesan 429 identik), atau lintas-worker via
+# STATE_BACKEND=redis. `_check_rate_limit` kini ASYNC (semua pemanggil di-await).
 
 
-def _check_rate_limit(org_id: str, max_req: int = _ORG_MAX_REQUESTS) -> None:
-    """Sliding window rate limiter per org. Raises 429 jika melewati batas."""
-    now = time.monotonic()
-    dq = _org_timestamps[org_id]
-    # Hapus entri di luar jendela
-    while dq and dq[0] < now - _ORG_WINDOW_SECS:
-        dq.popleft()
-    if len(dq) >= max_req:
+async def _check_rate_limit(key: str, max_req: int = _ORG_MAX_REQUESTS, *,
+                            window_s: int = _ORG_WINDOW_SECS) -> None:
+    """Sliding-window rate limiter per key. Raises 429 bila melewati batas.
+    Backend via platform_state (default in-process; opsional Redis lintas-worker).
+    Slot TIDAK dikonsumsi saat ditolak (identik dengan versi lama)."""
+    allowed, _count = await get_state_store().rate_incr(
+        f"rl:{key}", window_s=window_s, limit=max_req)
+    if not allowed:
         raise HTTPException(
             status_code=429,
-            detail=f"Terlalu banyak request. Batas: {max_req} req/{_ORG_WINDOW_SECS}s. Coba lagi sebentar.",
-            headers={"Retry-After": str(_ORG_WINDOW_SECS)},
+            detail=f"Terlalu banyak request. Batas: {max_req} req/{window_s}s. Coba lagi sebentar.",
+            headers={"Retry-After": str(window_s)},
         )
-    dq.append(now)
 
 # ============================================================
 # ENCRYPTION — kredensial channel & rahasia lain yang disimpan di DB
@@ -447,7 +450,7 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         user: Annotated[dict, Depends(require_permission("audit.read"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(user["org_id"], 5)   # maks 5 scan/menit
+        await _check_rate_limit(user["org_id"], 5)   # maks 5 scan/menit
         return await run_security_scan(pool, org_id=user["org_id"])
 
     # ── API Key management lanjutan (list/revoke + scopes) ──────
@@ -591,7 +594,7 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"security-scan-alert:{org_id}", 5)
+        await _check_rate_limit(f"security-scan-alert:{org_id}", 5)
         scan_result = await run_security_scan(pool, org_id=org_id)
         api_abuse = await sec_agent.detect_api_abuse(pool, org_id)
         isolation_violations = await sec_agent.check_tenant_isolation(pool, org_id)
@@ -678,7 +681,7 @@ def build_security_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"security-report:{org_id}", 5)
+        await _check_rate_limit(f"security-report:{org_id}", 5)
         try:
             report = await sec_agent.generate_security_report(
                 pool, org_id, body.get("report_type"), generated_by=user["id"], agent=agent,

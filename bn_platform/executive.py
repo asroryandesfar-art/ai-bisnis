@@ -86,7 +86,7 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"executive-report:{org_id}", 5)
+        await _check_rate_limit(f"executive-report:{org_id}", 5)
         try:
             report = await exe.generate_executive_report(
                 pool, org_id, body.report_type, generated_by=user["id"], agent=agent,
@@ -106,7 +106,7 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"executive-analyze:{org_id}", 5)
+        await _check_rate_limit(f"executive-analyze:{org_id}", 5)
         result = await exe.run_business_analysis(pool, org_id, agent=agent)
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),
@@ -120,7 +120,7 @@ def build_executive_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         user: Annotated[dict, Depends(require_permission("executive.read"))],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"executive-demo:{org_id}", 5)
+        await _check_rate_limit(f"executive-demo:{org_id}", 5)
         return await exe.run_investor_demo(agent=agent)
 
     @router.get("/reports/{report_id}")

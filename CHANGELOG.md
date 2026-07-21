@@ -22,6 +22,13 @@ entries are grouped by theme rather than semantic version tags.
   in-process, boot never crashes). Same contract suite proven against Redis via `fakeredis`+`lupa`
   (10 parity tests) plus 3 wiring tests. Default remains `inprocess` (zero behaviour change).
   Dev-only test deps pinned in `requirements-dev.txt`.
+- **Rate limiter on shared state (P0-A, commit C3)** — `bn_platform.security._check_rate_limit`
+  now delegates to `StateStore.rate_incr` (behaviour-identical sliding-window; same 429 + headers).
+  The function became `async`; all 24 call-sites across 12 modules (+ main.py public-demo indirection)
+  were migrated to `await` (statically verified: zero un-awaited calls). With `STATE_BACKEND=redis`
+  the management-endpoint rate limit becomes **cross-worker** (no longer bypassable by scaling out);
+  default `inprocess` preserves current behaviour exactly. Parity tests for both backends. No public
+  API/behaviour change; internal signature only.
 
 ### Added — Billing & Pricing
 - **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.

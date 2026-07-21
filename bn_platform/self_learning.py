@@ -52,7 +52,7 @@ def build_self_learning_router(*, get_pool: GetPool, get_current_user: GetCurren
         days: int = 90,
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"learning-scan:{org_id}", 5)
+        await _check_rate_limit(f"learning-scan:{org_id}", 5)
         created = await sl.run_learning_scan(pool, org_id, agent=agent, days=days)
         await write_audit_log(
             pool, org_id=org_id, actor_user_id=user["id"], actor_email=user.get("email"),

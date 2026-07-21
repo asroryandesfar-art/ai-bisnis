@@ -34,7 +34,7 @@ def build_research_router(*, get_pool: GetPool, get_current_user: GetCurrentUser
         body: ResearchRunRequest,
         user: Annotated[dict, Depends(require_permission("research.read"))],
     ):
-        _check_rate_limit(f"research:{user['org_id']}", 5)
+        await _check_rate_limit(f"research:{user['org_id']}", 5)
         return await agent.run_research(
             body.goal,
             searxng_url=cfg.get("searxng_url", ""),

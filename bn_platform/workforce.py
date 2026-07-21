@@ -178,7 +178,7 @@ def build_workforce_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
         org_id = user["org_id"]
-        _check_rate_limit(f"workforce-scan:{org_id}", 5)
+        await _check_rate_limit(f"workforce-scan:{org_id}", 5)
         conflicts = await wf.detect_conflicts(pool, org_id)
         escalated = await wf.escalate_overdue_tasks(pool, org_id)
 

@@ -464,7 +464,7 @@ def build_improvement_router(*, get_pool: GetPool, get_current_user: GetCurrentU
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
         days: int = 30,
     ):
-        _check_rate_limit(f"improvement:{user['org_id']}", 5)   # maks 5 scan/menit
+        await _check_rate_limit(f"improvement:{user['org_id']}", 5)   # maks 5 scan/menit
         days = max(1, min(365, days))
         return await run_improvement_scan(pool, org_id=user["org_id"], days=days)
 

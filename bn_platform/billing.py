@@ -718,7 +718,7 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         user: Annotated[dict, Depends(require_permission("billing.manage"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        await _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
         plan = await get_plan_by_key(pool, body.plan_key)
         if not plan:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plan '{body.plan_key}' tidak ditemukan")
@@ -979,7 +979,7 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         user: Annotated[dict, Depends(require_permission("billing.manage"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        await _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
         valid_amounts = {p["amount_idr"] for p in TOPUP_PACKAGES}
         if body.amount_idr not in valid_amounts:
             raise HTTPException(
@@ -1076,7 +1076,7 @@ def build_billing_router(*, get_pool: GetPool, get_current_user: GetCurrentUser,
         user: Annotated[dict, Depends(require_permission("billing.manage"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
     ):
-        _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
+        await _check_rate_limit(user["org_id"], _BILLING_MAX_REQUESTS)
         spec = _ADDON_BY_KEY.get(body.addon_key)
         if not spec:
             raise HTTPException(

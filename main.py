@@ -3187,7 +3187,7 @@ async def public_investor_demo(request: Request):
     Rate-limit per IP (bukan per org_id, karena pengunjung anonim)."""
     ip = _real_client_ip(request)
     if _platform_check_rate_limit:
-        _platform_check_rate_limit(f"public-demo:{ip}", 5)
+        await _platform_check_rate_limit(f"public-demo:{ip}", 5)   # P0-A C3: async
     agent_cfg = get_workflow_agent_config()
     agent = exec_agent_module.ExecutiveAgent(
         api_key=agent_cfg.get("api_key"), model=agent_cfg.get("model"),
