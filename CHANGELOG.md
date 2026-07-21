@@ -7,6 +7,16 @@ entries are grouped by theme rather than semantic version tags.
 
 ## [Unreleased]
 
+### Added — Cognitive Core (Fase 2)
+- **Cognitive loop (`cognitive_loop`, P1-A) — Planner→Worker→Critic**  — closes the audit's #1
+  gap (single-pass execution / at most one revision). `CognitiveLoop.run(agent, goal)` iterates
+  Planner → Worker → Critic → (accept | revise | replan) until the Critic accepts (score ≥ threshold),
+  the budget runs out (`max_iters`/`deadline_s`), or the LLM is unavailable (degraded → best-effort,
+  never loops forever). Dependency-injected (agent only needs `_call_llm_json`), fail-open, with an
+  optional `worker_fn` to swap the default LLM worker for a tool-using worker (`task_engine`). Self-
+  contained, zero wiring — consumers adopt it behind `is_enabled("cognitive_loop")`; it is designed
+  to run as a durable job (one checkpoint per iteration). 7 tests, ADR-0005.
+
 ### Added — Platform Foundation (Fase 1)
 - **Cross-worker validation + staging runbook (P0)** — 5 tests drive TWO `RedisStateStore`
   instances over ONE shared fakeredis server (through the real Redis+Lua code path) proving
