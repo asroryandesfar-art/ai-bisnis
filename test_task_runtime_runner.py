@@ -10,6 +10,7 @@ import asyncpg
 
 import feature_flags as ff
 import main
+from long_term_memory import SemanticMemory, ensure_memory_schema
 from task_runtime import DurableJobRunner, JobRepository, ensure_job_schema
 
 repo = JobRepository()
@@ -193,6 +194,48 @@ def test_cognitive_resume_reuses_saved_step():
         row = await pool.fetchrow("SELECT report FROM agent_task_executions WHERE id=$1",
                                   uuid.UUID(final["result_execution_id"]))
         assert row["report"] == "tersimpan"
+    _run(body)
+
+
+def test_cognitive_recalls_and_stores_long_term_memory():
+    ff.set_override("cognitive_loop", True)
+    ff.set_override("long_term_memory", True)
+
+    async def fake_embed(text):
+        v = [0.0] * 384
+        v[0] = 1.0 if "apel" in (text or "").lower() else 0.0
+        v[2] = 0.0 if "apel" in (text or "").lower() else 1.0
+        return v
+
+    memory = SemanticMemory(embed_fn=fake_embed)
+    captured = {}
+
+    class CogA:
+        name = "cog_agent"
+        tools: list = []
+        api_key = model = base_url = None
+
+        async def reason(self, goal, *, context=None, **kw):
+            captured["ctx"] = context or {}
+            return {"answer": "rekomendasi: apel merah", "accepted": True,
+                    "final_score": 0.9, "iterations": 1, "stop_reason": "accepted"}
+
+    async def body(pool, org_id):
+        await ensure_memory_schema(pool)
+        # memori semantik relevan yang harus di-recall (subject = nama agent)
+        await memory.store(pool, org_id=org_id, scope="semantic", subject="cog_agent",
+                           content="pelanggan sangat menyukai apel merah")
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="cog_agent",
+                                 goal="beri rekomendasi apel", ctx={"mode": "cognitive", "use_tools": False})
+        claimed = await repo.claim_next(pool, owner="w1", lease_s=60)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: CogA(), memory=memory)
+        status = await runner.run(pool, claimed)
+        assert status == "completed"
+        # RECALL: memori relevan ter-inject ke context reasoning
+        assert "apel merah" in captured["ctx"].get("knowledge_base_context", "")
+        # STORE: pengalaman disimpan sbg episodic memory
+        eps = await memory.retrieve(pool, org_id=org_id, query="apel", scope="episodic", subject="cog_agent")
+        assert any("rekomendasi: apel merah" in e["content"] for e in eps)
     _run(body)
 
 

@@ -18,6 +18,13 @@ entries are grouped by theme rather than semantic version tags.
   graceful degrade: no embedding → stored without a vector and retrieval falls back to recency; no
   pgvector → schema is skipped and the store no-ops safely. 5 tests against real Postgres+pgvector.
   Self-contained, zero consumers yet (retrieval wiring into reasoning is P1-B.3, flag-gated). ADR-0006.
+- **Long-term memory wired into reasoning (P1-B.3)** — durable **cognitive** jobs now *retrieve*
+  relevant memories before reasoning (`memory.summarize(query=goal, subject=agent)` → injected into
+  the reasoning context) and *store* the outcome afterwards (as an `episodic` memory weighted by the
+  Critic score) — so the agent actually recalls and learns across sessions. Gated per-org by
+  `is_enabled("long_term_memory")` (OFF → no recall/store). `DurableJobRunner(memory=…)` is injectable
+  for tests. 1 integration test proving recall-injects-context + experience-is-stored. (Wiring into
+  the chat `enrich_context` path remains as a follow-up.)
 - **Cognitive loop (`cognitive_loop`, P1-A) — Planner→Worker→Critic**  — closes the audit's #1
   gap (single-pass execution / at most one revision). `CognitiveLoop.run(agent, goal)` iterates
   Planner → Worker → Critic → (accept | revise | replan) until the Critic accepts (score ≥ threshold),

@@ -36,11 +36,13 @@ class JobStopped(Exception):
 
 
 class DurableJobRunner:
-    def __init__(self, repo, *, agent_builder: Callable[[str, dict], object]):
+    def __init__(self, repo, *, agent_builder: Callable[[str, dict], object], memory=None):
         """`agent_builder(agent_name, ctx) -> BaseAgent` diinjeksi supaya testable
-        (produksi: agent_registry.build_agent)."""
+        (produksi: agent_registry.build_agent). `memory` = SemanticMemory opsional
+        (P1-B) untuk recall/store di cognitive mode; None → lazy default bila flag ON."""
         self.repo = repo
         self._build_agent = agent_builder
+        self._memory = memory
 
     async def run(self, pool, job: dict, *, owner: str = "runner",
                   publish: Callable[..., Awaitable] | None = None) -> str:
@@ -139,6 +141,23 @@ class DurableJobRunner:
             await self._emit(publish, "TaskFailed", job)
             return final
 
+    def _memory_for(self, org_id):
+        """SemanticMemory bila flag long_term_memory ON untuk org (P1-B); else None.
+        Instance di-inject dipakai bila flag ON; kalau tidak, lazy default."""
+        try:
+            from feature_flags import is_enabled
+            if not is_enabled("long_term_memory", org_id=str(org_id)):
+                return None
+        except Exception:
+            return None
+        if self._memory is not None:
+            return self._memory
+        try:
+            from long_term_memory import SemanticMemory
+            return SemanticMemory()
+        except Exception:
+            return None
+
     # ── COGNITIVE execution (P1-A.3) ────────────────────────────────────────
     async def _run_cognitive(self, pool, job, agent, goal, tool_ctx, last, next_seq, publish) -> str:
         """Jalankan Cognitive Loop (agent.reason) sebagai durable job. Seluruh loop
@@ -151,11 +170,18 @@ class DurableJobRunner:
         if last and last.get("kind") == "cognitive" and (last.get("output") or {}).get("result"):
             result = last["output"]["result"]
         else:
+            memory = self._memory_for(org_id)              # P1-B: long-term memory (flag-gated)
+            kb = str(ctx.get("knowledge_base_context") or "")
+            if memory is not None:                          # RECALL memori relevan → konteks
+                recall = await memory.summarize(pool, org_id=str(org_id), query=goal,
+                                                subject=agent.name, k=5)
+                if recall:
+                    kb = (recall + "\n\n" + kb).strip()
             try:
                 await self._boundary(pool, job_id, org_id)
                 result = await agent.reason(
                     goal,
-                    context={"knowledge_base_context": ctx.get("knowledge_base_context", "")},
+                    context={"knowledge_base_context": kb},
                     use_tools=bool(ctx.get("use_tools", True)),
                     max_iters=int(ctx.get("max_iters", 3)),
                     accept_threshold=float(ctx.get("accept_threshold", 0.8)),
@@ -168,6 +194,12 @@ class DurableJobRunner:
                 await self.repo.set_status(pool, job_id, final, last_error=str(exc)[:500])
                 await self._emit(publish, "TaskFailed", job)
                 return final
+            if memory is not None and result.get("accepted"):   # STORE pengalaman (episodic)
+                await memory.store(
+                    pool, org_id=str(org_id), scope="episodic", subject=agent.name,
+                    content=f"Goal: {goal}\nJawaban: {str(result.get('answer') or '')[:2000]}",
+                    metadata={"job_id": job_id, "score": result.get("final_score")},
+                    importance=float(result.get("final_score") or 0.5))
             # checkpoint (tanpa history yang besar; simpan metrik + jawaban)
             slim = {k: v for k, v in result.items() if k != "history"}
             await self.repo.save_step(

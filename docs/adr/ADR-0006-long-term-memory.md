@@ -32,7 +32,7 @@ task/reasoning; `subject` (user/conversation/agent) sebagai partisi.
 ## Rencana
 - **P1-B.1 (selesai):** schema `agent_memories` (pgvector) + `SemanticMemory` (store/retrieve/summarize) + degrade + 5 test vs Postgres nyata. Wired ke `ensure_optional_schema` (try). Zero konsumen.
 - **P1-B.2:** episodic/task memory (rekam event TaskFinished/aksi → retrieve pengalaman relevan).
-- **P1-B.3:** wire retrieval ke reasoning — `enrich_context` (chat) & cognitive loop, gate `is_enabled("long_term_memory", org_id)` (default OFF).
+- **P1-B.3 (selesai untuk cognitive loop):** `DurableJobRunner._run_cognitive` kini RECALL memori relevan (`memory.summarize(query=goal, subject=agent.name)`) → inject ke `context.knowledge_base_context` SEBELUM `agent.reason()`, lalu STORE pengalaman (scope=episodic, importance=score) SESUDAH sukses. Gate `is_enabled("long_term_memory", org_id)` (OFF → tak ada recall/store). `DurableJobRunner(memory=...)` bisa di-inject (test). 1 test (recall+store). **Sisa:** wire ke chat `enrich_context` (memory_agent).
 - **P1-B.4:** fasad `AgentMemory` menyatukan conversation+working+semantic+episodic+task+reasoning.
 
 ## Rollback
