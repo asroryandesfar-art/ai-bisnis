@@ -36,6 +36,16 @@ entries are grouped by theme rather than semantic version tags.
   to avoid per-call Redis latency). `is_open/ok/fail` became `async` (25 awaited call-sites in the
   router; statically verified); `state()` stays sync (used by `status()`, no I/O). Default `inprocess`
   preserves current behaviour. 5 unit + cross-worker tests.
+- **Working-memory STM on shared state (P0-A, commit C5) — completes P0-A** — the conversation
+  short-term-memory buffer (`memory_agent.MemoryStore`) now lives in `StateStore`
+  (`mem:stm:{conv}`, trimmed to 60 turns + 1h TTL) instead of an unbounded in-process `_short`
+  dict (fixes a latent per-process memory leak). `add_to_stm`/`clear_stm` became `async`
+  (+ new async `get_recent`); both call-sites awaited. Audit note: the STM was **write-only/
+  vestigial** (never read back for reasoning — the source of truth is the `messages` table +
+  conversation summaries), so there is no observable behaviour change; follow-up recorded to
+  either wire `get_recent()` into retrieval or remove STM. 6 tests. **P0-A (shared state) is now
+  complete**: rate-limiter, circuit-breaker, and working-memory are all behind `StateStore`
+  (opt-in cross-worker via `STATE_BACKEND=redis`; default in-process unchanged).
 
 ### Added — Billing & Pricing
 - **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.

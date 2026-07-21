@@ -23,8 +23,15 @@ from typing import Any
 import asyncpg
 
 from base import BaseAgent, AgentResult
+from platform_state import get_state_store   # P0-A C5: shared working-memory (STM)
 
 logger = logging.getLogger(__name__)
+
+# Working-memory (STM) buffer sekarang di platform_state.StateStore (P0-A C5):
+# default in-process, atau lintas-worker + TTL via STATE_BACKEND=redis. Batas
+# pesan per-percakapan & masa hidup buffer (memperbaiki leak `_short` lama).
+_STM_MAXLEN = 60
+_STM_TTL_S = 3600
 
 
 # ─── DATA CLASSES ─────────────────────────────────────────────
@@ -136,7 +143,9 @@ class MemoryStore:
     """
 
     def __init__(self):
-        self._short: dict[str, ShortTermMemory] = {}       # conv_id → STM
+        # STM dipindah ke platform_state.StateStore (P0-A C5) — tidak lagi dict
+        # in-process yang tumbuh selamanya. `_long`/`_summaries` tetap fallback
+        # in-process HANYA saat tanpa pool DB (long-term ada di Postgres).
         self._long:  dict[str, UserProfile]     = {}       # fallback tanpa pool
         self._summaries: dict[str, str]         = {}       # fallback tanpa pool
 
@@ -145,18 +154,43 @@ class MemoryStore:
 
     # ── Short-term ──────────────────────────────────────────────
 
-    def get_stm(self, conv_id: str) -> ShortTermMemory:
-        if conv_id not in self._short:
-            self._short[conv_id] = ShortTermMemory(conversation_id=conv_id)
-        return self._short[conv_id]
+    async def add_to_stm(self, conv_id: str, role: str, content: str, meta: dict = None):
+        """Catat satu turn ke buffer STM (StateStore). Di-trim ke _STM_MAXLEN turn
+        terbaru + TTL (memperbaiki leak `_short` lama). No-op bila conv_id kosong."""
+        if not conv_id:
+            return
+        msg = {"role": role, "content": content, "ts": _now(), "meta": meta or {}}
+        try:
+            await get_state_store().lpush_trim(
+                f"mem:stm:{conv_id}", json.dumps(msg, ensure_ascii=False),
+                maxlen=_STM_MAXLEN, ttl_s=_STM_TTL_S)
+        except Exception:
+            pass                                            # buffer non-kritis; sumber = tabel `messages`
 
-    def add_to_stm(self, conv_id: str, role: str, content: str, meta: dict = None):
-        stm = self.get_stm(conv_id)
-        stm.add(role, content, meta)
-        stm.trim(max_messages=60)
+    async def get_recent(self, conv_id: str, n: int = 10) -> list[dict]:
+        """Ambil <=n turn terbaru dari STM (kronologis: lama→baru). Tersedia untuk
+        retrieval masa depan; saat ini STM masih write-only (lihat catatan ADR)."""
+        if not conv_id:
+            return []
+        try:
+            raw = await get_state_store().lrange(f"mem:stm:{conv_id}", 0, n - 1)
+        except Exception:
+            return []
+        out: list[dict] = []
+        for item in reversed(raw):                          # lpush_trim = terbaru di kepala
+            try:
+                out.append(json.loads(item))
+            except (TypeError, ValueError):
+                continue
+        return out
 
-    def clear_stm(self, conv_id: str):
-        self._short.pop(conv_id, None)
+    async def clear_stm(self, conv_id: str):
+        if not conv_id:
+            return
+        try:
+            await get_state_store().delete(f"mem:stm:{conv_id}")
+        except Exception:
+            pass
 
     # ── Long-term ───────────────────────────────────────────────
 
@@ -250,8 +284,8 @@ class MemoryStore:
         )
 
     def stats(self) -> dict:
+        # STM kini di StateStore (tak dihitung di sini; hindari SCAN mahal).
         return {
-            "active_conversations":  len(self._short),
             "user_profiles_cached":  len(self._long),
             "conversation_summaries_cached": len(self._summaries),
         }
@@ -348,7 +382,7 @@ Aturan:
         # 1. Short-term: tambahkan pesan user terbaru ke STM
         user_msg = context.get("user_message", "")
         if user_msg and conv_id:
-            self.store.add_to_stm(conv_id, "user", user_msg)
+            await self.store.add_to_stm(conv_id, "user", user_msg)
 
         # 2. Long-term: inject profil user ke knowledge_base_context
         if user_id and user_id != "anonymous":
@@ -423,7 +457,7 @@ Aturan:
 
         # Simpan respons bot ke STM
         if bot_response and conv_id:
-            self.store.add_to_stm(conv_id, "assistant", bot_response)
+            await self.store.add_to_stm(conv_id, "assistant", bot_response)
 
         # Tidak perlu ekstrak untuk user anonim
         if user_id == "anonymous":

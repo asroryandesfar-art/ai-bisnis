@@ -15,7 +15,9 @@ memindahkannya ke belakang satu interface sehingga bisa dipindah ke Redis
 - ✅ **C2** — `RedisStateStore` (Lua atomik) + `STATE_BACKEND=redis`/`REDIS_URL` + wiring startup fail-open (`main._init_shared_state`). Parity via fakeredis+lupa (`test_platform_state_redis.py`) + wiring (`test_shared_state_wiring.py`). Default tetap inprocess.
 - ✅ **C3** — rate-limiter (`bn_platform.security._check_rate_limit`) migrasi ke `StateStore.rate_incr`; jadi async, 24 call-site di-`await` (verifikasi statik penuh). Default in-process = 429 identik; Redis → lintas-worker. Test `test_rate_limit_shared_state.py`.
 - ✅ **C4** — circuit-breaker (`ai_providers/router.py`) HYBRID: fast-path lokal + mirror open-state ke `StateStore` (`cb:{provider}`), baca lintas-worker di-throttle 1s. `is_open/ok/fail` async (25 call-site di-await); `state()` tetap sync. Test `test_circuit_breaker_shared_state.py`.
-- ⏳ C5 — working-memory STM (`memory_agent.py`).
+- ✅ **C5** — working-memory STM (`memory_agent.MemoryStore`) → `StateStore` (`mem:stm:{conv}`, trim 60 + TTL 1h). Memperbaiki leak `_short` lama. Catatan: STM masih write-only (lihat ADR). Test `test_stm_shared_state.py`.
+
+**P0-A SELESAI.** Konsumen in-process (rate-limit, circuit-breaker, working-memory) kini di belakang `StateStore`; aktifkan lintas-worker dengan `STATE_BACKEND=redis`. (Sub-fase A2: WS device registry cross-worker — di-defer.)
 
 ### Mengaktifkan Redis (opsional)
 ```
