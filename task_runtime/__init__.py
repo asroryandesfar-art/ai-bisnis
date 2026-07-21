@@ -12,6 +12,8 @@ Additive: tabel agent_jobs/agent_job_steps berdampingan; agent_task_executions
 from task_runtime.schema import ensure_job_schema, JOB_SCHEMA_SQL
 from task_runtime.repository import JobRepository
 from task_runtime.runner import DurableJobRunner, JobStopped
+from task_runtime.worker import run_one_job, drain_jobs, make_registry_agent_builder
 
 __all__ = ["ensure_job_schema", "JOB_SCHEMA_SQL", "JobRepository",
-           "DurableJobRunner", "JobStopped"]
+           "DurableJobRunner", "JobStopped",
+           "run_one_job", "drain_jobs", "make_registry_agent_builder"]

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from celery import Celery
 from celery.schedules import crontab
@@ -55,7 +56,50 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=cfg.nightly_job_hour, minute=(cfg.nightly_job_minute + 30) % 60),
         "args": (),
     },
+    # P0-D: drain durable job berkala (proses antrean + recovery lease kadaluarsa).
+    # No-op murah saat antrean kosong. Enqueue juga men-dispatch task ini (prompt).
+    "durable-runtime-drain": {
+        "task": "task_runtime.run_pending",
+        "schedule": 30.0,
+        "args": (),
+    },
 }
+
+
+def _durable_agent_kwargs() -> dict:
+    """Config LLM bersama untuk agent durable-job (build_agent auto-filter per-signature)."""
+    return {
+        "api_key": os.environ.get("GROQ_API_KEY", ""),
+        "model": os.environ.get("GROQ_MODEL", "") or None,
+        "base_url": os.environ.get("GROQ_BASE_URL", "") or None,
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
+        "openrouter_api_key": os.environ.get("OPENROUTER_API_KEY", ""),
+        "deepseek_api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
+    }
+
+
+@celery_app.task(name="task_runtime.run_pending", bind=True, max_retries=0)
+def run_pending_jobs_task(self, max_jobs: int = 10):
+    """Proses hingga max_jobs durable job (P0-D D4). Recovery job lease-kadaluarsa
+    terjadi otomatis lewat claim_next. Aman & murah bila antrean kosong."""
+    from intelligence.db import get_pool
+    from task_runtime.worker import drain_jobs, make_registry_agent_builder
+
+    async def _go():
+        pool = await get_pool()
+        builder = make_registry_agent_builder(_durable_agent_kwargs())
+        try:
+            from event_bus import publish
+        except Exception:
+            publish = None
+        return await drain_jobs(pool, owner=f"celery-{os.getpid()}",
+                                agent_builder=builder, publish=publish, max_jobs=max_jobs)
+
+    try:
+        return _run_async(_go())
+    except Exception:
+        logger.exception("run_pending_jobs_task gagal")
+        return 0
 
 
 def _run_async(coro):

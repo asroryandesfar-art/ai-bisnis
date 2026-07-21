@@ -39,6 +39,16 @@ entries are grouped by theme rather than semantic version tags.
   inline path — **the inline `task_engine.run_task` is left untouched** (no regression risk). Emits
   TaskStarted/Finished/Failed on the event bus (best-effort). 4 tests against real Postgres
   (complete+persist, resume-skips-plan, cancel, retry→DLQ). No worker yet (D4); still idle/opt-in.
+- **Durable Task Runtime — worker + HTTP API (`task_runtime.worker` + `bn_platform/jobs_router`,
+  P0-D D4/D5)** — the runtime is now usable end-to-end. Worker: `run_one_job`/`drain_jobs` (Celery-free,
+  testable) + `make_registry_agent_builder` (resolve agent by name → `build_agent`, kwargs auto-filtered)
+  + Celery task `task_runtime.run_pending` with a 30s beat that drains the queue and recovers
+  expired-lease jobs (cheap no-op when empty). API `POST /api/jobs` (enqueue, triggers the worker
+  best-effort), `GET /api/jobs` + `/{id}` (status + steps), `POST /api/jobs/{id}/cancel|pause|resume`
+  — RBAC `workforce.read/write`, rate-limited, mounted at `/api/jobs` (401 verified). 9 tests (4 worker
+  + 5 API) against real Postgres. Default execution path (inline `run_task`) unchanged; the durable
+  path is opt-in. Remaining (D6): SSE progress, DLQ replay, domain-router `async=true` integration
+  behind `TASK_RUNTIME`/feature flag, kill-worker→resume chaos test in CI.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a

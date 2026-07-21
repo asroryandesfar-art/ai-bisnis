@@ -4854,6 +4854,28 @@ try:
         ),
         prefix="/api",
     )
+    # Durable Task Runtime API (P0-D) — additive; enqueue memicu worker Celery
+    # best-effort (beat drain sbg jaring pengaman). Jalur run_task inline tak berubah.
+    try:
+        from bn_platform.jobs_router import build_jobs_router
+
+        def _dispatch_durable_worker():
+            try:
+                from celery_app import run_pending_jobs_task
+                run_pending_jobs_task.delay()
+            except Exception:
+                pass
+
+        app.include_router(
+            build_jobs_router(
+                get_pool=get_pool, require_permission=require_permission,
+                on_enqueue=_dispatch_durable_worker,
+            ),
+            prefix="/api",
+        )
+        logger.info("Durable Task Runtime API mounted (/api/jobs)")
+    except Exception:
+        logger.exception("Durable Task Runtime API mount failed")
     # Web Intelligence — modul mandiri (backend/modules/web_intelligence). Additive;
     # di-wrap agar kegagalan opsional (mis. dep hilang) tidak menghentikan boot app.
     try:
