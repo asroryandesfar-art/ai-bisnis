@@ -655,3 +655,24 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .obs-live-line:first-child{background:rgba(255,255,255,.03)}
 .obs-live-time{font-size:10.5px;color:var(--text-3);flex:0 0 auto;min-width:64px}
 @keyframes obsFadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+
+/* ── Web Intelligence workspace ─────────────────────────────────────────── */
+.wi-pre{max-height:340px;overflow:auto;margin:0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--text-2)}
+.wi-cap-grid{display:grid;gap:2px}
+.wi-cap{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px}
+.wi-cap:last-child{border-bottom:0}
+.wi-cap-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.wi-cap-dot.on{background:var(--green);box-shadow:0 0 0 3px rgba(69,211,155,.12)}
+.wi-cap-dot.off{background:var(--text-3);opacity:.5}
+.wi-cap>span:nth-child(2){flex:1}
+.wi-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end}
+.wi-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none;padding:8px 0}
+.wi-check input{width:16px;height:16px;accent-color:var(--green)}
+.wi-note{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;font-size:12px;color:var(--text-2)}
+.wi-launch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:10px}
+.wi-launch{padding:16px;border:1px solid var(--line);background:var(--surface);border-radius:12px;transition:border-color .15s,transform .15s}
+.wi-launch:hover{border-color:var(--line-strong);transform:translateY(-2px)}
+.wi-launch .metric-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--surface-3);color:var(--text-2)}
+.wi-spinner{width:16px;height:16px;border:2px solid var(--line-strong);border-top-color:var(--green);border-radius:50%;animation:wiSpin .7s linear infinite;flex:0 0 auto}
+@keyframes wiSpin{to{transform:rotate(360deg)}}
+@media(max-width:640px){.wi-pre{max-height:240px}.wi-launch-grid{grid-template-columns:1fr}}

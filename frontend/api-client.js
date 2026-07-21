@@ -434,6 +434,14 @@ export const api = {
   casperEngineerSteps: (id) => request(`/api/casper/engineer/run/${id}/steps`),
   casperEngineerInvestigate: (id, body = {}) => request(`/api/casper/engineer/run/${id}/investigate`, { method: "POST", body }),
   casperEngineerAnchor: (id) => request(`/api/casper/engineer/run/${id}/anchor`, { method: "POST" }),
+
+  // Web Intelligence — read/crawl/screenshot/ingest public sites (backend/modules/web_intelligence).
+  webIntelStatus: () => request("/api/web-intelligence/status"),
+  webIntelRead: (body, signal) => request("/api/web-intelligence/read", { method: "POST", body, signal }),
+  webIntelCrawl: (body, signal) => request("/api/web-intelligence/crawl", { method: "POST", body, signal }),
+  webIntelIngest: (botId, body) => request(`/api/web-intelligence/ingest?bot_id=${encodeURIComponent(botId)}`, { method: "POST", body }),
+  webIntelScreenshot: (body) => requestBlob("/api/web-intelligence/screenshot", { method: "POST", body }),
+  webIntelClearCache: () => request("/api/web-intelligence/cache/clear", { method: "POST" }),
 };
 
 export async function settle(label, promise) {
