@@ -8,6 +8,13 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Platform Foundation (Fase 1)
+- **Cross-worker validation + staging runbook (P0)** — 5 tests drive TWO `RedisStateStore`
+  instances over ONE shared fakeredis server (through the real Redis+Lua code path) proving
+  rate-limit, distributed-lock, kv/hash/list, circuit-breaker, and working-memory STM are truly
+  consistent across "workers" — the strongest validation possible without a live Redis server.
+  `docs/RUNBOOK-staging-validation.md` gives the exact steps to validate with real Redis + Celery
+  worker/beat (2-instance shared rate-limit, enqueue→worker→completed, kill-worker→resume, cancel/
+  pause/DLQ-replay, fail-open) before a production canary.
 - **Feature flags (`feature_flags`, P0-B)** — standard gate for shipping new capabilities safely
   (default OFF → per-org canary → prod) with no breaking change. `is_enabled(key, org_id=...)`
   resolves process override → env `FEATURE_<KEY>` (`on|off|<pct>|canary:orgA,orgB`) → default.
