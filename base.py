@@ -526,6 +526,33 @@ class BaseAgent:
         import task_engine
         return await task_engine.run_agent_task(self, goal, pool=pool, org_id=org_id, bot_id=bot_id, ctx=ctx)
 
+    async def reason(
+        self,
+        goal: str,
+        *,
+        context: dict | None = None,
+        max_iters: int = 3,
+        accept_threshold: float = 0.8,
+        deadline_s: float | None = None,
+        use_tools: bool = False,
+        tool_ctx: dict | None = None,
+    ) -> dict:
+        """Jalankan goal lewat Cognitive Loop (Planner->Worker->Critic, P1-A):
+        perbaikan iteratif sampai Critic menerima / budget habis. Additive & opsional
+        (jalur run_task/parse_intent lama TIDAK berubah). Bila `use_tools`, Worker
+        memakai tool-loop agent (butuh `self.tools`). Fail-open (LLM down -> degraded).
+        Konsumen sebaiknya menggate dengan feature flag `cognitive_loop`."""
+        from cognitive_loop import CognitiveLoop
+        worker_fn = None
+        if use_tools and getattr(self, "tools", None):
+            import tool_executor
+            from cognitive_loop import make_tool_worker
+            schemas = tool_executor.available_tool_schemas(list(self.tools))
+            worker_fn = make_tool_worker(self, tool_ctx=tool_ctx or {}, tools=schemas)
+        loop = CognitiveLoop(max_iters=max_iters, accept_threshold=accept_threshold,
+                             deadline_s=deadline_s)
+        return await loop.run(self, goal, context=context, worker_fn=worker_fn)
+
     async def _call_llm_json(
         self,
         messages:    list[dict],

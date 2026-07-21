@@ -16,6 +16,10 @@ entries are grouped by theme rather than semantic version tags.
   optional `worker_fn` to swap the default LLM worker for a tool-using worker (`task_engine`). Self-
   contained, zero wiring — consumers adopt it behind `is_enabled("cognitive_loop")`; it is designed
   to run as a durable job (one checkpoint per iteration). 7 tests, ADR-0005.
+- **Cognitive loop — tool worker + `BaseAgent.reason()` (P1-A.2)** — `make_tool_worker` lets the loop's
+  Worker actually *act* via the agent tool-loop (`_call_llm_with_tools`), not just reason; and every
+  agent gained an additive `reason(goal, use_tools=…)` convenience that runs the Planner→Worker→Critic
+  loop (the existing `run_task`/`parse_intent` paths are unchanged). Fail-open. 4 more tests (11 total).
 
 ### Added — Platform Foundation (Fase 1)
 - **Cross-worker validation + staging runbook (P0)** — 5 tests drive TWO `RedisStateStore`

@@ -11,5 +11,6 @@ Konsumen mengadopsi di belakang feature flag `is_enabled("cognitive_loop")`.
 Lihat docs/adr/ADR-0005-cognitive-loop.md.
 """
 from cognitive_loop.loop import CognitiveLoop, ACCEPT, REVISE, REPLAN
+from cognitive_loop.worker import make_tool_worker
 
-__all__ = ["CognitiveLoop", "ACCEPT", "REVISE", "REPLAN"]
+__all__ = ["CognitiveLoop", "ACCEPT", "REVISE", "REPLAN", "make_tool_worker"]

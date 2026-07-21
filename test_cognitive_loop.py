@@ -1,7 +1,7 @@
 """Tests untuk cognitive_loop (P1-A) — LLM di-stub (deterministik, tanpa API)."""
 import asyncio
 
-from cognitive_loop import CognitiveLoop, ACCEPT, REVISE, REPLAN
+from cognitive_loop import CognitiveLoop, ACCEPT, REVISE, REPLAN, make_tool_worker
 
 
 def _run(coro):
@@ -109,3 +109,60 @@ def test_custom_worker_fn_used():
     out = _run(CognitiveLoop().run(agent, "goal", worker_fn=worker_fn))
     assert seen.get("called") and out["answer"] == "hasil tool-loop"
     assert agent.calls["work"] == 0                                 # Worker LLM default tak dipakai
+
+
+# ── P1-A.2: tool-worker + BaseAgent.reason ──────────────────────────────────
+def test_make_tool_worker_uses_tool_loop():
+    class A:
+        name = "a"
+        async def _call_llm_with_tools(self, messages, *, tools, tool_ctx):
+            return {"final_answer": "hasil", "tool_calls": [{"tool": "t"}]}
+    wf = make_tool_worker(A(), tool_ctx={}, tools=[])
+    res = _run(wf(goal="g", plan={"strategy": "s", "steps": ["x"]}, context={}, feedback=None, prior=None))
+    assert res["answer"] == "hasil" and res["_deg"] is False
+
+
+def test_make_tool_worker_failopen():
+    class A:
+        name = "a"
+        async def _call_llm_with_tools(self, messages, *, tools, tool_ctx):
+            raise RuntimeError("boom")
+    wf = make_tool_worker(A(), tool_ctx={}, tools=[])
+    res = _run(wf(goal="g", plan={}, context={}))
+    assert res["_deg"] is True and res["answer"] == ""
+
+
+def test_base_agent_reason_llm_only():
+    from base import BaseAgent
+    agent = BaseAgent()
+
+    async def stub(messages, **kw):
+        blob = " ".join(str(m.get("content", "")) for m in messages).lower()
+        if "kamu critic" in blob:
+            return {"score": 0.9, "accept": True, "action": ACCEPT, "issues": []}
+        if "kamu worker" in blob:
+            return {"answer": "jawaban final"}
+        return {"strategy": "s", "steps": ["a"]}
+    agent._call_llm_json = stub
+    out = _run(agent.reason("goal"))
+    assert out["accepted"] is True and out["answer"] == "jawaban final"
+
+
+def test_base_agent_reason_with_tools_routes_worker_through_tool_loop():
+    from base import BaseAgent
+    agent = BaseAgent()
+    agent.tools = ["web_read"]
+
+    async def json_stub(messages, **kw):
+        blob = " ".join(str(m.get("content", "")) for m in messages).lower()
+        if "kamu critic" in blob:
+            return {"score": 0.95, "accept": True, "action": ACCEPT, "issues": []}
+        return {"strategy": "s", "steps": ["a"]}          # Planner
+
+    async def tool_stub(messages, *, tools, tool_ctx):
+        return {"final_answer": "jawaban-tool", "tool_calls": []}
+
+    agent._call_llm_json = json_stub
+    agent._call_llm_with_tools = tool_stub
+    out = _run(agent.reason("goal", use_tools=True))
+    assert out["accepted"] is True and out["answer"] == "jawaban-tool"
