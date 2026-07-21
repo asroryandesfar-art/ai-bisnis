@@ -15,6 +15,13 @@ entries are grouped by theme rather than semantic version tags.
   `docs/RUNBOOK-staging-validation.md` gives the exact steps to validate with real Redis + Celery
   worker/beat (2-instance shared rate-limit, enqueue→worker→completed, kill-worker→resume, cancel/
   pause/DLQ-replay, fail-open) before a production canary.
+- **Foundation validated against a REAL Redis server (`scripts/validate_redis_foundation.py`)** —
+  runs an actual `redis-server` (via `redislite`, no sudo) and proves 9/9: production
+  `build_redis_store` wiring, cross-connection shared rate-limit, `rate_incr` atomicity under 200
+  concurrent requests (exactly N allowed), real server-side TTL expiry, distributed lock
+  (NX/token/TTL), and cross-worker circuit-breaker + working-memory STM — the things fakeredis +
+  a mocked clock cannot prove (real Lua, real concurrency, real TTL). Remaining real-infra gate is
+  only the multi-process web + Celery worker/beat + multi-host run (see the runbook).
 - **Feature flags (`feature_flags`, P0-B)** — standard gate for shipping new capabilities safely
   (default OFF → per-org canary → prod) with no breaking change. `is_enabled(key, org_id=...)`
   resolves process override → env `FEATURE_<KEY>` (`on|off|<pct>|canary:orgA,orgB`) → default.

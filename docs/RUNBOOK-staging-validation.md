@@ -5,6 +5,15 @@ diimplementasi & diuji vs Postgres nyata + fakeredis. Sebelum canary produksi,
 lakukan validasi berikut dengan **Redis + Celery worker asli** (tak bisa di CI
 tanpa server). Semua langkah reversible (matikan flag/env → perilaku lama).
 
+## ✅ Sudah tervalidasi terhadap Redis NYATA (tanpa sudo)
+`python3 scripts/validate_redis_foundation.py` (butuh `pip install redislite`)
+menjalankan **redis-server ASLI** (bukan fakeredis) & membuktikan **9/9**:
+build_redis_store wiring, rate-limit shared lintas-koneksi, **rate_incr atomik di
+bawah 200 request konkuren (tepat N lolos)**, **TTL server nyata**, distributed-lock
+(NX/token/TTL), circuit-breaker & working-memory STM shared lintas-worker.
+→ Sisa yang WAJIB divalidasi di staging = **proses multi-instance web + Celery
+worker/beat asli + multi-host** (langkah di bawah).
+
 ## 0. Prasyarat
 ```bash
 # Redis (broker + shared-state). Contoh:

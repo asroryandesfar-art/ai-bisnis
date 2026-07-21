@@ -11,3 +11,6 @@
 fakeredis==2.36.2
 # Interpreter Lua agar fakeredis dapat menjalankan skrip EVAL (rate_incr atomik).
 lupa==2.8
+# redis-server ASLI (binary C) tanpa sudo — untuk scripts/validate_redis_foundation.py
+# (validasi Redis nyata: atomicity konkuren, TTL server, Lua asli).
+redislite==6.2.912183
