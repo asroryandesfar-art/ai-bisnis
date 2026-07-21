@@ -14,6 +14,14 @@ entries are grouped by theme rather than semantic version tags.
   Canary rollout is deterministic (`sha256(key:org) % 100 < pct`), so the same org gets a stable
   decision across workers/restarts. Self-contained, zero wiring (consumers adopt it, e.g. P0-C/P0-D
   canary). Env-based today; DB-backed runtime toggles are a documented follow-up. 9 tests, ADR-0002.
+- **Event bus (`event_bus`, P0-C)** — in-process publish/subscribe to decouple producers from
+  consumers (observability, evaluation, memory) without direct calls. `publish(type, payload)` /
+  `subscribe(type, handler)`; sync+async handlers; per-handler error isolation (one failing
+  consumer never breaks the publisher or others); wildcard `*`; standardized envelope
+  `{id, type, org_id, ts, payload, trace_id}`; typed event constants (TaskStarted/Finished/Failed,
+  MemoryUpdated, KnowledgeUpdated, Browser/ScraperFinished, WorkflowCompleted). Self-contained,
+  zero wiring (P0-D will be the first producer). Durable Redis-Streams backend is a documented
+  follow-up. 8 tests, ADR-0003.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a
