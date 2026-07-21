@@ -36,13 +36,33 @@ class JobStopped(Exception):
 
 
 class DurableJobRunner:
-    def __init__(self, repo, *, agent_builder: Callable[[str, dict], object], memory=None):
+    def __init__(self, repo, *, agent_builder: Callable[[str, dict], object],
+                 memory=None, evaluator=None):
         """`agent_builder(agent_name, ctx) -> BaseAgent` diinjeksi supaya testable
         (produksi: agent_registry.build_agent). `memory` = SemanticMemory opsional
-        (P1-B) untuk recall/store di cognitive mode; None → lazy default bila flag ON."""
+        (P1-B, cognitive recall/store). `evaluator` = Evaluator opsional (P1-D, skor
+        otomatis pasca-task, gate flag `evaluation`)."""
         self.repo = repo
         self._build_agent = agent_builder
         self._memory = memory
+        self._evaluator = evaluator
+
+    async def _maybe_evaluate(self, pool, job, agent, goal, answer, tool_calls,
+                              verified, confidence, execution_id) -> None:
+        """P1-D: skor otomatis pasca-task (best-effort, gate flag `evaluation`)."""
+        if self._evaluator is None:
+            return
+        try:
+            from feature_flags import is_enabled
+            if not is_enabled("evaluation", org_id=str(job["org_id"])):
+                return
+            await self._evaluator.evaluate_and_store(
+                pool, org_id=str(job["org_id"]), goal=goal, answer=answer,
+                tool_calls=tool_calls, verified=verified, confidence=confidence,
+                agent_name=getattr(agent, "name", ""), execution_id=execution_id,
+                job_id=str(job["id"]))
+        except Exception:
+            pass
 
     async def run(self, pool, job: dict, *, owner: str = "runner",
                   publish: Callable[..., Awaitable] | None = None) -> str:
@@ -130,6 +150,8 @@ class DurableJobRunner:
             await self.repo.set_status(pool, job_id, final, progress_pct=100,
                                        result_execution_id=str(saved["id"]),
                                        last_error=None if verified else "verification gagal")
+            await self._maybe_evaluate(pool, job, agent, goal, report,
+                                       state.get("all_tool_calls", []), verified, None, str(saved["id"]))
             await self._emit(publish, "TaskFinished" if verified else "TaskFailed", job)
             return final
 
@@ -221,6 +243,8 @@ class DurableJobRunner:
         await self.repo.set_status(pool, job_id, final, progress_pct=100,
             result_execution_id=str(saved["id"]),
             last_error=None if accepted else f"cognitive stop_reason={result.get('stop_reason')}")
+        await self._maybe_evaluate(pool, job, agent, goal, report, [], accepted,
+                                   result.get("final_score"), str(saved["id"]))
         await self._emit(publish, "TaskFinished" if accepted else "TaskFailed", job)
         return final
 

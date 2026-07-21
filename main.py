@@ -2027,6 +2027,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         except Exception:
             logger.warning("Long-term memory schema skipped (pgvector unavailable?)")
         try:
+            from evaluation import ensure_eval_schema          # P1-D: evaluation framework (additive)
+            await ensure_eval_schema(conn)
+        except Exception:
+            logger.exception("Evaluation schema failed")
+        try:
             from bn_platform.agent_marketplace_catalog import seed_professional_marketplace
             await seed_professional_marketplace(conn)
         except Exception:

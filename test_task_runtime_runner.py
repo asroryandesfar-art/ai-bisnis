@@ -239,6 +239,34 @@ def test_cognitive_recalls_and_stores_long_term_memory():
     _run(body)
 
 
+def test_evaluation_auto_scores_on_completion():
+    ff.set_override("cognitive_loop", True)
+    ff.set_override("evaluation", True)
+    from evaluation import Evaluator, ensure_eval_schema
+    evaluator = Evaluator()                             # deterministik (tanpa judge)
+
+    class CogA:
+        name = "cog_agent"
+        tools: list = []
+        api_key = model = base_url = None
+
+        async def reason(self, goal, **kw):
+            return {"answer": "jawaban", "accepted": True, "final_score": 0.85,
+                    "iterations": 1, "stop_reason": "accepted"}
+
+    async def body(pool, org_id):
+        await ensure_eval_schema(pool)
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="cog_agent", goal="g",
+                                 ctx={"mode": "cognitive", "use_tools": False})
+        claimed = await repo.claim_next(pool, owner="w1", lease_s=60)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: CogA(), evaluator=evaluator)
+        status = await runner.run(pool, claimed)
+        assert status == "completed"
+        rows = await pool.fetch("SELECT overall, scores FROM task_evaluations WHERE org_id=$1", org_id)
+        assert len(rows) == 1 and rows[0]["overall"] is not None   # skor otomatis tercatat
+    _run(body)
+
+
 def test_chaos_crash_recovery_then_resume():
     """Worker A klaim + selesai 'plan' lalu CRASH (lease kadaluarsa). Recovery:
     find_expired → worker B claim_next (attempts++) → runner RESUME dari checkpoint

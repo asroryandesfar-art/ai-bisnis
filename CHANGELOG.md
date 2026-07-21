@@ -8,6 +8,15 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Cognitive Core (Fase 2)
+- **Evaluation framework (`evaluation`, P1-D)** — automatic post-task quality scoring, stored in a new
+  additive `task_evaluations` table. `Evaluator.evaluate` computes deterministic metrics (tool_success,
+  answered, verified, confidence) plus optional LLM-judge dimensions (accuracy, hallucination-free,
+  reasoning_quality, citation) via an injected `judge_agent` (fail-open), and a weighted `overall`.
+  Integrated into `DurableJobRunner` (`evaluator=…`): every finished job (linear **and** cognitive)
+  is scored and persisted automatically, gated per-org by `is_enabled("evaluation")`, best-effort
+  (an eval failure never fails the job). Gives an objective quality signal for A/B, regression
+  detection, and future Cost-Router calibration. 6 tests (metrics/empty/judge/fail-open/store +
+  auto-eval-on-completion). ADR-0007.
 - **Long-term semantic memory (`long_term_memory`, P1-B.1)** — closes the audit's "memory is
   write-only / never retrieved during reasoning" gap. New additive `agent_memories` table with a
   **pgvector** `vector(384)` column (real pgvector, verified available); `SemanticMemory.store/
