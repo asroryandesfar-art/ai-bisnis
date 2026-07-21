@@ -12,8 +12,15 @@ memindahkannya ke belakang satu interface sehingga bisa dipindah ke Redis
 
 ## Status
 - ✅ **C1** — interface + `InProcessStateStore` + 12 contract test (`test_platform_state.py`). Zero wiring, zero-behavior-change.
-- ⏳ C2 — `RedisStateStore` + pilih via `STATE_BACKEND=redis` / `REDIS_URL`.
-- ⏳ C3–C5 — migrasi rate-limiter, circuit-breaker, STM.
+- ✅ **C2** — `RedisStateStore` (Lua atomik) + `STATE_BACKEND=redis`/`REDIS_URL` + wiring startup fail-open (`main._init_shared_state`). Parity via fakeredis+lupa (`test_platform_state_redis.py`) + wiring (`test_shared_state_wiring.py`). Default tetap inprocess.
+- ⏳ C3–C5 — migrasi konsumen (rate-limiter, circuit-breaker, STM) ke `StateStore`.
+
+### Mengaktifkan Redis (opsional)
+```
+STATE_BACKEND=redis
+REDIS_URL=redis://host:6379/0
+```
+Bila init/healthcheck Redis gagal → **fallback otomatis ke inprocess** (fail-open, boot tak crash). Test Redis butuh dev-deps: `pip install -r requirements-dev.txt`.
 
 ## Pemakaian
 ```python

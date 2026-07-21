@@ -15,6 +15,13 @@ entries are grouped by theme rather than semantic version tags.
   `STATE_BACKEND=inprocess` preserves current behaviour byte-for-byte; zero wiring into existing
   modules yet. `rate_incr` mirrors `security._check_rate_limit` semantics exactly. 12 contract
   tests. See `docs/adr/ADR-0001-shared-state.md`.
+- **Shared-state Redis backend (P0-A, commit C2)** — `RedisStateStore` (cross-worker) with
+  atomic Lua for `rate_incr` (sliding-window log, identical semantics to `_check_rate_limit`)
+  and token-guarded `release_lock`; `SET NX PX` locks; native TTL. Opt-in via `STATE_BACKEND=redis`
+  + `REDIS_URL`; startup wiring is **fail-open** (unreachable Redis → automatic fallback to
+  in-process, boot never crashes). Same contract suite proven against Redis via `fakeredis`+`lupa`
+  (10 parity tests) plus 3 wiring tests. Default remains `inprocess` (zero behaviour change).
+  Dev-only test deps pinned in `requirements-dev.txt`.
 
 ### Added — Billing & Pricing
 - **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.

@@ -1,0 +1,13 @@
+# BotNesia — dependensi PENGEMBANGAN/TEST saja (bukan runtime produksi).
+# pip install -r requirements-dev.txt
+#
+# Dipakai untuk menjalankan test paritas backend Redis tanpa server Redis nyata
+# (platform_state / P0-A). Bila absen, test terkait di-skip otomatis
+# (pytest.importorskip) sehingga suite utama tetap hijau.
+
+-r requirements.txt
+
+# In-memory Redis untuk test (mendukung async).
+fakeredis==2.36.2
+# Interpreter Lua agar fakeredis dapat menjalankan skrip EVAL (rate_incr atomik).
+lupa==2.8

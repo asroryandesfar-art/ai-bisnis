@@ -1,6 +1,6 @@
 # ADR-0001 — Shared State Abstraction (`platform_state`)
 
-- **Status:** Accepted — implementasi bertahap (C1 selesai; C2–C5 menyusul)
+- **Status:** Accepted — implementasi bertahap (C1–C2 selesai; C3–C5 menyusul)
 - **Tanggal:** 2026-07-21
 - **Konteks fase:** Fase 1 Fondasi Platform, item **P0-A**
 - **Terkait:** ADR durable-runtime (P0-D, menyusul), feature-flag (P0-B)
@@ -46,7 +46,7 @@ TTL pendek (C4).
 
 ## Rencana bertahap
 - **C1 (selesai):** paket `platform_state/` (interface + InProcess + 12 contract test). Zero wiring, zero-behavior-change.
-- **C2:** `RedisStateStore` + `STATE_BACKEND`/`REDIS_URL` + wiring startup; contract suite jalan di kedua backend.
+- **C2 (selesai):** `RedisStateStore` (Lua atomik untuk `rate_incr`/`release_lock`) + `STATE_BACKEND`/`REDIS_URL` + wiring startup fail-open (`main._init_shared_state`). 10 parity test via fakeredis+lupa + 3 wiring test. Default tetap inprocess. **Catatan clock:** rate-limit ZSET memakai wall-clock klien (`time.time()`) — konsisten antar-worker dengan asumsi NTP/same-host; varian pakai `redis TIME` server-side adalah follow-up bila skew antar-host jadi masalah.
 - **C3:** rate-limiter → `StateStore` (migrasi 5 call-site; shim sinkron dipertahankan).
 - **C4:** circuit-breaker hybrid (lokal + Redis shared open-state).
 - **C5:** working-memory STM → `StateStore`.

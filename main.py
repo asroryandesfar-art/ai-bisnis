@@ -186,6 +186,17 @@ class Settings(BaseSettings):
     # koneksi lock masih hidup, non-leader coba rebut lock. Menentukan kecepatan
     # failover otomatis (~1 interval). Hanya berlaku bila DB_LEADER_ELECTION=1.
     db_leader_heartbeat_seconds: float = 10.0
+    # ── Shared state backend (P0-A) ─────────────────────────────
+    # Backend penyimpan state lintas-worker (rate-limit/circuit-breaker/working-
+    # memory/lock) — lihat platform_state/ + docs/adr/ADR-0001-shared-state.md.
+    # Default "inprocess" = perilaku sekarang byte-identik (per-proses). Set
+    # STATE_BACKEND=redis + REDIS_URL untuk shared-state multi-worker. Bila init
+    # Redis gagal saat backend=redis, app tetap boot & fallback ke inprocess
+    # (fail-open) agar tidak menurunkan availability.
+    state_backend:        str = "inprocess"
+    redis_url:            str = ""
+    redis_max_connections: int = 50
+    redis_socket_timeout_seconds: float = 2.0
     secret_key:           str = "change-me-in-production"
     replicate_api_token:  str = ""
     replicate_api_tokens: str = ""  # optional: comma-separated Replicate tokens
@@ -980,12 +991,44 @@ async def get_pool_safe(timeout: float | None = None) -> asyncpg.Pool | None:
     except Exception:
         return None
 
+_state_store_active = None  # RedisStateStore aktif (ditutup saat shutdown); None = inprocess
+
+
+async def _init_shared_state():
+    """Wiring P0-A: pilih backend StateStore dari Settings. Default `inprocess`
+    = tanpa efek (perilaku lama). `state_backend=redis` → set RedisStateStore;
+    bila init/healthcheck gagal → fallback inprocess (fail-open, tak crash boot)."""
+    global _state_store_active
+    if (cfg.state_backend or "inprocess").lower() != "redis":
+        return
+    url = (cfg.redis_url or "").strip() or os.environ.get("REDIS_URL", "").strip()
+    if not url:
+        logger.warning("STATE_BACKEND=redis tapi REDIS_URL kosong → fallback inprocess")
+        return
+    try:
+        from platform_state import build_redis_store, set_state_store
+        store = build_redis_store(url, max_connections=cfg.redis_max_connections,
+                                  socket_timeout=cfg.redis_socket_timeout_seconds)
+        if await store.healthcheck():
+            set_state_store(store)
+            _state_store_active = store
+            logger.info("Shared-state backend: Redis (%s)", url.rsplit("@", 1)[-1])
+        else:
+            await store.aclose()
+            logger.warning("Redis healthcheck gagal → fallback inprocess shared-state")
+    except Exception as e:
+        logger.warning("Init Redis shared-state gagal (%s) → fallback inprocess", e)
+
+
 @app.on_event("startup")
 async def startup():
     global _leadership_mgr_task, _leadership_mgr_stop
 
     # C-01: guard kekuatan secret (warn-only kecuali STRICT_SECRETS=1).
     validate_startup_secrets(cfg)
+
+    # P0-A: aktifkan shared-state Redis bila diminta (fail-open ke inprocess).
+    await _init_shared_state()
 
     # Kebijakan DeepSeek: discover model tersedia lalu pilih yang paling cerdas.
     # Non-blocking terhadap kegagalan (fallback aman). Brain rebuild otomatis.
@@ -1079,7 +1122,14 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _pool, _pool_loop, _leadership_mgr_task, _leadership_mgr_stop
+    global _pool, _pool_loop, _leadership_mgr_task, _leadership_mgr_stop, _state_store_active
+    # P0-A: tutup koneksi Redis shared-state bila aktif.
+    try:
+        if _state_store_active is not None:
+            await _state_store_active.aclose()
+    except BaseException:
+        pass
+    _state_store_active = None
     # Hentikan manager leader dulu supaya tidak merebut lock saat shutdown.
     try:
         if _leadership_mgr_stop is not None:
