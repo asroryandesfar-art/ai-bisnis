@@ -20,6 +20,13 @@ entries are grouped by theme rather than semantic version tags.
   Worker actually *act* via the agent tool-loop (`_call_llm_with_tools`), not just reason; and every
   agent gained an additive `reason(goal, use_tools=…)` convenience that runs the Planner→Worker→Critic
   loop (the existing `run_task`/`parse_intent` paths are unchanged). Fail-open. 4 more tests (11 total).
+- **Cognitive loop — durable integration (P1-A.3)** — a durable job with `ctx.mode="cognitive"` now
+  runs the Planner→Worker→Critic loop as a checkpointed `cognitive` step (resume reuses the saved step;
+  final row still written to `agent_task_executions` with `verification={verified, score}`; emits
+  TaskFinished/Failed). Usable through the **existing** `POST /api/jobs` API (just pass `ctx`). Gated
+  per-org by `is_enabled("cognitive_loop")` — flag OFF falls through to the linear path (safe default).
+  3 tests (completes, crash-resume reuses step, flag-off→linear). The inline `run_task` path is
+  untouched.
 
 ### Added — Platform Foundation (Fase 1)
 - **Cross-worker validation + staging runbook (P0)** — 5 tests drive TWO `RedisStateStore`

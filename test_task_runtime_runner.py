@@ -8,10 +8,15 @@ import uuid
 
 import asyncpg
 
+import feature_flags as ff
 import main
 from task_runtime import DurableJobRunner, JobRepository, ensure_job_schema
 
 repo = JobRepository()
+
+
+def teardown_function():
+    ff.clear_all_overrides()
 
 
 class FakeAgent:
@@ -109,6 +114,85 @@ def test_cancel_at_boundary():
         status = await runner.run(pool, claimed)
         assert status == "cancelled" and fake.calls["plan"] == 0
         assert (await repo.get(pool, job["id"], org_id=org_id))["status"] == "cancelled"
+    _run(body)
+
+
+class CogAgent:
+    """Fake agent dgn reason() (Cognitive Loop di-stub) — uji integrasi runner."""
+    name = "cog_agent"
+    tools: list = []
+    api_key = model = base_url = None
+
+    def __init__(self, accepted=True):
+        self.reason_calls = 0
+        self.accepted = accepted
+
+    async def reason(self, goal, **kw):
+        self.reason_calls += 1
+        return {"goal": goal, "answer": "jawaban kognitif", "accepted": self.accepted,
+                "final_score": 0.9 if self.accepted else 0.4, "iterations": 2,
+                "stop_reason": "accepted" if self.accepted else "max_iters", "history": [{"i": 0}]}
+
+
+def test_cognitive_mode_durable_job_completes():
+    ff.set_override("cognitive_loop", True)
+
+    async def body(pool, org_id):
+        cog = CogAgent()
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="cog_agent", goal="g",
+                                 ctx={"mode": "cognitive", "use_tools": False})
+        claimed = await repo.claim_next(pool, owner="w1", lease_s=60)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: cog)
+        status = await runner.run(pool, claimed)
+        assert status == "completed" and cog.reason_calls == 1
+        final = await repo.get(pool, job["id"], org_id=org_id)
+        assert final["status"] == "completed" and final["result_execution_id"] is not None
+        steps = await repo.list_steps(pool, job["id"])
+        assert [s["kind"] for s in steps] == ["cognitive"]
+        assert steps[0]["output"]["final_score"] == 0.9
+        n = await pool.fetchval("SELECT count(*) FROM agent_task_executions WHERE id=$1",
+                                uuid.UUID(final["result_execution_id"]))
+        assert n == 1
+    _run(body)
+
+
+def test_cognitive_flag_off_falls_through_to_linear():
+    # mode=cognitive TAPI flag OFF → jalur linear lama (default aman)
+    async def body(pool, org_id):
+        fake = FakeAgent(subtasks=["x"])            # punya _call_llm_json/_with_tools (linear)
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="fake_agent", goal="g",
+                                 ctx={"mode": "cognitive"})
+        claimed = await repo.claim_next(pool, owner="w1", lease_s=60)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: fake)
+        status = await runner.run(pool, claimed)
+        assert status == "completed"
+        kinds = [s["kind"] for s in await repo.list_steps(pool, job["id"])]
+        assert kinds == ["plan", "subtask", "verify", "report"]   # LINEAR, bukan cognitive
+    _run(body)
+
+
+def test_cognitive_resume_reuses_saved_step():
+    ff.set_override("cognitive_loop", True)
+
+    async def body(pool, org_id):
+        cog = CogAgent()
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="cog_agent", goal="g",
+                                 ctx={"mode": "cognitive"})
+        await repo.claim_next(pool, owner="w1", lease_s=60)
+        # simulasikan crash SETELAH loop selesai, SEBELUM finalize: step cognitive 'done'
+        await repo.save_step(pool, job_id=job["id"], seq=0, kind="cognitive", status="done",
+                             checkpoint={"_phase": "done"},
+                             output={"result": {"answer": "tersimpan", "accepted": True,
+                                                 "final_score": 0.8, "iterations": 1,
+                                                 "stop_reason": "accepted"}})
+        claimed = await repo.get(pool, job["id"], org_id=org_id)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: cog)
+        status = await runner.run(pool, claimed)
+        assert status == "completed" and cog.reason_calls == 0     # RESUME: loop tak diulang
+        final = await repo.get(pool, job["id"], org_id=org_id)
+        row = await pool.fetchrow("SELECT report FROM agent_task_executions WHERE id=$1",
+                                  uuid.UUID(final["result_execution_id"]))
+        assert row["report"] == "tersimpan"
     _run(body)
 
 

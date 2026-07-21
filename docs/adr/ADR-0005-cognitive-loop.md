@@ -1,6 +1,6 @@
 # ADR-0005 — Cognitive Loop (Planner→Worker→Critic)
 
-- **Status:** Accepted — modul inti selesai (P1-A.1); integrasi konsumen menyusul (P1-A.2)
+- **Status:** Accepted — P1-A.1 (core) + P1-A.2 (tool-worker/BaseAgent.reason) + P1-A.3 (durable integration) SELESAI
 - **Tanggal:** 2026-07-22
 - **Konteks fase:** Fase 2 (Cognitive Core), item **P1-A** — gap #1 audit
 - **Terkait:** ADR-0004 (durable runtime — tempat loop berjalan sbg job ber-checkpoint), ADR-0002 (feature flag)
@@ -31,8 +31,9 @@ fail-open, `worker_fn` opsional untuk mengganti Worker LLM dengan tool-loop
 
 ## Rencana
 - **P1-A.1 (selesai):** modul `cognitive_loop` + 7 test (accept/revise/replan/max-iters/threshold/degraded/custom-worker). Zero wiring.
-- **P1-A.2 (menyusul):** integrasi — `worker_fn` = tool-loop task_engine; jalankan loop sebagai durable job (checkpoint per-iterasi); ekspos via endpoint/agent method, gate `is_enabled("cognitive_loop", org_id)` (default OFF → jalur lama).
-- **P1-A.3:** umpan skor Critic ke Evaluation (P1-D) & observability.
+- **P1-A.2 (selesai):** `make_tool_worker` (Worker pakai tool-loop) + `BaseAgent.reason(goal, use_tools=…)` aditif.
+- **P1-A.3 (selesai):** integrasi durable — job `ctx.mode="cognitive"` + flag `is_enabled("cognitive_loop", org_id)` ON → `DurableJobRunner` menjalankan `agent.reason()` sebagai step 'cognitive' ber-checkpoint (resume idempoten = re-use step), persist ke `agent_task_executions` (verification={verified, score}), emit TaskFinished/Failed. Dipakai via API `/api/jobs` yang SUDAH ada (ctx). Flag OFF → fallback linear. 3 test (completes, resume, flag-off→linear).
+- **P1-A.4 (menyusul):** umpan skor Critic → Evaluation (P1-D); endpoint inline `/api/agent/reason` (opsional).
 
 ## Rollback
 Konsumen di belakang flag → OFF = jalur single-pass lama. Modul bisa idle tanpa efek.

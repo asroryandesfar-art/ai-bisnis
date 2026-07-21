@@ -61,6 +61,14 @@ class DurableJobRunner:
         available_tools = list(getattr(agent, "tools", []) or [])
         step_timeout = int(job.get("step_timeout_s") or 120)
 
+        # ── COGNITIVE mode (P1-A.3): loop Planner→Worker→Critic ──────────────
+        # Opt-in eksplisit (ctx.mode) DAN di-gate feature flag per-org (canary).
+        # Flag OFF → jatuh ke jalur linear lama (default aman).
+        if (job.get("ctx") or {}).get("mode") == "cognitive":
+            from feature_flags import is_enabled
+            if is_enabled("cognitive_loop", org_id=str(org_id)):
+                return await self._run_cognitive(pool, job, agent, goal, tool_ctx, last, next_seq, publish)
+
         try:
             # ── PLAN ────────────────────────────────────────────────────────
             if phase == _PHASE_PLAN:
@@ -130,6 +138,59 @@ class DurableJobRunner:
             await self.repo.set_status(pool, job_id, final, last_error=str(exc)[:500])
             await self._emit(publish, "TaskFailed", job)
             return final
+
+    # ── COGNITIVE execution (P1-A.3) ────────────────────────────────────────
+    async def _run_cognitive(self, pool, job, agent, goal, tool_ctx, last, next_seq, publish) -> str:
+        """Jalankan Cognitive Loop (agent.reason) sebagai durable job. Seluruh loop
+        = satu step ber-checkpoint (resume=re-run loop, murah krn max_iters kecil).
+        Baris final tetap ditulis ke agent_task_executions (backward-compat)."""
+        job_id, org_id = job["id"], job["org_id"]
+        ctx = job.get("ctx") or {}
+
+        # Resume idempoten: kalau step cognitive sudah 'done', pakai hasilnya.
+        if last and last.get("kind") == "cognitive" and (last.get("output") or {}).get("result"):
+            result = last["output"]["result"]
+        else:
+            try:
+                await self._boundary(pool, job_id, org_id)
+                result = await agent.reason(
+                    goal,
+                    context={"knowledge_base_context": ctx.get("knowledge_base_context", "")},
+                    use_tools=bool(ctx.get("use_tools", True)),
+                    max_iters=int(ctx.get("max_iters", 3)),
+                    accept_threshold=float(ctx.get("accept_threshold", 0.8)),
+                    deadline_s=ctx.get("deadline_s"),
+                    tool_ctx=tool_ctx)
+            except JobStopped as stop:
+                return stop.status
+            except Exception as exc:
+                final = self._retry_or_dlq(job)
+                await self.repo.set_status(pool, job_id, final, last_error=str(exc)[:500])
+                await self._emit(publish, "TaskFailed", job)
+                return final
+            # checkpoint (tanpa history yang besar; simpan metrik + jawaban)
+            slim = {k: v for k, v in result.items() if k != "history"}
+            await self.repo.save_step(
+                pool, job_id=job_id, seq=next_seq, kind="cognitive", status="done",
+                checkpoint={"_phase": "done"}, output={"result": slim,
+                    "iterations": result.get("iterations"), "final_score": result.get("final_score"),
+                    "stop_reason": result.get("stop_reason")})
+
+        accepted = bool(result.get("accepted"))
+        report = str(result.get("answer") or "")
+        import task_engine
+        saved = await task_engine._persist_task_execution(pool, {
+            "org_id": org_id, "bot_id": job.get("bot_id"), "agent_name": agent.name, "goal": goal,
+            "plan": {"mode": "cognitive", "iterations": result.get("iterations"),
+                     "stop_reason": result.get("stop_reason")},
+            "tool_calls": [], "verification": {"verified": accepted, "score": result.get("final_score")},
+            "report": report, "status": "completed" if accepted else "failed"})
+        final = "completed" if accepted else self._retry_or_dlq(job)
+        await self.repo.set_status(pool, job_id, final, progress_pct=100,
+            result_execution_id=str(saved["id"]),
+            last_error=None if accepted else f"cognitive stop_reason={result.get('stop_reason')}")
+        await self._emit(publish, "TaskFinished" if accepted else "TaskFailed", job)
+        return final
 
     # ── boundary cancel/pause (cooperative) ─────────────────────────────────
     async def _boundary(self, pool, job_id, org_id):
