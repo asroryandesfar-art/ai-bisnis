@@ -7,6 +7,15 @@ entries are grouped by theme rather than semantic version tags.
 
 ## [Unreleased]
 
+### Added — Platform Foundation (Fase 1)
+- **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
+  contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
+  next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a
+  cross-worker store, unlocking horizontal scaling. Additive & fully reversible: default
+  `STATE_BACKEND=inprocess` preserves current behaviour byte-for-byte; zero wiring into existing
+  modules yet. `rate_incr` mirrors `security._check_rate_limit` semantics exactly. 12 contract
+  tests. See `docs/adr/ADR-0001-shared-state.md`.
+
 ### Added — Billing & Pricing
 - **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.
 - **Enterprise SSO via OpenID Connect (OIDC)** — per-org IdP config (Okta/Azure AD/Google Workspace/Auth0), authorization-code flow, JIT provisioning, encrypted client secret at rest. Optional (password login preserved).
