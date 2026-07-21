@@ -163,6 +163,18 @@ class DurableJobRunner:
             await self._emit(publish, "TaskFailed", job)
             return final
 
+    def _apply_pii_policy(self, text, org_id):
+        """P1-C: redaksi PII bila flag policy_engine ON (jangan retain PII di memori)."""
+        try:
+            from feature_flags import is_enabled
+            if is_enabled("policy_engine", org_id=str(org_id)):
+                from policy_engine import PolicyEngine
+                masked, _ = PolicyEngine().mask(text)
+                return masked
+        except Exception:
+            pass
+        return text
+
     def _memory_for(self, org_id):
         """SemanticMemory bila flag long_term_memory ON untuk org (P1-B); else None.
         Instance di-inject dipakai bila flag ON; kalau tidak, lazy default."""
@@ -217,9 +229,11 @@ class DurableJobRunner:
                 await self._emit(publish, "TaskFailed", job)
                 return final
             if memory is not None and result.get("accepted"):   # STORE pengalaman (episodic)
+                mem_content = f"Goal: {goal}\nJawaban: {str(result.get('answer') or '')[:2000]}"
+                mem_content = self._apply_pii_policy(mem_content, org_id)   # P1-C: mask PII
                 await memory.store(
                     pool, org_id=str(org_id), scope="episodic", subject=agent.name,
-                    content=f"Goal: {goal}\nJawaban: {str(result.get('answer') or '')[:2000]}",
+                    content=mem_content,
                     metadata={"job_id": job_id, "score": result.get("final_score")},
                     importance=float(result.get("final_score") or 0.5))
             # checkpoint (tanpa history yang besar; simpan metrik + jawaban)

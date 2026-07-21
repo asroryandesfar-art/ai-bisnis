@@ -8,6 +8,14 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Cognitive Core (Fase 2)
+- **Policy engine (`policy_engine`, P1-C)** — a single declarative governance point for agent actions:
+  `PolicyEngine(rules)` → `Decision(allow|block|approval|mask)`. `check_tool` (dangerous tools →
+  approval), `check_url` (blacklisted domains → block, incl. subdomains), `check_cost` (cost > limit →
+  approval), and `mask` (redact PII: email/phone/long-number → placeholders). Pure/no-I/O and testable;
+  reuses the existing approval workflow (returns APPROVAL rather than executing it). First enforcement
+  hook: the durable runner now **masks PII before storing episodic long-term memory** (so raw emails/
+  phones aren't retained in the vector store), gated per-org by `is_enabled("policy_engine")`. 9 tests
+  (8 engine + 1 runner PII-mask integration). ADR-0008.
 - **Evaluation framework (`evaluation`, P1-D)** — automatic post-task quality scoring, stored in a new
   additive `task_evaluations` table. `Evaluator.evaluate` computes deterministic metrics (tool_success,
   answered, verified, confidence) plus optional LLM-judge dimensions (accuracy, hallucination-free,

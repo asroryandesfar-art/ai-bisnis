@@ -267,6 +267,39 @@ def test_evaluation_auto_scores_on_completion():
     _run(body)
 
 
+def test_policy_masks_pii_before_storing_memory():
+    ff.set_override("cognitive_loop", True)
+    ff.set_override("long_term_memory", True)
+    ff.set_override("policy_engine", True)
+
+    async def fake_embed(text):
+        return [1.0] + [0.0] * 383
+
+    memory = SemanticMemory(embed_fn=fake_embed)
+
+    class CogA:
+        name = "cog_agent"
+        tools: list = []
+        api_key = model = base_url = None
+
+        async def reason(self, goal, **kw):
+            return {"answer": "kontak: budi@example.com / 081234567890",
+                    "accepted": True, "final_score": 0.9, "iterations": 1, "stop_reason": "accepted"}
+
+    async def body(pool, org_id):
+        await ensure_memory_schema(pool)
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="cog_agent", goal="g",
+                                 ctx={"mode": "cognitive", "use_tools": False})
+        claimed = await repo.claim_next(pool, owner="w1", lease_s=60)
+        runner = DurableJobRunner(repo, agent_builder=lambda n, c: CogA(), memory=memory)
+        await runner.run(pool, claimed)
+        content = await pool.fetchval(
+            "SELECT content FROM agent_memories WHERE org_id=$1 AND scope='episodic'", org_id)
+        assert "[EMAIL]" in content and "[PHONE]" in content              # PII ter-redaksi
+        assert "budi@example.com" not in content and "081234567890" not in content
+    _run(body)
+
+
 def test_chaos_crash_recovery_then_resume():
     """Worker A klaim + selesai 'plan' lalu CRASH (lease kadaluarsa). Recovery:
     find_expired → worker B claim_next (attempts++) → runner RESUME dari checkpoint
