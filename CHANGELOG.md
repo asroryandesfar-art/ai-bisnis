@@ -29,6 +29,13 @@ entries are grouped by theme rather than semantic version tags.
   the management-endpoint rate limit becomes **cross-worker** (no longer bypassable by scaling out);
   default `inprocess` preserves current behaviour exactly. Parity tests for both backends. No public
   API/behaviour change; internal signature only.
+- **Circuit breaker on shared state (P0-A, commit C4)** — the LLM provider circuit breaker
+  (`ai_providers/router.py`) is now **hybrid**: a local in-process fast-path (so `is_open` stays
+  ~0.5µs on the hot path) plus a `StateStore`-mirrored open-state (`cb:{provider}`), so a provider
+  tripped on one worker is seen by others within ~1s (cross-worker reads are throttled to 1/s/provider
+  to avoid per-call Redis latency). `is_open/ok/fail` became `async` (25 awaited call-sites in the
+  router; statically verified); `state()` stays sync (used by `status()`, no I/O). Default `inprocess`
+  preserves current behaviour. 5 unit + cross-worker tests.
 
 ### Added — Billing & Pricing
 - **Buyer tax identity (NPWP)** on invoices for Indonesian faktur pajak; snapshotted per invoice.

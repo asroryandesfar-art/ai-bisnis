@@ -1,6 +1,6 @@
 # ADR-0001 — Shared State Abstraction (`platform_state`)
 
-- **Status:** Accepted — implementasi bertahap (C1–C3 selesai; C4–C5 menyusul)
+- **Status:** Accepted — implementasi bertahap (C1–C4 selesai; C5 menyusul)
 - **Tanggal:** 2026-07-21
 - **Konteks fase:** Fase 1 Fondasi Platform, item **P0-A**
 - **Terkait:** ADR durable-runtime (P0-D, menyusul), feature-flag (P0-B)
@@ -48,7 +48,7 @@ TTL pendek (C4).
 - **C1 (selesai):** paket `platform_state/` (interface + InProcess + 12 contract test). Zero wiring, zero-behavior-change.
 - **C2 (selesai):** `RedisStateStore` (Lua atomik untuk `rate_incr`/`release_lock`) + `STATE_BACKEND`/`REDIS_URL` + wiring startup fail-open (`main._init_shared_state`). 10 parity test via fakeredis+lupa + 3 wiring test. Default tetap inprocess. **Catatan clock:** rate-limit ZSET memakai wall-clock klien (`time.time()`) — konsisten antar-worker dengan asumsi NTP/same-host; varian pakai `redis TIME` server-side adalah follow-up bila skew antar-host jadi masalah.
 - **C3 (selesai):** rate-limiter `security._check_rate_limit` → `StateStore.rate_incr` (key prefix `rl:`). Fungsi jadi **async**; codemod `await` seragam di **24 call-site** (12 modul bn_platform + indirection main.py), diverifikasi 100% statik (grep: nol call tanpa `await`). Default in-process = perilaku & pesan 429 identik; `STATE_BACKEND=redis` → rate-limit lintas-worker. Bukan 5 call-site seperti asumsi awal — ternyata 24; codemod async dipilih (bukan sync-redis) demi integritas abstraksi + verifikasi statik penuh. Test paritas in-process & Redis (`test_rate_limit_shared_state.py`).
-- **C4:** circuit-breaker hybrid (lokal + Redis shared open-state).
+- **C4 (selesai):** circuit-breaker `ai_providers/router.py` HYBRID — fast-path lokal (in-process) + mirror `open_until` (wall-clock) ke `StateStore` (`cb:{provider}`). `is_open/ok/fail` jadi async; baca lintas-worker DI-THROTTLE (`_SYNC_TTL=1s/provider`) supaya tak menambah latensi jalur panas LLM (bench `is_open` ~2.1M ops/s). `state()` tetap sync (dipakai `status()`, tanpa I/O). 25 call-site di router.py di-await (verifikasi statik). Cross-worker: provider yang di-open satu worker terlihat worker lain ≤1s (bila redis). 5 test (unit + cross-worker via shared store).
 - **C5:** working-memory STM → `StateStore`.
 - **A2 (defer):** WS device registry cross-worker (pub/sub).
 

@@ -22,45 +22,83 @@ import time
 from ai_providers.base import AIProvider
 from ai_providers.types import LLMRequest, LLMResponse, PRO_TASK_TYPES
 
+from platform_state import get_state_store   # P0-A C4: shared circuit-breaker state
+
 logger = logging.getLogger("botnesia.router")
 
 _FAIL_THRESHOLD = 3
 _RESET_SECS = 60
+_SYNC_TTL = 1.0          # throttle baca lintas-worker: maks 1 baca/detik/provider
 
 
 class _CircuitBreaker:
-    """Simple per-provider circuit breaker (in-process, non-persistent)."""
+    """Per-provider circuit breaker HYBRID (P0-A C4).
+
+    Fast-path LOKAL (in-process) supaya `is_open` tak menambah round-trip di
+    jalur panas LLM. State 'open' juga di-mirror ke platform_state.StateStore
+    (`cb:{name}`, wall-clock `open_until`) sehingga provider yang di-open satu
+    worker terlihat worker lain dalam ~_SYNC_TTL detik (bila STATE_BACKEND=redis).
+    Default in-process: StateStore = dict lokal → perilaku identik versi lama.
+    `is_open/ok/fail` kini async (dipanggil dari _try_*/stream yang sudah async);
+    `state()` tetap sync (dipakai status(), tanpa I/O)."""
 
     def __init__(self):
         self._fails: dict = {}
-        self._open_until: dict = {}
+        self._open_until: dict = {}      # name -> wall-clock epoch
+        self._last_sync: dict = {}       # name -> monotonic terakhir baca store
 
-    def is_open(self, name: str) -> bool:
+    async def is_open(self, name: str) -> bool:
+        now = time.time()
         until = self._open_until.get(name, 0.0)
-        if until and time.monotonic() < until:
-            return True
         if until:
-            # Cool-down expired — reset
-            self._fails[name] = 0
+            if now < until:
+                return True
+            self._fails[name] = 0            # cooldown lokal habis — reset
             self._open_until.pop(name, None)
+        # adopsi open dari worker lain (di-throttle agar tak beri beban tiap call)
+        if time.monotonic() - self._last_sync.get(name, 0.0) >= _SYNC_TTL:
+            self._last_sync[name] = time.monotonic()
+            try:
+                raw = await get_state_store().get(f"cb:{name}")
+            except Exception:
+                raw = None
+            if raw:
+                try:
+                    remote_until = float(raw)
+                except (TypeError, ValueError):
+                    remote_until = 0.0
+                if remote_until > now:
+                    self._open_until[name] = remote_until
+                    return True
         return False
 
-    def ok(self, name: str) -> None:
+    async def ok(self, name: str) -> None:
         self._fails[name] = 0
         self._open_until.pop(name, None)
+        try:
+            await get_state_store().delete(f"cb:{name}")
+        except Exception:
+            pass
 
-    def fail(self, name: str) -> None:
+    async def fail(self, name: str) -> None:
         n = self._fails.get(name, 0) + 1
         self._fails[name] = n
         if n >= _FAIL_THRESHOLD:
-            self._open_until[name] = time.monotonic() + _RESET_SECS
+            until = time.time() + _RESET_SECS
+            self._open_until[name] = until
+            try:
+                await get_state_store().set(f"cb:{name}", str(until), ttl_s=_RESET_SECS)
+            except Exception:
+                pass
             logger.warning("circuit-breaker: %s opened for %ds", name, _RESET_SECS)
 
     def state(self, name: str) -> dict:
+        """Snapshot LOKAL (sync) untuk status() — tanpa I/O."""
+        until = self._open_until.get(name, 0.0)
         return {
             "fails": self._fails.get(name, 0),
-            "open": self.is_open(name),
-            "open_until": self._open_until.get(name),
+            "open": bool(until and time.time() < until),
+            "open_until": until or None,
         }
 
 
@@ -115,59 +153,59 @@ class SmartModelRouter:
     # ── Try helpers ───────────────────────────────────────────────────────────
 
     async def _try_gemini(self, req: LLMRequest, model: str) -> LLMResponse | None:
-        if not self.gemini or not self.gemini.is_available() or _breaker.is_open("gemini"):
+        if not self.gemini or not self.gemini.is_available() or await _breaker.is_open("gemini"):
             return None
         try:
             r = await self.gemini.complete(req, model=model)
             if r.error is None:
-                _breaker.ok("gemini")
+                await _breaker.ok("gemini")
                 return r
             logger.warning("gemini err model=%s: %s", model, r.error)
         except Exception as exc:
             logger.warning("gemini exc model=%s: %s", model, exc)
-        _breaker.fail("gemini")
+        await _breaker.fail("gemini")
         return None
 
     async def _try_openrouter(self, req: LLMRequest, model: str) -> LLMResponse | None:
-        if not self.openrouter or not self.openrouter.is_available() or _breaker.is_open("openrouter"):
+        if not self.openrouter or not self.openrouter.is_available() or await _breaker.is_open("openrouter"):
             return None
         try:
             r = await self.openrouter.complete(req, model=model)
             if r.error is None:
-                _breaker.ok("openrouter")
+                await _breaker.ok("openrouter")
                 return r
             logger.warning("openrouter err model=%s: %s", model, r.error)
         except Exception as exc:
             logger.warning("openrouter exc model=%s: %s", model, exc)
-        _breaker.fail("openrouter")
+        await _breaker.fail("openrouter")
         return None
 
     async def _try_deepseek(self, req: LLMRequest, model: str) -> LLMResponse | None:
-        if not self.deepseek or not self.deepseek.is_available() or _breaker.is_open("deepseek"):
+        if not self.deepseek or not self.deepseek.is_available() or await _breaker.is_open("deepseek"):
             return None
         try:
             r = await self.deepseek.complete(req, model=model)
             if r.error is None:
-                _breaker.ok("deepseek")
+                await _breaker.ok("deepseek")
                 return r
             logger.warning("deepseek err model=%s: %s", model, r.error)
         except Exception as exc:
             logger.warning("deepseek exc model=%s: %s", model, exc)
-        _breaker.fail("deepseek")
+        await _breaker.fail("deepseek")
         return None
 
     async def _try_groq(self, req: LLMRequest) -> LLMResponse | None:
-        if not self.groq or not self.groq.is_available() or _breaker.is_open("groq"):
+        if not self.groq or not self.groq.is_available() or await _breaker.is_open("groq"):
             return None
         try:
             r = await self.groq.complete(req)
             if r.error is None:
-                _breaker.ok("groq")
+                await _breaker.ok("groq")
                 return r
             logger.warning("groq err: %s", r.error)
         except Exception as exc:
             logger.warning("groq exc: %s", exc)
-        _breaker.fail("groq")
+        await _breaker.fail("groq")
         return None
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -236,54 +274,54 @@ class SmartModelRouter:
         flash = self._flash_model()
 
         # 1. Gemini primary
-        if primary and self.gemini and self.gemini.is_available() and not _breaker.is_open("gemini"):
+        if primary and self.gemini and self.gemini.is_available() and not await _breaker.is_open("gemini"):
             try:
                 async for chunk in self.gemini.stream(request, model=primary):
                     yield chunk
-                _breaker.ok("gemini"); return
+                await _breaker.ok("gemini"); return
             except Exception as exc:
                 logger.warning("gemini stream err model=%s: %s", primary, exc)
-                _breaker.fail("gemini")
+                await _breaker.fail("gemini")
 
         # 2. DeepSeek direct
-        if ds_model and self.deepseek and self.deepseek.is_available() and not _breaker.is_open("deepseek"):
+        if ds_model and self.deepseek and self.deepseek.is_available() and not await _breaker.is_open("deepseek"):
             try:
                 async for chunk in self.deepseek.stream(request, model=ds_model):
                     yield chunk
-                _breaker.ok("deepseek"); return
+                await _breaker.ok("deepseek"); return
             except Exception as exc:
                 logger.warning("deepseek stream err model=%s: %s", ds_model, exc)
-                _breaker.fail("deepseek")
+                await _breaker.fail("deepseek")
 
         # 3. OpenRouter
-        if or_model and self.openrouter and self.openrouter.is_available() and not _breaker.is_open("openrouter"):
+        if or_model and self.openrouter and self.openrouter.is_available() and not await _breaker.is_open("openrouter"):
             try:
                 async for chunk in self.openrouter.stream(request, model=or_model):
                     yield chunk
-                _breaker.ok("openrouter"); return
+                await _breaker.ok("openrouter"); return
             except Exception as exc:
                 logger.warning("openrouter stream err model=%s: %s", or_model, exc)
-                _breaker.fail("openrouter")
+                await _breaker.fail("openrouter")
 
         # 4. Gemini Flash retry
-        if flash and flash != primary and self.gemini and self.gemini.is_available() and not _breaker.is_open("gemini"):
+        if flash and flash != primary and self.gemini and self.gemini.is_available() and not await _breaker.is_open("gemini"):
             try:
                 async for chunk in self.gemini.stream(request, model=flash):
                     yield chunk
-                _breaker.ok("gemini"); return
+                await _breaker.ok("gemini"); return
             except Exception as exc:
                 logger.warning("gemini flash stream err: %s", exc)
-                _breaker.fail("gemini")
+                await _breaker.fail("gemini")
 
         # 5. Groq
-        if self.groq and self.groq.is_available() and not _breaker.is_open("groq"):
+        if self.groq and self.groq.is_available() and not await _breaker.is_open("groq"):
             try:
                 async for chunk in self.groq.stream(request):
                     yield chunk
-                _breaker.ok("groq"); return
+                await _breaker.ok("groq"); return
             except Exception as exc:
                 logger.warning("groq stream err: %s", exc)
-                _breaker.fail("groq")
+                await _breaker.fail("groq")
 
         raise RuntimeError("No AI provider available for streaming")
 
