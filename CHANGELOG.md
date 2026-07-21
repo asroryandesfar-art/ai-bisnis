@@ -8,6 +8,12 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Platform Foundation (Fase 1)
+- **Feature flags (`feature_flags`, P0-B)** — standard gate for shipping new capabilities safely
+  (default OFF → per-org canary → prod) with no breaking change. `is_enabled(key, org_id=...)`
+  resolves process override → env `FEATURE_<KEY>` (`on|off|<pct>|canary:orgA,orgB`) → default.
+  Canary rollout is deterministic (`sha256(key:org) % 100 < pct`), so the same org gets a stable
+  decision across workers/restarts. Self-contained, zero wiring (consumers adopt it, e.g. P0-C/P0-D
+  canary). Env-based today; DB-backed runtime toggles are a documented follow-up. 9 tests, ADR-0002.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a
