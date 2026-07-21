@@ -9,7 +9,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Awaitable, Callable
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from .durable_dispatch import enqueue_if_durable   # P0-D: durable job opsional
 from pydantic import BaseModel, Field
 
 import marketing_agent as ma
@@ -399,9 +401,15 @@ def build_marketing_router(*, get_pool: GetPool, get_current_user: GetCurrentUse
         body: RunTaskRequest,
         user: Annotated[dict, Depends(require_permission("marketing.write"))],
         pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+        run_async: bool = Query(False, alias="async"),
     ):
         await _check_rate_limit(f"marketing-run-task:{user['org_id']}", 5)
         await require_agent_enabled(pool, str(user["org_id"]), "marketing")
+        if run_async:
+            _dj = await enqueue_if_durable(pool, org_id=user["org_id"], agent_name=agent.name,
+                                           goal=body.goal, bot_id=body.bot_id)
+            if _dj is not None:
+                return {"mode": "durable", "job_id": _dj["id"], "status": _dj["status"]}
         result = await agent.run_task(body.goal, pool=pool, org_id=user["org_id"], bot_id=body.bot_id)
         await write_audit_log(
             pool, org_id=user["org_id"], actor_user_id=user["id"], actor_email=user.get("email"),

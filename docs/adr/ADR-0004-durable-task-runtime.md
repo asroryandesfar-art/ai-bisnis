@@ -1,6 +1,6 @@
 # ADR-0004 — Durable Task Runtime (`task_runtime`)
 
-- **Status:** Accepted — **D1–D5 selesai** (schema + repository + runner + worker + API); D6 (SSE/DLQ-replay/chaos + integrasi router domain) menyusul
+- **Status:** Accepted — **P0-D SELESAI** (D1–D6). Validasi Redis/Celery-worker NYATA di staging masih perlu sebelum canary prod.
 - **Tanggal:** 2026-07-22
 - **Konteks fase:** Fase 1 Fondasi Platform, item **P0-D** (terberat)
 - **Terkait:** ADR-0001 (shared state / lock), ADR-0002 (feature flags / canary), ADR-0003 (event bus)
@@ -46,7 +46,7 @@ D1..D6, tiap slice tes; risiko regresi saat pecah `task_engine` → golden test 
 - **D2/D3 (selesai):** `DurableJobRunner` step-based (plan→subtask×N→verify→report) dengan checkpoint per-step (state kumulatif), **resume** dari step 'done' terakhir, **cancel/pause cooperative** di boundary, **retry/DLQ** (attempts vs max_attempts), timeout per-step, progres. Me-reuse primitif agent (`_call_llm_json`/`_call_llm_with_tools`) + `task_engine._persist_task_execution` → baris final `agent_task_executions` identik; **task_engine inline TAK diubah** (hindari regresi). 4 test vs Postgres nyata (completed+persist, resume-skip-plan, cancel, retry→DLQ). Terbitkan TaskStarted/Finished/Failed (event bus P0-C, best-effort). Belum ada worker (D4).
 - **D4 (selesai):** worker `run_one_job`/`drain_jobs` (bebas-Celery, testable) + `make_registry_agent_builder` (resolusi agent by name → build_agent, auto-filter kwargs) + task Celery `task_runtime.run_pending` + beat 30s (drain + recovery lease via claim_next). 4 test vs Postgres nyata.
 - **D5 (selesai):** API `bn_platform/jobs_router.build_jobs_router` — `POST /api/jobs` (enqueue, memicu worker best-effort), `GET /api/jobs`+`/{id}` (status+steps), `POST /api/jobs/{id}/cancel|pause|resume`. RBAC workforce.read/write, rate-limited. Mounted di main (401 unauth terverifikasi). 5 test (route+enqueue/get/list/cancel/idempotency/404/409).
-- **D6 (menyusul):** SSE progress `/api/jobs/{id}/stream`, DLQ replay endpoint, integrasi router domain (`async=true` → enqueue, flag `TASK_RUNTIME`/`is_enabled("durable_runtime")`), chaos test kill-worker→resume di CI.
+- **D6 (selesai):** SSE progress `GET /api/jobs/{id}/stream` (emit saat status/progress berubah, berhenti di terminal); DLQ replay `POST /api/jobs/{id}/retry` (+`repo.requeue_dlq`); integrasi 4 router domain (finance/hr/operations/marketing) `?async=true` → `enqueue_if_durable` (gate `feature_flags.is_enabled("durable_runtime", org_id)`, default OFF → inline lama byte-identik; canary per-org); **chaos test kill-worker→recovery→resume** (lease kadaluarsa → find_expired → claim_next reclaim → runner resume tanpa mengulang step). +9 test. Semua endpoint 401 unauth (RBAC).
 
 ## Rollback
 `TASK_RUNTIME=inline` (default) → jalur sinkron lama (tetap ada). Tabel job idle;

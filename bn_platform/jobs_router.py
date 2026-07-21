@@ -7,16 +7,25 @@ router (tanpa import dari main). JANGAN `from __future__ import annotations`
 
 Endpoint TAMBAHAN & opsional — jalur eksekusi lama (run_task inline) tak berubah.
 """
+import asyncio
+import json
 from typing import Annotated, Awaitable, Callable, Optional
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from task_runtime import JobRepository
 from .security import _check_rate_limit
 
 GetPool = Callable[..., Awaitable[asyncpg.Pool]]
+
+_TERMINAL = ("completed", "failed", "cancelled", "dead_letter")
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
 class EnqueueJobRequest(BaseModel):
@@ -102,5 +111,51 @@ def build_jobs_router(*, get_pool: GetPool, require_permission,
                          user: Annotated[dict, Depends(require_permission("workforce.write"))],
                          pool: asyncpg.Pool = Depends(get_pool)):
         return await _control("resume", job_id, user, pool)
+
+    @router.post("/{job_id}/retry")
+    async def retry_job(job_id: str,
+                        user: Annotated[dict, Depends(require_permission("workforce.write"))],
+                        pool: asyncpg.Pool = Depends(get_pool)):
+        """Replay job dead_letter → antre ulang (reset attempts) + picu worker."""
+        await _check_rate_limit(f"jobs-retry:{user['org_id']}", 30)
+        job = await repo.requeue_dlq(pool, job_id, org_id=str(user["org_id"]))
+        if job is None:
+            raise HTTPException(status_code=409, detail="Job bukan dead_letter / tak ditemukan.")
+        if on_enqueue is not None:
+            try:
+                on_enqueue()
+            except Exception:
+                pass
+        return {"job_id": job["id"], "status": job["status"]}
+
+    @router.get("/{job_id}/stream")
+    async def stream_job(job_id: str,
+                         user: Annotated[dict, Depends(require_permission("workforce.read"))],
+                         pool: asyncpg.Pool = Depends(get_pool),
+                         poll_s: float = 1.0, max_polls: int = 600):
+        """Progress realtime via SSE: emit saat status/progress berubah; berhenti
+        di status terminal atau setelah max_polls (klien boleh reconnect)."""
+        org_id = str(user["org_id"])
+
+        async def gen():
+            last = None
+            for _ in range(max(1, min(max_polls, 3600))):
+                job = await repo.get(pool, job_id, org_id=org_id)
+                if job is None:
+                    yield _sse("error", {"error": "Job tidak ditemukan"})
+                    return
+                snap = (job["status"], job["progress_pct"])
+                if snap != last:
+                    last = snap
+                    yield _sse("progress", {"status": job["status"], "progress_pct": job["progress_pct"]})
+                if job["status"] in _TERMINAL:
+                    yield _sse("done", {"status": job["status"],
+                                        "result_execution_id": job.get("result_execution_id")})
+                    return
+                await asyncio.sleep(max(0.05, poll_s))
+            yield _sse("timeout", {"status": last[0] if last else None})
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     return router

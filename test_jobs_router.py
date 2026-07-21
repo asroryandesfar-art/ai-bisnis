@@ -118,3 +118,69 @@ def test_cancel_missing_returns_409():
             await pool.close()
 
     asyncio.run(body())
+
+
+def test_retry_dlq_requeues():
+    from task_runtime import JobRepository
+    repo = JobRepository()
+    router = _router()
+    retry = _ep(router, "/jobs/{job_id}/retry", "POST")
+
+    async def body():
+        pool = await asyncpg.create_pool(main.cfg.database_url.replace("+asyncpg", ""))
+        try:
+            await ensure_job_schema(pool)
+            org = str(uuid.uuid4())
+            await pool.execute("INSERT INTO organizations (id,name,slug) VALUES ($1,$2,$3)",
+                               org, "Retry", f"retry-{org[:8]}")
+            user = {"org_id": org, "id": "u1"}
+            try:
+                job = await repo.enqueue(pool, org_id=org, agent_name="a", goal="g")
+                await pool.execute("UPDATE agent_jobs SET status='dead_letter', attempts=3 WHERE id=$1", job["id"])
+                res = await retry(job_id=job["id"], user=user, pool=pool)
+                assert res["status"] == "queued"
+                fresh = await repo.get(pool, job["id"], org_id=org)
+                assert fresh["attempts"] == 0 and fresh["dlq_reason"] is None
+                # bukan dead_letter lagi → 409
+                with pytest.raises(HTTPException) as ei:
+                    await retry(job_id=job["id"], user=user, pool=pool)
+                assert ei.value.status_code == 409
+            finally:
+                await pool.execute("DELETE FROM organizations WHERE id=$1", org)
+        finally:
+            await pool.close()
+
+    asyncio.run(body())
+
+
+def test_stream_emits_progress_and_done_for_terminal_job():
+    from task_runtime import JobRepository
+    repo = JobRepository()
+    router = _router()
+    enqueue = _ep(router, "/jobs", "POST")
+    stream = _ep(router, "/jobs/{job_id}/stream", "GET")
+
+    async def body():
+        pool = await asyncpg.create_pool(main.cfg.database_url.replace("+asyncpg", ""))
+        try:
+            await ensure_job_schema(pool)
+            org = str(uuid.uuid4())
+            await pool.execute("INSERT INTO organizations (id,name,slug) VALUES ($1,$2,$3)",
+                               org, "Stream", f"stream-{org[:8]}")
+            user = {"org_id": org, "id": "u1"}
+            try:
+                r = await enqueue(body=EnqueueJobRequest(agent="a", goal="g"), user=user, pool=pool)
+                await pool.execute("UPDATE agent_jobs SET status='completed', progress_pct=100 WHERE id=$1",
+                                   r["job_id"])
+                resp = await stream(job_id=r["job_id"], user=user, pool=pool, poll_s=0.05, max_polls=5)
+                chunks = []
+                async for c in resp.body_iterator:
+                    chunks.append(c if isinstance(c, str) else c.decode())
+                out = "".join(chunks)
+                assert "event: progress" in out and "event: done" in out and "completed" in out
+            finally:
+                await pool.execute("DELETE FROM organizations WHERE id=$1", org)
+        finally:
+            await pool.close()
+
+    asyncio.run(body())

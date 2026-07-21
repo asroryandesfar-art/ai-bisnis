@@ -112,6 +112,32 @@ def test_cancel_at_boundary():
     _run(body)
 
 
+def test_chaos_crash_recovery_then_resume():
+    """Worker A klaim + selesai 'plan' lalu CRASH (lease kadaluarsa). Recovery:
+    find_expired → worker B claim_next (attempts++) → runner RESUME dari checkpoint
+    (plan tak diulang) → completed. Membuktikan tahan-crash end-to-end."""
+    async def body(pool, org_id):
+        fake = FakeAgent(subtasks=["x"])
+        job = await repo.enqueue(pool, org_id=org_id, agent_name="fake_agent", goal="g")
+        # worker A klaim (attempts=1)
+        await repo.claim_next(pool, owner="A", lease_s=30)
+        # A menyelesaikan step plan lalu "crash": seed checkpoint + lease kadaluarsa
+        await repo.save_step(pool, job_id=job["id"], seq=0, kind="plan", status="done",
+                             checkpoint={"_phase": "subtask", "plan": {"subtasks": ["x"], "relevant_tools": []},
+                                         "subtasks": ["x"], "relevant_tools": [],
+                                         "subtask_results": [], "all_tool_calls": [], "sub_i": 0})
+        await pool.execute("UPDATE agent_jobs SET lease_until=NOW()-INTERVAL '5 seconds' WHERE id=$1", job["id"])
+        # recovery: job muncul sebagai expired; worker B merebut
+        assert any(j["id"] == job["id"] for j in await repo.find_expired(pool))
+        reclaimed = await repo.claim_next(pool, owner="B", lease_s=30)
+        assert reclaimed["id"] == job["id"] and reclaimed["attempts"] == 2 and reclaimed["lease_owner"] == "B"
+        # resume → selesai tanpa mengulang plan
+        runner = DurableJobRunner(repo, agent_builder=lambda name, ctx: fake)
+        status = await runner.run(pool, reclaimed)
+        assert status == "completed" and fake.calls["plan"] == 0 and fake.calls["subtask"] == 1
+    _run(body)
+
+
 def test_error_retries_then_dlq():
     async def body(pool, org_id):
         fake = FakeAgent(raise_on_plan=True)

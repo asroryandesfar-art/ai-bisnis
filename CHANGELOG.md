@@ -49,6 +49,16 @@ entries are grouped by theme rather than semantic version tags.
   + 5 API) against real Postgres. Default execution path (inline `run_task`) unchanged; the durable
   path is opt-in. Remaining (D6): SSE progress, DLQ replay, domain-router `async=true` integration
   behind `TASK_RUNTIME`/feature flag, kill-worker→resume chaos test in CI.
+- **Durable Task Runtime — D6 (completes P0-D)** — SSE progress `GET /api/jobs/{id}/stream`
+  (emits on status/progress change, ends at terminal state); DLQ replay `POST /api/jobs/{id}/retry`
+  (+ `JobRepository.requeue_dlq`); and the four domain task endpoints (finance/hr/operations/marketing
+  `POST /*/run-task`) gained an optional `?async=true` that routes to a durable job **only when the
+  `durable_runtime` feature flag is enabled for the org** (default OFF → the inline path is
+  byte-identical; supports per-org canary). Added a chaos test proving crash→recovery→resume
+  (expired lease → reclaim → runner resumes from checkpoint without re-running completed steps).
+  9 new tests. **P0-D (durable task runtime) is complete** end-to-end (schema→repo→runner→worker→
+  API→SSE→DLQ→domain integration); real Redis/Celery-worker validation in staging is the next gate
+  before production canary.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a

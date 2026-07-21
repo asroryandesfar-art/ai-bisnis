@@ -171,6 +171,17 @@ class JobRepository:
                 job_id, org_id, target)
         return _job_row(row)
 
+    async def requeue_dlq(self, pool: asyncpg.Pool, job_id: str, *, org_id: str) -> dict | None:
+        """Replay job dead_letter → antre ulang (reset attempts/dlq/error). Hanya
+        bila status='dead_letter' & milik org. Return job atau None."""
+        row = await pool.fetchrow(
+            f"""UPDATE agent_jobs
+                SET status='queued', attempts=0, dlq_reason=NULL, last_error=NULL, updated_at=NOW()
+                WHERE id=$1 AND org_id=$2 AND status='dead_letter'
+                RETURNING {_JOB_COLS}""",
+            job_id, org_id)
+        return _job_row(row)
+
     # ── steps / checkpoint ────────────────────────────────────────────────
     async def save_step(self, pool: asyncpg.Pool, *, job_id: str, seq: int, kind: str,
                         status: str = "done", checkpoint: dict | None = None,
