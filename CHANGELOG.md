@@ -22,6 +22,15 @@ entries are grouped by theme rather than semantic version tags.
   MemoryUpdated, KnowledgeUpdated, Browser/ScraperFinished, WorkflowCompleted). Self-contained,
   zero wiring (P0-D will be the first producer). Durable Redis-Streams backend is a documented
   follow-up. 8 tests, ADR-0003.
+- **Durable Task Runtime — schema + repository (`task_runtime`, P0-D D1)** — foundation for
+  hours-long, crash-safe autonomous tasks. New additive tables `agent_jobs` (live state) +
+  `agent_job_steps` (per-step checkpoints), created idempotently at startup; they sit **beside**
+  `agent_task_executions` (which stays the final report — no breaking change). `JobRepository`
+  provides atomic enqueue (+idempotency-key dedupe), `claim_next` via `FOR UPDATE SKIP LOCKED`
+  (two workers never grab the same job), lease renew + expiry-based recovery (`find_expired`),
+  step checkpoint/resume (`save_step`/`latest_done_step`), cooperative cancel/pause/resume, and
+  listing. 8 tests against real Postgres. **Idle** in this slice — no worker yet, zero behaviour
+  change; the inline `run_task` path is untouched (gated later by `TASK_RUNTIME` flag). ADR-0004.
 - **Shared-state abstraction `platform_state` (P0-A, commit C1)** — one async `StateStore`
   contract with two behaviour-identical backends (`InProcessStateStore` now; `RedisStateStore`
   next). Prepares migrating in-process rate-limiter/circuit-breaker/working-memory/lock to a

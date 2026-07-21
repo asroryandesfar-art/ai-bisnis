@@ -2017,6 +2017,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
                 # Jangan bikin server gagal start kalau optional schema gagal
                 pass
         try:
+            from task_runtime import ensure_job_schema      # P0-D: durable task runtime (additive)
+            await ensure_job_schema(conn)
+        except Exception:
+            logger.exception("Durable task runtime schema failed")
+        try:
             from bn_platform.agent_marketplace_catalog import seed_professional_marketplace
             await seed_professional_marketplace(conn)
         except Exception:
