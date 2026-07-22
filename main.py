@@ -1059,6 +1059,11 @@ async def startup():
         if pool:
             await ensure_schema(pool)
             await ensure_optional_schema(pool)
+            try:                                   # P2-B: singleton registry utk BaseAgent
+                from prompt_registry import PromptRegistry, set_prompt_registry
+                set_prompt_registry(PromptRegistry(pool))
+            except Exception:
+                logger.exception("Prompt registry singleton init failed")
             try:
                 from bn_platform.local_agent_router import ensure_schema as _la_schema
                 await _la_schema(pool)
@@ -2031,6 +2036,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
             await ensure_eval_schema(conn)
         except Exception:
             logger.exception("Evaluation schema failed")
+        try:
+            from prompt_registry import ensure_prompt_schema    # P2-B: prompt management (additive)
+            await ensure_prompt_schema(conn)
+        except Exception:
+            logger.exception("Prompt registry schema failed")
         try:
             from bn_platform.agent_marketplace_catalog import seed_professional_marketplace
             await seed_professional_marketplace(conn)
@@ -4886,6 +4896,17 @@ try:
         logger.info("Durable Task Runtime API mounted (/api/jobs)")
     except Exception:
         logger.exception("Durable Task Runtime API mount failed")
+    # Prompt Management API (P2-B) — CRUD versi/rollback/A-B prompt agen (org-scoped).
+    # Additive; agen tetap fallback ke prompt hardcoded saat flag off / registry kosong.
+    try:
+        from bn_platform.prompts_router import build_prompts_router
+        app.include_router(
+            build_prompts_router(get_pool=get_pool, require_permission=require_permission),
+            prefix="/api",
+        )
+        logger.info("Prompt Management API mounted (/api/prompts)")
+    except Exception:
+        logger.exception("Prompt Management API mount failed")
     # Web Intelligence — modul mandiri (backend/modules/web_intelligence). Additive;
     # di-wrap agar kegagalan opsional (mis. dep hilang) tidak menghentikan boot app.
     try:

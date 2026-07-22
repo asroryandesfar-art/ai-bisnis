@@ -199,6 +199,29 @@ class BaseAgent:
         from ai_providers.deepseek import DeepSeekProvider
         return DeepSeekProvider(api_key=self.deepseek_api_key)
 
+    async def resolved_system_prompt(self, *, org_id: str | None = None,
+                                     bucket_key: str | None = None) -> str:
+        """Prompt sistem efektif (P2-B Prompt Management).
+
+        Bila flag `prompt_registry` ON untuk org & ada versi aktif di registry →
+        pakai itu (mendukung versi/rollback/A-B); jika tidak → `self.system_prompt`
+        (hardcoded) byte-identik. Additive: caller lama tetap boleh baca
+        `self.system_prompt` langsung. Tak pernah raise."""
+        default = self.system_prompt
+        try:
+            from feature_flags import is_enabled
+            if not is_enabled("prompt_registry", org_id=org_id):
+                return default
+            from prompt_registry import get_prompt_registry
+            reg = get_prompt_registry()
+            if reg is None:
+                return default
+            rp = await reg.resolve(f"{self.name}.system", org_id=org_id,
+                                   bucket_key=bucket_key or org_id, default=default)
+            return rp.content or default
+        except Exception:
+            return default
+
     async def _call_gemini(
         self,
         messages: list[dict],

@@ -8,6 +8,17 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Efficiency & Operability (Fase 3)
+- **Prompt Management (`prompt_registry`, P2-B)** — versioned agent prompts with rollback and A/B,
+  instead of hardcoded class attributes. New table `agent_prompts` (immutable version history per
+  `name`+`org`+`variant`; `org_id` NULL = global default, org-scoped rows win). `PromptRegistry(pool)`:
+  `create_version`, `activate(exclusive=True → rollback / False → A/B)`, and `resolve` which picks the
+  active row — multiple active variants → **deterministic weighted** pick (`sha256(name:bucket_key) %
+  total_weight`) so the same org/session always sees the same variant. Consumed via
+  `BaseAgent.resolved_system_prompt(org_id, bucket_key)`, gated by `is_enabled("prompt_registry")` —
+  off / empty registry → `self.system_prompt` **byte-for-byte** (fail-open). Tenant API
+  `/api/prompts/*` (RBAC `workforce.read/write`, rate-limited, org-scoped): list/create/activate/
+  deactivate/resolve. Lets prompts change & roll back without a deploy, and A/B variants can later be
+  auto-promoted from Evaluation scores (P1-D). 9 tests. ADR-0010.
 - **Cost Router (P2-A)** — model selection by task class, not just a binary economy/quality split.
   New `cost_intelligence.classify_task_class` (simple/medium/complex/coding/vision, deterministic) +
   `router_params` mapping to `{tier, task_type}` the `SmartModelRouter` already understands, plus
