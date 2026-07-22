@@ -8,6 +8,16 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Efficiency & Operability (Fase 3)
+- **Runtime Observability (`task_runtime.RuntimeMonitor`, P2-C)** — realtime operator view of the
+  durable runtime (P0-D) + Evaluation scores (P1-D), which had no operator surface. Read-only,
+  org-scoped aggregation over `agent_jobs`/`task_evaluations` (no new schema): `health_snapshot`
+  (queue depth by status, backlog, in-flight vs **stalled** = lease expired → recovery candidate,
+  dead-letter, throughput completed/failed + success rate, active workers by lease, evaluation
+  avg/count/judged%) and `evaluation_trends` (per-agent avg/min/max/n/judged%). New API
+  `/api/runtime/*` (RBAC `workforce.read`): `GET /health`, `GET /evaluations`, `GET /stream` (SSE
+  periodic snapshot = realtime). Complements — does not replace — `/observability` (AI traces/token/
+  cost); this focuses on runtime/queue/eval. Evaluation part is fail-open (missing table → zeros).
+  5 tests. ADR-0011.
 - **Prompt Management (`prompt_registry`, P2-B)** — versioned agent prompts with rollback and A/B,
   instead of hardcoded class attributes. New table `agent_prompts` (immutable version history per
   `name`+`org`+`variant`; `org_id` NULL = global default, org-scoped rows win). `PromptRegistry(pool)`:

@@ -4907,6 +4907,17 @@ try:
         logger.info("Prompt Management API mounted (/api/prompts)")
     except Exception:
         logger.exception("Prompt Management API mount failed")
+    # Runtime Observability API (P2-C) — dashboard operator realtime durable runtime
+    # (queue/worker/DLQ) + skor Evaluation. Read-only; melengkapi /observability (AI traces).
+    try:
+        from bn_platform.runtime_observability_router import build_runtime_observability_router
+        app.include_router(
+            build_runtime_observability_router(get_pool=get_pool, require_permission=require_permission),
+            prefix="/api",
+        )
+        logger.info("Runtime Observability API mounted (/api/runtime)")
+    except Exception:
+        logger.exception("Runtime Observability API mount failed")
     # Web Intelligence — modul mandiri (backend/modules/web_intelligence). Additive;
     # di-wrap agar kegagalan opsional (mis. dep hilang) tidak menghentikan boot app.
     try:

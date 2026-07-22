@@ -14,6 +14,9 @@ from task_runtime.repository import JobRepository
 from task_runtime.runner import DurableJobRunner, JobStopped
 from task_runtime.worker import run_one_job, drain_jobs, make_registry_agent_builder
 
+from task_runtime.monitor import RuntimeMonitor
+
 __all__ = ["ensure_job_schema", "JOB_SCHEMA_SQL", "JobRepository",
            "DurableJobRunner", "JobStopped",
-           "run_one_job", "drain_jobs", "make_registry_agent_builder"]
+           "run_one_job", "drain_jobs", "make_registry_agent_builder",
+           "RuntimeMonitor"]
