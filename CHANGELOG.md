@@ -8,6 +8,18 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Security hardening
+- **Terminal sandbox hardening (`terminal_service`)** — closed three real gaps in the agent shell
+  executor. (1) **Hard-block malformed commands** (`_reject_reason`): >16KB or containing NUL/
+  control-chars → rejected, never executed even with approval. (2) **Robust danger detection**: a
+  regex layer (`_DANGEROUS_REGEX`) on top of the substring blocklist (backward-compatible) that
+  catches bypasses the substring list missed — `rm -fr`/`-Rf`, fork bombs, `curl … | sh`, writes to
+  `/dev/sdX`, `mkfs`/`fdisk`, `shutdown`/`poweroff`, `chmod/chown -R /` — all now require approval;
+  reversible via env `TERMINAL_STRICT_GUARDS=off`. (3) **Working-dir jail** (`_jail_cwd`, opt-in
+  `TerminalService(allowed_base_dir=…)`): the docstring promised a jail the code never enforced — now,
+  when a base is configured, `cwd` is realpath-checked to stay inside it (anti path-traversal);
+  default `None` = no jail = byte-identical. Honest limits: regex may add approval prompts for
+  legit-but-risky commands (absolute-path/glob `rm`); jail is off until callers pass `allowed_base_dir`;
+  shell is still used (legit pipes) so this is hardening, not OS-level isolation. +20 tests. ADR-0014.
 - **Tenant-context primitive for RLS rollout (`platform_rls`, M-07 step-a)** — the RLS migration
   (`2026-07-05_row_level_security.sql`) is fail-closed and needs the app to set GUC
   `app.current_org` per tenant connection before it can be adopted; that code was missing. New

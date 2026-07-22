@@ -10,9 +10,13 @@ Capabilities:
 
 Safety model:
   - Semua command butuh izin RUN_TERMINAL
-  - Command BERBAHAYA (rm -rf, mkfs, dll) butuh izin eksplisit + approval
+  - Command malformed (control-char/NUL, >16KB) DITOLAK keras (tak dieksekusi)
+  - Command BERBAHAYA butuh approval: daftar substring + lapis regex robust
+    (rm -fr/-Rf, fork bomb, curl|sh, tulis ke /dev/sdX, mkfs/fdisk, shutdown,
+    chmod/chown -R /) — reversible via env TERMINAL_STRICT_GUARDS=off
   - Timeout wajib (default 60s, maks 300s)
-  - Working directory terbatas ke allowed_base_dir
+  - Working directory di-jail ke allowed_base_dir BILA di-set (opt-in; default
+    tanpa jail = perilaku lama). Bila di-set, cwd di luar base ditolak.
   - Environment variable difilter (tidak ada secret dari host env yang bocor)
   - Output dibatasi 50KB
 
@@ -24,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shlex
 import time
 from pathlib import Path
@@ -39,6 +44,13 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 60
 _MAX_TIMEOUT = 300
 _MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB
+_MAX_COMMAND_CHARS = 16 * 1024  # 16 KB — command lebih panjang ditolak (abuse guard)
+
+# Karakter kontrol non-printable (kecuali tab/LF/CR) & NUL → command malformed →
+# DITOLAK keras (tak dieksekusi walau approval): sering dipakai menyelundupkan
+# perintah / merusak logging/audit.
+_ALLOWED_CONTROL = {9, 10, 13}
+_CONTROL_CHARS = (set(range(0, 32)) | {127}) - _ALLOWED_CONTROL
 
 # Whitelist env vars yang aman diteruskan ke subprocess
 _SAFE_ENV_VARS = {
@@ -48,7 +60,7 @@ _SAFE_ENV_VARS = {
     "VIRTUAL_ENV", "CONDA_PREFIX",
 }
 
-# Command yang SELALU perlu approval (berbahaya)
+# Command yang SELALU perlu approval (berbahaya) — daftar substring (backward-compat).
 _ALWAYS_REQUIRE_APPROVAL = [
     "rm -rf", "rm -r /", "rmdir /", "dd ", "mkfs", "fdisk",
     "format ", "del /", "shutdown", "reboot", "halt",
@@ -57,13 +69,58 @@ _ALWAYS_REQUIRE_APPROVAL = [
     "kubectl delete", "docker rm -f",
 ]
 
+# Lapis kedua (robust): pola regex yang sulit di-bypass oleh varian spasi/flag.
+# Menutup lubang substring: `rm -fr`, `rm  -Rf`, fork bomb, pipe unduhan→shell,
+# tulis ke device blok, tool disk destruktif, kontrol daya, chmod/chown -R pada /.
+# Reversible via env TERMINAL_STRICT_GUARDS=off (kembali ke substring saja).
+_DANGEROUS_REGEX = [
+    (re.compile(r":\s*\(\s*\)\s*\{.*[|&].*\}\s*;\s*:"),                         "fork bomb"),
+    (re.compile(r"\brm\b[^\n]*\s-\w*r\w*f|\brm\b[^\n]*\s-\w*f\w*r", re.I),       "rm rekursif+force"),
+    (re.compile(r"\brm\b\s+(?:-\S+\s+)*(?:/|~|\*|\$HOME)(?:\s|$)"),             "rm target sensitif (/, ~, *)"),
+    (re.compile(r"\b(?:curl|wget)\b[^|]*\|\s*(?:sudo\s+)?(?:sh|bash|zsh|python\d?)\b", re.I), "pipe unduhan ke shell"),
+    (re.compile(r">\s*/dev/(?:sd|nvme|hd|mmcblk|vd)\w*", re.I),                  "tulis ke device blok"),
+    (re.compile(r"\b(?:mkfs\w*|fdisk|parted|wipefs)\b", re.I),                   "tool disk destruktif"),
+    (re.compile(r"\b(?:shutdown|reboot|halt|poweroff)\b|\binit\s+[06]\b", re.I), "power/kontrol sistem"),
+    (re.compile(r"\b(?:chmod|chown)\b\s+-\w*R\w*\b[^\n]*\s/(?:\s|$)", re.I), "chmod/chown rekursif pada /"),
+]
+
+
+def _strict_guards_enabled() -> bool:
+    return os.environ.get("TERMINAL_STRICT_GUARDS", "on").strip().lower() not in (
+        "off", "0", "false", "no", "disabled")
+
 
 def _needs_approval(command: str) -> tuple[bool, str]:
     cmd = command.strip()
     for pattern in _ALWAYS_REQUIRE_APPROVAL:
         if pattern.lower() in cmd.lower():
             return True, f"Command mengandung pola berbahaya: '{pattern}'"
+    if _strict_guards_enabled():
+        for rx, label in _DANGEROUS_REGEX:
+            if rx.search(cmd):
+                return True, f"Command mengandung pola berbahaya: {label}"
     return False, ""
+
+
+def _reject_reason(command: str) -> str | None:
+    """Command malformed yang DITOLAK keras (tak dieksekusi walau approval)."""
+    if len(command) > _MAX_COMMAND_CHARS:
+        return f"Command melebihi batas {_MAX_COMMAND_CHARS} karakter."
+    if any((ord(ch) in _CONTROL_CHARS) for ch in command):
+        return "Command mengandung karakter kontrol/NUL yang tidak diizinkan."
+    return None
+
+
+def _jail_cwd(effective_cwd: str | None, allowed_base: str | None) -> tuple[str | None, str | None]:
+    """Pastikan cwd berada di dalam allowed_base (bila di-set). Default (base None)
+    → tak ada jail (perilaku lama byte-identik). Mencegah path-traversal keluar base."""
+    if not allowed_base:
+        return effective_cwd, None
+    base = os.path.realpath(allowed_base)
+    target = os.path.realpath(effective_cwd) if effective_cwd else base
+    if target == base or target.startswith(base + os.sep):
+        return target, None
+    return None, f"Working directory di luar area yang diizinkan ({allowed_base})."
 
 
 def _build_safe_env(extra: dict | None = None) -> dict[str, str]:
@@ -109,12 +166,16 @@ class TerminalService:
         *,
         agent_name: str = "terminal_agent",
         working_dir: str | None = None,
+        allowed_base_dir: str | None = None,
     ):
         self._pool = pool
         self._org_id = org_id
         self._pm = permission_manager
         self._agent_name = agent_name
         self._working_dir = working_dir
+        # Jail direktori kerja (opt-in). Bila di-set, semua cwd WAJIB di dalamnya
+        # (mencegah agen keluar ke path sistem). Default None = tanpa jail (lama).
+        self._allowed_base_dir = allowed_base_dir
         self._history: list[dict] = []  # in-memory session history
 
     async def execute(
@@ -138,6 +199,11 @@ class TerminalService:
         command = (command or "").strip()
         if not command:
             return {"success": False, "error": "Command kosong"}
+
+        # ── 0. Tolak keras command malformed (control-char/NUL/terlalu panjang) ─
+        reject = _reject_reason(command)
+        if reject:
+            return {"success": False, "error": reject, "blocked": True, "command": command[:200]}
 
         # ── 1. Cek permission ──────────────────────────────────────────
         perm = await self._pm.check(Permission.RUN_TERMINAL, resource=command[:100])
@@ -170,9 +236,16 @@ class TerminalService:
                 "message": f"Command ini memerlukan approval eksplisit: {reason}",
             }
 
-        # ── 3. Klamp timeout ─────────────────────────────────────────
+        # ── 3. Klamp timeout + tegakkan jail cwd (bila di-set) ────────
         timeout = max(1, min(timeout, _MAX_TIMEOUT))
-        effective_cwd = cwd or self._working_dir
+        effective_cwd, jail_err = _jail_cwd(cwd or self._working_dir, self._allowed_base_dir)
+        if jail_err:
+            await log_action(
+                self._pool, org_id=self._org_id, agent_name=self._agent_name,
+                action_type="terminal_execute", target=command[:500],
+                status="blocked", error=jail_err,
+            )
+            return {"success": False, "error": jail_err, "blocked": True, "command": command}
 
         # ── 4. Eksekusi ───────────────────────────────────────────────
         started = time.perf_counter()
