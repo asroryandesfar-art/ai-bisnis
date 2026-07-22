@@ -8,6 +8,15 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Efficiency & Operability (Fase 3)
+- **Performance: TTL cache (`perf_cache`, P2-D)** — a minimal in-process `TTLCache` +
+  `get_or_compute(cache, key, ttl, factory)` helper (`ttl<=0` → bypass, identical to no cache) for
+  read-heavy, staleness-tolerant poll hot-paths. Wired into `RuntimeMonitor(cache_ttl_s=…)`:
+  `health_snapshot`/`evaluation_trends` cached per `(org, window)` when enabled — the SSE
+  `/api/runtime/stream` (P2-C) polls the snapshot per connection, so many operators on one org meant
+  N× identical DB aggregation. The router uses a single shared monitor with a default 2s TTL (env
+  `RUNTIME_OBS_CACHE_TTL_S`, 0 disables). **Benchmark: 50 snapshot polls → 200 DB-calls (off) vs 4
+  DB-calls (on, 2s) — 98% fewer.** Class default `cache_ttl_s=0.0` (no cache) keeps existing callers
+  byte-for-byte. Reusable for `PromptRegistry.resolve` later. 6 tests. ADR-0012.
 - **Runtime Observability (`task_runtime.RuntimeMonitor`, P2-C)** — realtime operator view of the
   durable runtime (P0-D) + Evaluation scores (P1-D), which had no operator surface. Read-only,
   org-scoped aggregation over `agent_jobs`/`task_evaluations` (no new schema): `health_snapshot`

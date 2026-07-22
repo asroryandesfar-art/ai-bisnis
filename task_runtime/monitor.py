@@ -6,6 +6,8 @@ skema baru. Bagian evaluasi fail-open (tabel absen → nol) agar tak pernah 500.
 """
 from __future__ import annotations
 
+from perf_cache import TTLCache, get_or_compute
+
 # Semua status agent_jobs (CHECK constraint) — dipakai agar dict antrian selalu
 # lengkap (status tanpa baris → 0), bukan sekadar yang kebetulan ada.
 _JOB_STATUSES = (
@@ -15,10 +17,24 @@ _JOB_STATUSES = (
 
 
 class RuntimeMonitor:
-    """Agregat metrik durable runtime untuk satu org."""
+    """Agregat metrik durable runtime untuk satu org.
+
+    `cache_ttl_s>0` (P2-D) → hasil snapshot/tren di-cache per (org, window) selama
+    TTL detik → koneksi SSE yang mem-poll TAK memukul DB tiap tick (banyak operator
+    streaming = 1 query per TTL, bukan N). Default 0 = tanpa cache (byte-identik)."""
+
+    def __init__(self, *, cache_ttl_s: float = 0.0):
+        self._cache_ttl = float(cache_ttl_s)
+        self._cache = TTLCache(maxsize=4096)
 
     async def health_snapshot(self, pool, org_id: str, *, window_hours: int = 24) -> dict:
         window_hours = max(1, min(720, int(window_hours)))
+        return await get_or_compute(
+            self._cache, ("health", org_id, window_hours), self._cache_ttl,
+            lambda: self._health_snapshot(pool, org_id, window_hours),
+        )
+
+    async def _health_snapshot(self, pool, org_id: str, window_hours: int) -> dict:
         by_status = {s: 0 for s in _JOB_STATUSES}
         for r in await pool.fetch(
             "SELECT status, COUNT(*)::int AS n FROM agent_jobs WHERE org_id=$1 GROUP BY status",
@@ -95,6 +111,12 @@ class RuntimeMonitor:
     async def evaluation_trends(self, pool, org_id: str, *, window_hours: int = 24) -> list[dict]:
         """Skor Evaluation per-agen (rata-rata/min/max/jumlah/%judged) dalam window."""
         window_hours = max(1, min(720, int(window_hours)))
+        return await get_or_compute(
+            self._cache, ("trends", org_id, window_hours), self._cache_ttl,
+            lambda: self._evaluation_trends(pool, org_id, window_hours),
+        )
+
+    async def _evaluation_trends(self, pool, org_id: str, window_hours: int) -> list[dict]:
         try:
             rows = await pool.fetch(
                 """SELECT agent_name,

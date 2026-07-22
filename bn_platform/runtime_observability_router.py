@@ -10,6 +10,7 @@ fokus ke RUNTIME (queue/worker/eval), subsistem yang belum punya view operator.
 """
 import asyncio
 import json
+import os
 from typing import Annotated, Awaitable, Callable
 
 import asyncpg
@@ -25,9 +26,20 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def build_runtime_observability_router(*, get_pool: GetPool, require_permission) -> APIRouter:
+def _default_cache_ttl() -> float:
+    """TTL cache snapshot (P2-D). Env RUNTIME_OBS_CACHE_TTL_S; default 2s menekan
+    poll SSE duplikat lintas koneksi. 0 → nonaktif (tiap request query DB segar)."""
+    try:
+        return max(0.0, min(30.0, float(os.environ.get("RUNTIME_OBS_CACHE_TTL_S", "2.0"))))
+    except (TypeError, ValueError):
+        return 2.0
+
+
+def build_runtime_observability_router(*, get_pool: GetPool, require_permission,
+                                       cache_ttl_s: float | None = None) -> APIRouter:
     router = APIRouter(prefix="/runtime", tags=["runtime-observability"])
-    monitor = RuntimeMonitor()
+    ttl = _default_cache_ttl() if cache_ttl_s is None else cache_ttl_s
+    monitor = RuntimeMonitor(cache_ttl_s=ttl)
 
     @router.get("/health")
     async def health(
