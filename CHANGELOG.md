@@ -14,9 +14,12 @@ entries are grouped by theme rather than semantic version tags.
   adds one `runtime` route ("Runtime Ops") under the agent-os nav group: metric cards (Backlog,
   In-flight, **Stalled** = lease-expired/recovery-due, Dead-letter, Success rate, Avg eval score),
   per-status queue chips, an active-workers (lease) table, and a per-agent evaluation-score table,
-  with a window selector (1h/24h/7d/30d) and 5s auto-refresh while the route is active. Read-only, no
-  mock data. Additive: only adds a route/module (+ api-client methods, 3 i18n keys, a nav icon);
-  nothing else changes. ADR-0015.
+  with a window selector (1h/24h/7d/30d) and 5s auto-refresh while the route is active. No mock data.
+  Now **actionable**: a Jobs section (status filter + table) with per-status controls — **Retry** a
+  dead-letter job (`/api/jobs/{id}/retry`), **Cancel/Pause/Resume** queued/running/paused ones (all
+  pre-existing endpoints); actions are delegated on the body container (survive the refresh innerHTML
+  swap), cancel confirms, success toasts + refreshes. Additive: only adds a route/module (+ api-client
+  methods, 3 i18n keys, a nav icon); nothing else changes. ADR-0015.
 
 ### Added — Security hardening
 - **Policy engine enforcement hooks (`policy_engine`, P1-C.2)** — the P1-C engine was only wired to

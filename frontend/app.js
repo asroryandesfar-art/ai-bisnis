@@ -8,7 +8,7 @@ import {
 import { t, setLang, getLang } from "/ui/i18n.js?v=20260721-wi-1";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 import { createWebIntelligence, WEB_INTELLIGENCE_ROUTES } from "/ui/web_intelligence.js?v=20260721-wi-1";
-import { createRuntimeObservability, RUNTIME_ROUTES } from "/ui/runtime_observability.js?v=20260723-rt-1";
+import { createRuntimeObservability, RUNTIME_ROUTES } from "/ui/runtime_observability.js?v=20260723-rt-2";
 
 window.laToolChange = function(tool) {
   const container = document.getElementById("la-fields");

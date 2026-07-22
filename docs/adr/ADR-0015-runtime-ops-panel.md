@@ -40,7 +40,11 @@ permission `workforce.read`. Belum ada aksi (retry DLQ) dari panel — read-only
 
 ## Rencana
 - **(selesai):** panel read-only + nav + auto-refresh. Frontend statis (tanpa build), diserve /ui/*.
-- **berikutnya:** tombol aksi (retry DLQ → `/api/jobs/{id}/retry`, cancel/pause), chart tren, alert threshold; panel serupa untuk Prompt A/B (P2-B) & policy rules (P1-C.2).
+- **(selesai) actionable:** bagian **Jobs** (filter status + tabel) dengan aksi per-status
+  → **Retry** DLQ (`/api/jobs/{id}/retry`), **Cancel/Pause/Resume** (queued/running/paused).
+  Aksi via delegasi klik pada `#runtime-body` (tahan innerHTML-swap saat refresh); cancel
+  minta konfirmasi; sukses → toast + refresh. api-client: jobsList/jobRetry/jobCancel/jobPause/jobResume.
+- **berikutnya:** chart tren, alert threshold; panel serupa untuk Prompt A/B (P2-B) & policy rules (P1-C.2).
 
 ## Rollback
 Hapus route dari whitelist + nav + renderers spread → panel hilang, nol dampak.

@@ -138,6 +138,12 @@ export const api = {
   // Runtime Operations (P2-C) — durable runtime health + evaluation scores
   runtimeHealth: (windowHours = 24) => request(`/api/runtime/health${encodeQuery({ window_hours: windowHours })}`),
   runtimeEvaluations: (windowHours = 24) => request(`/api/runtime/evaluations${encodeQuery({ window_hours: windowHours })}`),
+  // Durable jobs (P0-D) — list + control actions for the Runtime Ops panel
+  jobsList: (params = {}) => request(`/api/jobs${encodeQuery(params)}`),
+  jobRetry: (id) => request(`/api/jobs/${id}/retry`, { method: "POST" }),
+  jobCancel: (id) => request(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  jobPause: (id) => request(`/api/jobs/${id}/pause`, { method: "POST" }),
+  jobResume: (id) => request(`/api/jobs/${id}/resume`, { method: "POST" }),
   marketplaceTemplates: () => request("/api/marketplace/templates"),
   marketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}`),
   marketplaceCategories: () => request("/api/marketplace/categories"),

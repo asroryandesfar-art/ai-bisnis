@@ -10,7 +10,17 @@
 import { t } from "/ui/i18n.js?v=20260723-rt-1";
 import { esc, icon, pageHeader, metricCard, emptyState, skeletonCards, relativeTime, formatNumber } from "/ui/components.js?v=20260723-rt-1";
 
-const RT = { windowHours: 24, timer: null, busy: false };
+const RT = { windowHours: 24, jobStatus: "dead_letter", timer: null, busy: false };
+
+// Aksi yang boleh dilakukan per status job (selaras jobs_router).
+const JOB_ACTIONS = {
+  dead_letter: [["retry", "Retry", "refresh"]],
+  queued:      [["cancel", "Cancel", "security"]],
+  running:     [["pause", "Pause", "operations"], ["cancel", "Cancel", "security"]],
+  paused:      [["resume", "Resume", "chat"], ["cancel", "Cancel", "security"]],
+  pausing:     [["cancel", "Cancel", "security"]],
+};
+const JOB_FILTERS = ["dead_letter", "failed", "queued", "running", "paused", "completed", "all"];
 
 export const RUNTIME_ROUTES = ["runtime"];
 
@@ -52,7 +62,31 @@ export function createRuntimeObservability(ctx) {
     return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Runs</th><th>Avg score</th><th>Min–Max</th><th>Judged</th><th>Last</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
-  function bodyHtml(health, evals) {
+  function jobsTable(jobs = []) {
+    const filterSel = `<select class="select" data-job-filter aria-label="Job status filter">
+      ${JOB_FILTERS.map((s) => `<option value="${s}" ${RT.jobStatus === s ? "selected" : ""}>${esc(s.replace("_", " "))}</option>`).join("")}</select>`;
+    let table;
+    if (!jobs.length) {
+      table = emptyState("No jobs", `No ${RT.jobStatus === "all" ? "" : RT.jobStatus.replace("_", " ") + " "}jobs in this org.`, "", "workflow-builder");
+    } else {
+      const rows = jobs.map((j) => {
+        const acts = (JOB_ACTIONS[j.status] || []).map(([a, label, ic]) =>
+          `<button class="button button-sm" data-job-action="${a}" data-job-id="${esc(j.id)}">${icon(ic, 12)} ${label}</button>`).join(" ") || "—";
+        const note = j.dlq_reason || j.last_error || "";
+        return `<tr>
+          <td><span class="table-title">${esc(j.agent_name || "—")}</span><div class="subtle mono" style="font-size:8px;margin-top:3px">${esc(String(j.id).slice(0, 8))}</div></td>
+          <td><span class="status-badge ${j.status === "failed" || j.status === "dead_letter" ? "handoff" : j.status}">${esc(String(j.status).replace("_", " "))}</span></td>
+          <td>${esc(String(j.attempts ?? 0))}/${esc(String(j.max_attempts ?? "—"))}</td>
+          <td class="subtle" title="${esc(note)}">${esc(note.slice(0, 60)) || "—"}</td>
+          <td>${j.updated_at ? relativeTime(j.updated_at) : "—"}</td>
+          <td><div style="display:flex;gap:6px;flex-wrap:wrap">${acts}</div></td></tr>`;
+      }).join("");
+      table = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Job</th><th>Status</th><th>Attempts</th><th>Reason</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+    return `<div class="card"><div class="card-head"><div><h3>Jobs</h3><span class="subtle">Inspect & control durable jobs</span></div>${filterSel}</div>${table}</div>`;
+  }
+
+  function bodyHtml(health, evals, jobs) {
     const th = health.throughput || {};
     const ev = health.evaluation || {};
     const stalled = Number(health.stalled || 0);
@@ -69,22 +103,25 @@ export function createRuntimeObservability(ctx) {
       <div class="grid grid-3" style="margin-bottom:16px">${cards}</div>
       <div class="card" style="margin-bottom:16px"><div class="card-head"><div><h3>Queue</h3><span class="subtle">Jobs by status · last ${formatNumber(th.completed_1h)} completed in 1h</span></div></div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 2px">${queueChips(health.queue)}</div></div>
-      <div class="grid grid-2">
+      <div class="grid grid-2" style="margin-bottom:16px">
         <div class="card"><div class="card-head"><div><h3>Workers</h3><span class="subtle">Active leases (durable runtime)</span></div></div>${workersTable(health.workers)}</div>
         <div class="card"><div class="card-head"><div><h3>Evaluation by agent</h3><span class="subtle">Quality scores, ${RT.windowHours}h window</span></div></div>${evalTable(evals)}</div>
-      </div>`;
+      </div>
+      ${jobsTable(jobs)}`;
   }
 
   async function refreshData({ silent = false } = {}) {
     if (RT.busy) return;
     RT.busy = true;
     try {
-      const [health, evals] = await Promise.all([
+      const jobParams = RT.jobStatus === "all" ? { limit: 50 } : { status: RT.jobStatus, limit: 50 };
+      const [health, evals, jobs] = await Promise.all([
         api.runtimeHealth(RT.windowHours),
         api.runtimeEvaluations(RT.windowHours),
+        api.jobsList(jobParams).catch(() => []),
       ]);
       const body = el("#runtime-body");
-      if (body) body.innerHTML = bodyHtml(health || {}, Array.isArray(evals) ? evals : []);
+      if (body) body.innerHTML = bodyHtml(health || {}, Array.isArray(evals) ? evals : [], Array.isArray(jobs) ? jobs : []);
       const dot = el("#runtime-live");
       if (dot) { dot.textContent = `Updated ${new Date().toLocaleTimeString("id-ID")}`; }
     } catch (e) {
@@ -98,11 +135,34 @@ export function createRuntimeObservability(ctx) {
     }
   }
 
+  async function runJobAction(action, id) {
+    const fn = { retry: api.jobRetry, cancel: api.jobCancel, pause: api.jobPause, resume: api.jobResume }[action];
+    if (!fn) return;
+    if (action === "cancel" && !window.confirm("Batalkan job ini? Aksi tidak bisa dibatalkan.")) return;
+    try {
+      const res = await fn(id);
+      toast(`Job ${action} → ${res?.status || "ok"}`, "success");
+      await refreshData({ silent: true });
+    } catch (e) {
+      toast(e?.message || `Gagal ${action} job`, "error");
+    }
+  }
+
   function bind() {
     el("[data-rt-refresh]")?.addEventListener("click", () => refreshData());
     el("[data-rt-window]")?.addEventListener("change", (e) => {
       RT.windowHours = Number(e.target.value) || 24;
       refreshData();
+    });
+    // Delegasi pada #runtime-body (innerHTML-nya diganti tiap refresh, node tetap).
+    const bodyEl = el("#runtime-body");
+    bodyEl?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-job-action]");
+      if (btn) runJobAction(btn.getAttribute("data-job-action"), btn.getAttribute("data-job-id"));
+    });
+    bodyEl?.addEventListener("change", (e) => {
+      const sel = e.target.closest("[data-job-filter]");
+      if (sel) { RT.jobStatus = sel.value; refreshData(); }
     });
     stopTimer();
     // Auto-refresh tiap 5s selama route aktif; berhenti otomatis saat pindah route.
