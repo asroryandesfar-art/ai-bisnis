@@ -108,6 +108,21 @@ class PromptRegistry:
         )
         return [dict(r) for r in rows]
 
+    async def list_names(self, *, org_id: str | None = None) -> list[dict]:
+        """Ringkasan tiap prompt (name) milik org: jumlah versi/varian aktif/terbaru."""
+        rows = await self.pool.fetch(
+            """SELECT name,
+                      COUNT(*)::int AS versions,
+                      COUNT(*) FILTER (WHERE active)::int AS active_versions,
+                      COUNT(DISTINCT variant)::int AS variants,
+                      MAX(version) AS latest_version,
+                      MAX(created_at) AS updated_at
+               FROM agent_prompts WHERE org_id IS NOT DISTINCT FROM $1
+               GROUP BY name ORDER BY name""",
+            org_id,
+        )
+        return [dict(r) for r in rows]
+
     async def _active_rows(self, name: str, *, org_id: str | None) -> list[dict]:
         """Baris aktif untuk (name, org). Ber-org menang; kosong → global (NULL)."""
         if org_id is not None:

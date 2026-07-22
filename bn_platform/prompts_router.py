@@ -37,6 +37,14 @@ class ActivateRequest(BaseModel):
 def build_prompts_router(*, get_pool: GetPool, require_permission) -> APIRouter:
     router = APIRouter(prefix="/prompts", tags=["prompt-management"])
 
+    @router.get("")
+    async def list_names(
+        user: Annotated[dict, Depends(require_permission("workforce.read"))],
+        pool: asyncpg.Pool = Depends(get_pool),
+    ):
+        reg = PromptRegistry(pool)
+        return await reg.list_names(org_id=str(user["org_id"]))
+
     @router.get("/{name}")
     async def list_versions(
         name: str,

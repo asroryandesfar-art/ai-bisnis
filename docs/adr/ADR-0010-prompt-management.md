@@ -1,9 +1,20 @@
 # ADR-0010 — Prompt Management (registry versi/rollback/A-B)
 
-- **Status:** Accepted — paket `prompt_registry` + `BaseAgent.resolved_system_prompt` + API `/api/prompts` (opt-in) selesai
-- **Tanggal:** 2026-07-22
+- **Status:** Accepted — paket `prompt_registry` + `BaseAgent.resolved_system_prompt` + API `/api/prompts` + UI panel selesai
+- **Tanggal:** 2026-07-22 (UI + list-names: 2026-07-23)
 - **Konteks fase:** Fase 3 (Efisiensi & Operabilitas), item **P2-B**
-- **Terkait:** ADR-0002 (feature flag), ADR-0007 (Evaluation — kalibrasi varian), ADR-0009 (Cost Router)
+- **Terkait:** ADR-0002 (feature flag), ADR-0007 (Evaluation — kalibrasi varian), ADR-0009 (Cost Router), ADR-0015 (pola panel)
+
+## Addendum (2026-07-23) — UI panel + discovery
+Ditambah endpoint discovery **`GET /api/prompts`** (`PromptRegistry.list_names`):
+ringkasan tiap prompt milik org (jumlah versi/varian/aktif/terbaru) — sebelumnya
+API hanya keyed-by-name tanpa cara menemukan nama yang ada. Panel operator
+**`frontend/prompt_registry.js`** (route `prompts` "Prompt Registry" di nav agent-os,
+pola modul mandiri ADR-0015): daftar prompt (kiri) → tabel versi (kanan) dengan aksi
+**Activate (rollback=exclusive)** / **A/B (non-exclusive)** / **Deactivate**, form
+**Create version** (content/variant/weight/activate, datalist nama), dan **Resolve**
+preview (versi/varian yang akan terpilih). Read+write via `/api/prompts/*` (RBAC
+workforce.read/write). Additive; frontend statis. +1 test (list_names).
 
 ## Konteks
 Prompt sistem tiap agen **hardcoded** sebagai class attribute (mis.

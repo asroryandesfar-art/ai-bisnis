@@ -93,6 +93,22 @@ def test_ab_deterministic_and_split():
     _run_db(body)
 
 
+def test_list_names_summary():
+    async def body(pool, org):
+        reg = PromptRegistry(pool)
+        base = f"listnames#{org[:8]}"
+        n1, n2 = f"{base}.a", f"{base}.b"
+        await reg.create_version(n1, "v1", org_id=org, activate=True)
+        await reg.create_version(n1, "v2", org_id=org, variant="B")
+        await reg.create_version(n2, "x", org_id=org)
+        names = {r["name"]: r for r in await reg.list_names(org_id=org)}
+        assert n1 in names and n2 in names
+        assert names[n1]["versions"] == 2 and names[n1]["variants"] == 2
+        assert names[n1]["active_versions"] == 1 and names[n1]["latest_version"] == 1
+        assert names[n2]["active_versions"] == 0
+    _run_db(body)
+
+
 def test_bucket_deterministic_within_range():
     assert _bucket("n", "k", 10) == _bucket("n", "k", 10)
     assert 0 <= _bucket("n", "k", 7) < 7

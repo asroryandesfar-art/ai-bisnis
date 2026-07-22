@@ -8,6 +8,14 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Operator UI
+- **Prompt Registry panel (`frontend/prompt_registry.js`)** — a UI for the P2-B prompt-management API,
+  which previously had no operator surface. Adds a discovery endpoint `GET /api/prompts`
+  (`PromptRegistry.list_names` — per-org summary of each prompt's version/variant/active counts) so
+  the panel can list existing overrides, plus a `prompts` route ("Prompt Registry") under the agent-os
+  nav: a prompt list, a per-version table with **Activate (rollback)** / **A/B** / **Deactivate**
+  actions, a **Create version** form (content/variant/weight/activate, name datalist), and a
+  **Resolve** preview showing which version wins. Read+write via `/api/prompts/*` (RBAC
+  workforce.read/write). Additive; static frontend. +1 test (list_names). ADR-0010 (addendum).
 - **Runtime Operations panel (`frontend/runtime_observability.js`)** — surfaces the P2-C runtime
   observability API (`/api/runtime/health` + `/evaluations`) and P1-D evaluation scores, which had no
   UI. A self-contained, dependency-injected frontend module (same pattern as `web_intelligence.js`)

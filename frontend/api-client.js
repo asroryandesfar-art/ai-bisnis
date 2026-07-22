@@ -141,6 +141,13 @@ export const api = {
   // Durable jobs (P0-D) — list + control actions for the Runtime Ops panel
   jobsList: (params = {}) => request(`/api/jobs${encodeQuery(params)}`),
   jobRetry: (id) => request(`/api/jobs/${id}/retry`, { method: "POST" }),
+  // Prompt Registry (P2-B) — versioned agent prompts, rollback + A/B
+  promptNames: () => request("/api/prompts"),
+  promptVersions: (name) => request(`/api/prompts/${encodeURIComponent(name)}`),
+  promptCreateVersion: (name, body) => request(`/api/prompts/${encodeURIComponent(name)}`, { method: "POST", body }),
+  promptActivate: (name, body) => request(`/api/prompts/${encodeURIComponent(name)}/activate`, { method: "POST", body }),
+  promptDeactivate: (name, variant) => request(`/api/prompts/${encodeURIComponent(name)}/deactivate${encodeQuery(variant ? { variant } : {})}`, { method: "POST" }),
+  promptResolve: (name, bucketKey) => request(`/api/prompts/${encodeURIComponent(name)}/resolve${encodeQuery(bucketKey ? { bucket_key: bucketKey } : {})}`),
   jobCancel: (id) => request(`/api/jobs/${id}/cancel`, { method: "POST" }),
   jobPause: (id) => request(`/api/jobs/${id}/pause`, { method: "POST" }),
   jobResume: (id) => request(`/api/jobs/${id}/resume`, { method: "POST" }),
