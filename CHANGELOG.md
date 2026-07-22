@@ -7,6 +7,24 @@ entries are grouped by theme rather than semantic version tags.
 
 ## [Unreleased]
 
+### Added — Security hardening
+- **Tenant-context primitive for RLS rollout (`platform_rls`, M-07 step-a)** — the RLS migration
+  (`2026-07-05_row_level_security.sql`) is fail-closed and needs the app to set GUC
+  `app.current_org` per tenant connection before it can be adopted; that code was missing. New
+  `platform_rls.tenant_connection(pool, org_id)` (+ `set_tenant`/`clear_tenant`/`current_tenant`)
+  runs `set_config('app.current_org', org, false)` (session-scoped — persists for the pool checkout;
+  `SET LOCAL` wouldn't survive autocommit `pool.fetch`) and **resets on release** so a returned
+  connection never leaks its org to the next borrower. Additive/opt-in: no existing query path
+  changes, migration still not auto-run → byte-identical default. Also **hardened the migration
+  policy** to `NULLIF(current_setting('app.current_org',''),'')::uuid` — `current_setting` returns
+  `''` (not NULL) after a GUC was set then reset (e.g. asyncpg `RESET ALL` on release), and `''::uuid`
+  would ERROR instead of yielding 0 rows; NULLIF makes fail-closed correct. Validated end-to-end: a
+  test enables RLS+FORCE on a throwaway table and, via `SET ROLE` to a non-superuser, proves
+  cross-tenant isolation (org A sees only org A, empty GUC → 0 rows without a cast error, superuser
+  bypasses — documenting the still-required non-superuser DB role). 4 tests. ADR-0013. **Note (honest):
+  not yet safe to ENABLE on prod** — app still connects as `postgres` superuser (RLS bypassed) and
+  `tenant_connection` isn't adopted on query paths yet; both gated behind staging validation.
+
 ### Added — Efficiency & Operability (Fase 3)
 - **Performance: TTL cache (`perf_cache`, P2-D)** — a minimal in-process `TTLCache` +
   `get_or_compute(cache, key, ttl, factory)` helper (`ttl<=0` → bypass, identical to no cache) for

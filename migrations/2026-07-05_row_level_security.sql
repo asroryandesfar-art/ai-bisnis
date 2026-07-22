@@ -10,10 +10,15 @@
 -- juga ditegakkan di application-layer (WHERE org_id=$1) seperti sekarang;
 -- ini hanya jaring pengaman tambahan.
 --
--- Model: setiap koneksi/transaksi aplikasi WAJIB menetapkan GUC
---   SET LOCAL app.current_org = '<org_id-uuid>';
--- Policy hanya mengizinkan baris yang cocok. Bila GUC tidak di-set,
--- current_setting('app.current_org', true) = NULL -> tidak ada baris (aman).
+-- Model: setiap koneksi aplikasi WAJIB menetapkan GUC `app.current_org` sebelum
+-- query tenant — gunakan primitive `platform_rls.tenant_connection` (lihat ADR-0013).
+-- Policy hanya mengizinkan baris yang cocok. Bila GUC tidak di-set (NULL) ATAU
+-- kosong ('') → tidak ada baris (fail-closed, aman).
+--
+-- CATATAN cast: memakai NULLIF(current_setting(...),'')::uuid — BUKAN cast polos.
+-- current_setting('app.current_org', true) mengembalikan '' (bukan NULL) setelah
+-- GUC pernah di-set lalu direset (mis. asyncpg `RESET ALL` saat koneksi dilepas ke
+-- pool); ''::uuid akan ERROR (bukan 0 baris) → NULLIF menjadikannya NULL = 0 baris.
 --
 -- Idempoten: aman dijalankan ulang (DROP POLICY IF EXISTS sebelum CREATE).
 -- ============================================================================
@@ -47,8 +52,8 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I;', r.table_name);
         EXECUTE format($f$
             CREATE POLICY tenant_isolation ON public.%I
-            USING (%I = current_setting('app.current_org', true)::uuid)
-            WITH CHECK (%I = current_setting('app.current_org', true)::uuid);
+            USING (%I = NULLIF(current_setting('app.current_org', true), '')::uuid)
+            WITH CHECK (%I = NULLIF(current_setting('app.current_org', true), '')::uuid);
         $f$, r.table_name, col, col);
 
         RAISE NOTICE 'RLS aktif pada %.% (kolom %)', 'public', r.table_name, col;
@@ -64,8 +69,8 @@ BEGIN
         ALTER TABLE public.organizations FORCE ROW LEVEL SECURITY;
         DROP POLICY IF EXISTS tenant_isolation ON public.organizations;
         CREATE POLICY tenant_isolation ON public.organizations
-            USING (id = current_setting('app.current_org', true)::uuid)
-            WITH CHECK (id = current_setting('app.current_org', true)::uuid);
+            USING (id = NULLIF(current_setting('app.current_org', true), '')::uuid)
+            WITH CHECK (id = NULLIF(current_setting('app.current_org', true), '')::uuid);
     END IF;
 END $$;
 
