@@ -11,5 +11,9 @@ Lihat ADR-0008.
 from policy_engine.engine import (
     PolicyEngine, Decision, DEFAULT_RULES, ALLOW, BLOCK, APPROVAL, MASK,
 )
+from policy_engine.loader import (
+    ensure_policy_schema, load_org_policy, set_org_policy, POLICY_SCHEMA_SQL,
+)
 
-__all__ = ["PolicyEngine", "Decision", "DEFAULT_RULES", "ALLOW", "BLOCK", "APPROVAL", "MASK"]
+__all__ = ["PolicyEngine", "Decision", "DEFAULT_RULES", "ALLOW", "BLOCK", "APPROVAL", "MASK",
+           "ensure_policy_schema", "load_org_policy", "set_org_policy", "POLICY_SCHEMA_SQL"]

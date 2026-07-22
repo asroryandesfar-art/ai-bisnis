@@ -19,7 +19,12 @@ from urllib.parse import urlparse
 ALLOW, BLOCK, APPROVAL, MASK = "allow", "block", "approval", "mask"
 
 DEFAULT_RULES = {
-    "dangerous_tools": ["run_command", "run_terminal", "write_file", "delete_file"],
+    # Nama abstrak + nama executor NYATA (tool_executor._EXECUTORS) agar hook
+    # check_tool benar-benar menggate tool berbahaya di dispatch (P1-C.2).
+    "dangerous_tools": [
+        "run_command", "run_terminal", "write_file", "delete_file",
+        "terminal_execute", "file_write", "action_execute",
+    ],
     "blacklist_domains": [],          # mis. ["malware.test", "phishing.example"]
     "cost_limit_usd": None,           # None = tanpa batas
     "mask_pii": True,

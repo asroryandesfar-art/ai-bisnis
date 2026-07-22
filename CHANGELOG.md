@@ -8,6 +8,16 @@ entries are grouped by theme rather than semantic version tags.
 ## [Unreleased]
 
 ### Added — Security hardening
+- **Policy engine enforcement hooks (`policy_engine`, P1-C.2)** — the P1-C engine was only wired to
+  PII-masking; now it governs the single tool dispatch point `tool_executor.execute_tool` via
+  `_policy_gate` (flag-gated `is_enabled("policy_engine", org_id)`, **fail-open** so a policy error
+  never blocks execution): blacklisted-domain URLs → **BLOCK** before dispatch (for url-bearing tools
+  web_read/browser_open/webhook_call), and dangerous tools → **APPROVAL**. `DEFAULT_RULES.dangerous_tools`
+  now also lists the real executor names (`terminal_execute`/`file_write`/`action_execute`) — the
+  abstract names never matched dispatch. Per-org rulesets come from a new `org_policy_rules` (JSONB,
+  merged over defaults) via `load_org_policy` (cached 5s with `perf_cache` so it isn't a per-tool-call
+  DB query) + `set_org_policy` (invalidates cache). Off / no rules → byte-identical. 8 tests. ADR-0008
+  (addendum).
 - **Terminal sandbox hardening (`terminal_service`)** — closed three real gaps in the agent shell
   executor. (1) **Hard-block malformed commands** (`_reject_reason`): >16KB or containing NUL/
   control-chars → rejected, never executed even with approval. (2) **Robust danger detection**: a

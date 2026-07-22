@@ -719,6 +719,37 @@ _EXECUTORS: dict[str, Callable[[dict, dict], Awaitable[dict]]] = {
 }
 
 
+async def _policy_gate(name: str, args: dict, ctx: dict) -> dict | None:
+    """Terapkan policy_engine di depan dispatch tool. Return dict penolakan bila
+    di-BLOCK/butuh-APPROVAL, atau None bila boleh lanjut. Fail-open (None on error)."""
+    org_id = str((ctx or {}).get("org_id") or "")
+    if not org_id:
+        return None
+    try:
+        from feature_flags import is_enabled
+        if not is_enabled("policy_engine", org_id=org_id):
+            return None
+        from policy_engine import load_org_policy, BLOCK, APPROVAL
+        pol = ctx.get("_policy") or await load_org_policy(ctx.get("pool"), org_id)
+        a = args if isinstance(args, dict) else {}
+        # 1) URL blacklist (tool ber-argumen url: web_read/browser_open/webhook_call)
+        url = str(a.get("url") or "").strip()
+        if url:
+            d = pol.check_url(url)
+            if d.action == BLOCK:
+                return {"success": False, "blocked": True, "error": d.reason,
+                        "policy": d.detail, "tool": name}
+        # 2) Tool berbahaya → butuh approval eksplisit
+        approved = bool(a.get("approval_granted") or (ctx or {}).get("approval_granted"))
+        dt = pol.check_tool(name, approved=approved)
+        if dt.action == APPROVAL:
+            return {"success": False, "status": "pending_approval", "requires_approval": True,
+                    "reason": dt.reason, "policy": dt.detail, "tool": name}
+    except Exception:
+        return None                                # fail-open: jangan pernah memutus eksekusi
+    return None
+
+
 async def execute_tool(name: str, args: dict, *, ctx: dict) -> dict:
     """Jalankan satu tool nyata. ctx wajib berisi minimal {pool, org_id}."""
     # MCP tools (namespaced mcp__<server>__<tool>) are routed to the MCP registry
@@ -729,6 +760,15 @@ async def execute_tool(name: str, args: dict, *, ctx: dict) -> dict:
         if reg is None:
             return {"success": False, "error": "MCP tidak dikonfigurasi (set MCP_SERVERS)"}
         return await reg.call(name, args)
+
+    # ── Policy governance gate (P1-C.2) — flag-gated per-org, fail-open ──────────
+    # Satu titik keputusan: domain blacklist → BLOCK; tool berbahaya → APPROVAL.
+    # OFF (default) atau tanpa org → tak ada efek (byte-identik). Policy TAK PERNAH
+    # boleh memutus eksekusi karena error internalnya (fail-open).
+    blocked = await _policy_gate(name, args, ctx)
+    if blocked is not None:
+        return blocked
+
     executor = _EXECUTORS.get(name)
     if executor is None:
         return {"success": False, "error": f"Tool '{name}' tidak dikenal"}

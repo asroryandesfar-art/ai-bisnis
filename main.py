@@ -2042,6 +2042,11 @@ async def ensure_optional_schema(pool: asyncpg.Pool) -> None:
         except Exception:
             logger.exception("Prompt registry schema failed")
         try:
+            from policy_engine import ensure_policy_schema       # P1-C.2: per-org policy rules
+            await ensure_policy_schema(conn)
+        except Exception:
+            logger.exception("Policy rules schema failed")
+        try:
             from bn_platform.agent_marketplace_catalog import seed_professional_marketplace
             await seed_professional_marketplace(conn)
         except Exception:

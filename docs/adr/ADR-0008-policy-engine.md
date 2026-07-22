@@ -1,9 +1,27 @@
 # ADR-0008 — Policy Engine
 
-- **Status:** Accepted — engine + hook PII-memory selesai (P1-C.1); hook tool/url/cost menyusul
-- **Tanggal:** 2026-07-22
+- **Status:** Accepted — engine + hook PII-memory (P1-C.1) + hook tool/url @execute_tool + ruleset per-org DB (P1-C.2) selesai
+- **Tanggal:** 2026-07-22 (P1-C.2: 2026-07-23)
 - **Konteks fase:** Fase 2 (Cognitive Core), item **P1-C**
-- **Terkait:** ADR-0004 (durable runtime), ADR-0006 (memory — konsumen PII-mask), approval workflow existing
+- **Terkait:** ADR-0004 (durable runtime), ADR-0006 (memory — konsumen PII-mask), ADR-0014 (terminal), approval workflow existing
+
+## Addendum P1-C.2 (2026-07-23) — hook enforcement + ruleset per-org
+Policy engine kini DITEGAKKAN di titik dispatch tool tunggal `tool_executor.
+execute_tool` via `_policy_gate` (flag-gated `is_enabled("policy_engine", org_id)`,
+**fail-open** — error internal policy tak pernah memutus eksekusi):
+- **URL blacklist → BLOCK** untuk tool ber-argumen `url` (web_read/browser_open/
+  webhook_call) SEBELUM dispatch (mis. cegah exfil/SSRF ke domain terlarang).
+- **Tool berbahaya → APPROVAL** (`dangerous_tools`, kini termasuk nama executor
+  NYATA: terminal_execute/file_write/action_execute — sebelumnya cuma nama abstrak
+  yang tak match dispatch).
+
+Ruleset **per-org** dari tabel baru `org_policy_rules` (JSONB, additive, di-merge
+atas `DEFAULT_RULES`) via `policy_engine.loader.load_org_policy` (cache 5s pakai
+`perf_cache` agar tak query DB tiap tool-call) + `set_org_policy` (invalidasi cache).
+Default OFF / tanpa baris → perilaku byte-identik. GOTCHA: main pool tanpa jsonb
+codec → `_coerce_rules` parse string. `check_cost` belum di-wire di dispatch (biaya
+tak diketahui saat dispatch tool — hook cost menyusul di jalur model/LLM). `mask`
+tetap dipakai di memory (P1-C.1).
 
 ## Konteks
 Audit: cek governance TERSEBAR (denylist terminal, SSRF, approval per-tempat) —
