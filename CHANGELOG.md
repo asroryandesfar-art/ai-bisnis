@@ -7,6 +7,17 @@ entries are grouped by theme rather than semantic version tags.
 
 ## [Unreleased]
 
+### Added — Operator UI
+- **Runtime Operations panel (`frontend/runtime_observability.js`)** — surfaces the P2-C runtime
+  observability API (`/api/runtime/health` + `/evaluations`) and P1-D evaluation scores, which had no
+  UI. A self-contained, dependency-injected frontend module (same pattern as `web_intelligence.js`)
+  adds one `runtime` route ("Runtime Ops") under the agent-os nav group: metric cards (Backlog,
+  In-flight, **Stalled** = lease-expired/recovery-due, Dead-letter, Success rate, Avg eval score),
+  per-status queue chips, an active-workers (lease) table, and a per-agent evaluation-score table,
+  with a window selector (1h/24h/7d/30d) and 5s auto-refresh while the route is active. Read-only, no
+  mock data. Additive: only adds a route/module (+ api-client methods, 3 i18n keys, a nav icon);
+  nothing else changes. ADR-0015.
+
 ### Added — Security hardening
 - **Policy engine enforcement hooks (`policy_engine`, P1-C.2)** — the P1-C engine was only wired to
   PII-masking; now it governs the single tool dispatch point `tool_executor.execute_tool` via

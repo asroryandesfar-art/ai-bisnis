@@ -8,6 +8,7 @@ import {
 import { t, setLang, getLang } from "/ui/i18n.js?v=20260721-wi-1";
 import { bufferSpeechSentences, segmentPauseMs } from "/ui/voice-engine.js?v=20260701-local-agent-8";
 import { createWebIntelligence, WEB_INTELLIGENCE_ROUTES } from "/ui/web_intelligence.js?v=20260721-wi-1";
+import { createRuntimeObservability, RUNTIME_ROUTES } from "/ui/runtime_observability.js?v=20260723-rt-1";
 
 window.laToolChange = function(tool) {
   const container = document.getElementById("la-fields");
@@ -93,7 +94,7 @@ function parseJwt() {
 
 function currentRoute() {
   const route = location.hash.replace(/^#\/?/, "").split("/")[0];
-  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","agent-center","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo","casper-engineer", ...WEB_INTELLIGENCE_ROUTES].includes(route) ? route : "dashboard";
+  return ["founder","dashboard","agents","chat","conversations","handoffs","analytics","routing-logs","learning","improvement","observability","costs","channels","marketplace","knowledge","kb-builder","workflow-builder","finance","marketing","hr","operations","executive","workforce","self-learning","workforce-overview","agent-center","communication-center","multimedia","team","billing","security","settings","about","founder-story","investor-demo","casper-engineer", ...WEB_INTELLIGENCE_ROUTES, ...RUNTIME_ROUTES].includes(route) ? route : "dashboard";
 }
 
 function showAuth() { el("#auth-view").classList.remove("hidden"); el("#app-shell").classList.add("hidden"); }
@@ -130,6 +131,7 @@ async function loadCore() {
 function setPage(content) { pageRoot().innerHTML = `<section class="page-enter">${content}</section>`; pageRoot().focus({preventScroll:true}); }
 // Web Intelligence workspace — dependency-injected with the shell's local primitives.
 const webIntelRenderers = createWebIntelligence({ el, setPage, toast, state, api });
+const runtimeRenderers = createRuntimeObservability({ el, setPage, toast, state, api });
 function loadingPage(title, description, skeletonCount = 4) {
   setPage(`${pageHeader(title, description)}<div style="margin-top:8px">${skeletonCards(skeletonCount)}</div><div class="grid grid-2" style="margin-top:16px"><div class="skeleton" style="height:260px"></div><div class="skeleton" style="height:260px"></div></div>`);
 }
@@ -4067,7 +4069,7 @@ async function renderCasperEngineer() {
 async function route() {
   closeObservabilityWs();   // tutup WS realtime saat pindah halaman
   state.route = currentRoute(); renderChrome(); closeMobileNav(); settingRowStyles();
-  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow,"casper-engineer":renderCasperEngineer, ...webIntelRenderers};
+  const renderers = {founder:renderFounder,dashboard:renderDashboard,agents:renderAgents,chat:renderChat,conversations:renderConversations,handoffs:renderHumanHandoff,analytics:renderAnalytics,"routing-logs":renderRoutingLogs,learning:renderFeedbackLearning,improvement:renderImprovement,observability:renderObservability,costs:renderCostIntelligence,channels:renderChannels,"communication-center":renderCommunicationCenter,marketplace:renderMarketplace,knowledge:renderKnowledge,"kb-builder":renderKnowledgeBuilder,"workflow-builder":renderWorkflowBuilder,finance:renderFinance,marketing:renderMarketing,hr:renderHR,operations:renderOperations,executive:renderExecutive,workforce:renderWorkforce,"self-learning":renderLearning,"workforce-overview":renderWorkforceOverview,"agent-center":renderAgentCenter,multimedia:renderMultimedia,team:renderTeam,billing:renderBilling,security:renderSecurity,settings:renderSettings,about:renderAbout,"founder-story":renderFounderStory,"investor-demo":renderInvestorDemo,"casper-agentic-workflow":renderCasperWorkflow,"casper-engineer":renderCasperEngineer, ...webIntelRenderers, ...runtimeRenderers};
   const fn = renderers[state.route] || renderDashboard;
   await fn();
 }

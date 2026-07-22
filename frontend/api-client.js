@@ -135,6 +135,9 @@ export const api = {
     method: "POST", body: { message, session_id: sessionId, user_meta: userMeta },
   }),
 
+  // Runtime Operations (P2-C) — durable runtime health + evaluation scores
+  runtimeHealth: (windowHours = 24) => request(`/api/runtime/health${encodeQuery({ window_hours: windowHours })}`),
+  runtimeEvaluations: (windowHours = 24) => request(`/api/runtime/evaluations${encodeQuery({ window_hours: windowHours })}`),
   marketplaceTemplates: () => request("/api/marketplace/templates"),
   marketplaceTemplate: (key) => request(`/api/marketplace/templates/${key}`),
   marketplaceCategories: () => request("/api/marketplace/categories"),
