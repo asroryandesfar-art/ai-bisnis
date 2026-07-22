@@ -325,6 +325,25 @@ class SmartModelRouter:
 
         raise RuntimeError("No AI provider available for streaming")
 
+    # ── Cost Router (P2-A): pilih model dari KELAS pesan ────────────────────
+    async def route_for_message(self, request: LLMRequest, *, user_message: str,
+                                has_image: bool = False, reasoning_mode: str = "standard") -> LLMResponse:
+        """Klasifikasi pesan 5-arah (simple/medium/complex/coding/vision) →
+        tier+task_type otomatis → route(). Hemat biaya: task ringan tak ke model
+        mahal; coding→coding-model, complex→reasoning, vision→vision."""
+        from cost_intelligence import classify_task_class, router_params
+        p = router_params(classify_task_class(user_message, reasoning_mode=reasoning_mode,
+                                              has_image=has_image))
+        return await self.route(request, tier=p["tier"], task_type=p["task_type"])
+
+    def stream_for_message(self, request: LLMRequest, *, user_message: str,
+                           has_image: bool = False, reasoning_mode: str = "standard"):
+        """Versi streaming route_for_message (kembalikan async generator)."""
+        from cost_intelligence import classify_task_class, router_params
+        p = router_params(classify_task_class(user_message, reasoning_mode=reasoning_mode,
+                                              has_image=has_image))
+        return self.stream(request, tier=p["tier"], task_type=p["task_type"])
+
     def status(self) -> dict:
         """Current availability and circuit-breaker state for all providers."""
         return {

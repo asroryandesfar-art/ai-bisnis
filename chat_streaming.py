@@ -36,14 +36,26 @@ def any_provider_configured(cfg) -> bool:
     )
 
 
-async def stream_answer(messages: list[dict], cfg, *, temperature: float = 0.4, max_tokens: int = 1024):
+async def stream_answer(messages: list[dict], cfg, *, temperature: float = 0.4, max_tokens: int = 1024,
+                        user_message: str | None = None, org_id: str | None = None):
     """Async generator yielding answer text chunks for the given chat messages."""
     router = build_provider_router(cfg)
     req = LLMRequest(messages=messages, temperature=temperature, max_tokens=max_tokens, stream=True)
-    # NOTE: task_type must NOT be one of deepseek._SKIP_TASKS ('chat','cs','faq'…),
-    # else the router resolves NO DeepSeek model and — with Gemini/Groq unconfigured
-    # and OpenRouter often out-of-credit — streaming has no provider at all.
-    # DeepSeek is the primary brain, so route this generic chat completion to it.
-    async for chunk in router.stream(req, tier="standard", task_type="standard"):
+    # Default task_type="standard": JANGAN pakai _SKIP_TASKS ('chat','cs','faq'…) —
+    # DeepSeek (otak murah utama) takkan resolve → streaming tanpa provider bila
+    # Gemini/Groq off & OpenRouter habis kredit.
+    tier, task_type = "standard", "standard"
+    # P2-A Cost Router (opt-in, flag per-org): pilih tier/task_type dari KELAS pesan
+    # (simple/medium→murah, complex→reasoning, coding→coding-model, vision→Gemini).
+    if user_message:
+        try:
+            from feature_flags import is_enabled
+            if is_enabled("cost_router", org_id=str(org_id) if org_id else None):
+                from cost_intelligence import classify_task_class, router_params
+                p = router_params(classify_task_class(user_message))
+                tier, task_type = p["tier"], p["task_type"]
+        except Exception:
+            pass
+    async for chunk in router.stream(req, tier=tier, task_type=task_type):
         if chunk:
             yield chunk

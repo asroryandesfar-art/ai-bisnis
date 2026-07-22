@@ -7,6 +7,18 @@ entries are grouped by theme rather than semantic version tags.
 
 ## [Unreleased]
 
+### Added — Efficiency & Operability (Fase 3)
+- **Cost Router (P2-A)** — model selection by task class, not just a binary economy/quality split.
+  New `cost_intelligence.classify_task_class` (simple/medium/complex/coding/vision, deterministic) +
+  `router_params` mapping to `{tier, task_type}` the `SmartModelRouter` already understands, plus
+  `SmartModelRouter.route_for_message/stream_for_message` (classify → route). Wired into
+  `chat_streaming.stream_answer` (opt-in `user_message`/`org_id`), gated per-org by
+  `is_enabled("cost_router")` — off / no message → the previous `task_type="standard"` behaviour
+  byte-for-byte. Routes light chat to the cheap brain (DeepSeek-chat), complex→reasoning (R1),
+  coding→coding-model, vision→Gemini — cutting spend while improving fit; the Evaluation scores
+  (P1-D) can later calibrate the mapping. GOTCHA baked in: simple/medium use `task_type="standard"`
+  (not `"chat"`, which is in `deepseek._SKIP_TASKS`). 8 tests. ADR-0009.
+
 ### Added — Cognitive Core (Fase 2)
 - **Policy engine (`policy_engine`, P1-C)** — a single declarative governance point for agent actions:
   `PolicyEngine(rules)` → `Decision(allow|block|approval|mask)`. `check_tool` (dangerous tools →

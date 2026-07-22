@@ -86,7 +86,8 @@ def build_chat_stream_router(
             yield _sse("start", {"session_id": conv_id})
             acc: list[str] = []
             try:
-                async for token in stream_answer(messages, cfg):
+                async for token in stream_answer(messages, cfg, user_message=body.message,
+                                                 org_id=str(bot["org_id"])):   # P2-A cost router (flag-gated)
                     acc.append(token)
                     yield _sse("token", {"text": token})
             except Exception:

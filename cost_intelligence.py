@@ -113,6 +113,48 @@ def task_complexity(user_message: str, reasoning_mode: str = "standard") -> str:
     return "complex" if len((user_message or "").strip()) > 240 else "simple"
 
 
+# ── Cost Router 5-arah (P2-A) — pilih model sesuai kelas tugas ─────────────────
+TASK_CLASSES = ("simple", "medium", "complex", "coding", "vision")
+
+_CODING_HINTS = (
+    "```", "def ", "function ", "class ", "traceback", "stacktrace", "error:",
+    "debug", "compile", "npm ", "pip ", " sql", "regex", "python", "javascript",
+    "typescript", "golang", "rust", "kubernetes", "docker", "bug ",
+)
+_VISION_HINTS = ("gambar ini", "foto ini", "screenshot", "lihat gambar", "image di atas")
+
+# Kelas tugas → argumen SmartModelRouter (tier, task_type). task_type wajib yang
+# DIKENALI provider (openrouter.task_model / deepseek_model_for_task).
+# CATATAN: task_type simple/medium = "standard" (BUKAN "chat") — "chat" ada di
+# deepseek._SKIP_TASKS sehingga DeepSeek (otak murah utama) tak resolve; "standard"
+# → deepseek-chat (murah). Lihat chat_streaming.py.
+_CLASS_ROUTE = {
+    "simple":  {"tier": "standard", "task_type": "standard"},    # murah/cepat (deepseek-chat)
+    "medium":  {"tier": "standard", "task_type": "standard"},    # sedang (deepseek-chat)
+    "complex": {"tier": "pro",      "task_type": "reasoning"},   # DeepSeek-R1
+    "coding":  {"tier": "pro",      "task_type": "coding"},      # Claude/deepseek-chat
+    "vision":  {"tier": "pro",      "task_type": "multimodal"},  # Gemini
+}
+
+
+def classify_task_class(user_message: str, *, reasoning_mode: str = "standard",
+                        has_image: bool = False) -> str:
+    """Klasifikasi 5-arah: simple|medium|complex|coding|vision (deterministik)."""
+    text = (user_message or "").lower()
+    if has_image or any(h in text for h in _VISION_HINTS):
+        return "vision"
+    if any(h in text for h in _CODING_HINTS):
+        return "coding"
+    if task_complexity(user_message, reasoning_mode) == "complex":
+        return "complex"
+    return "medium" if len((user_message or "").strip()) > 120 else "simple"
+
+
+def router_params(task_class: str) -> dict:
+    """Kelas tugas → {tier, task_type} untuk SmartModelRouter.route/stream."""
+    return dict(_CLASS_ROUTE.get(task_class, _CLASS_ROUTE["medium"]))
+
+
 @dataclass(frozen=True)
 class ModelRoute:
     complexity: str
